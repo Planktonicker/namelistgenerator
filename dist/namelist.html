@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Class Namelists</title>
+<style>
+/* Shared look for the namelist pages. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #1a2733;
+  --muted: #5b6b7a;
+  --line: #dde4ea;
+  --accent: #0b5fa5;
+  --accent-ink: #ffffff;
+  --accent-soft: #e8f1f9;
+  --warn-bg: #fdf3d7;
+  --warn-ink: #7a5b00;
+  --danger: #b3261e;
+  --radius: 8px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.app-header {
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 14px 22px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.app-header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+.app-header .meta { font-size: 13px; opacity: 0.9; }
+
+main { max-width: 1100px; margin: 0 auto; padding: 20px 22px 60px; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+h2 { font-size: 17px; margin: 0 0 10px; }
+h3 { font-size: 15px; margin: 0 0 8px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+
+input[type="text"], input[type="search"], select {
+  font: inherit;
+  color: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+input[type="text"]:focus, input[type="search"]:focus, select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+button {
+  font: inherit;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+button:hover { background: var(--accent-soft); }
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+button.primary:hover { filter: brightness(1.1); }
+button.primary:disabled {
+  background: var(--muted);
+  border-color: var(--muted);
+  cursor: default;
+  filter: none;
+}
+button.danger { color: var(--danger); }
+button.linklike {
+  border: none;
+  background: none;
+  color: var(--accent);
+  padding: 2px 4px;
+  text-decoration: underline;
+}
+button.linklike:hover { background: none; }
+
+table.list {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+}
+table.list th, table.list td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+table.list th {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  border-bottom: 2px solid var(--line);
+}
+table.list tr:hover td { background: var(--accent-soft); }
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.toolbar .spacer { flex: 1; }
+
+.badge {
+  display: inline-block;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 1px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.warnings {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  border: 1px solid #e8d48a;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+.warnings ul { margin: 6px 0 0; padding-left: 20px; }
+
+.empty {
+  color: var(--muted);
+  padding: 30px 10px;
+  text-align: center;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  border-bottom: 2px solid var(--line);
+}
+.tabs button {
+  border: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: none;
+  padding: 8px 16px;
+  color: var(--muted);
+}
+.tabs button.active {
+  background: var(--surface);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+dialog {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  max-width: 560px;
+  width: calc(100vw - 60px);
+}
+dialog::backdrop { background: rgba(20, 35, 50, 0.45); }
+dialog form.fields { display: grid; grid-template-columns: 140px 1fr; gap: 10px 12px; align-items: center; }
+dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; grid-column: 1 / -1; }
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+  z-index: 50;
+}
+.toast.show { opacity: 1; }
+
+@media print {
+  html, body { background: #fff; }
+  .no-print { display: none !important; }
+  main { max-width: none; padding: 0; }
+  .card { border: none; padding: 0; margin-bottom: 20px; break-inside: avoid; }
+  table.list th, table.list td { padding: 3px 8px; }
+  table.list tr:hover td { background: none; }
+}
+
+</style>
+<style>
+  .teacher-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .teacher-chips button {
+    border-radius: 999px;
+    padding: 5px 14px;
+    background: var(--accent-soft);
+    border-color: transparent;
+    color: var(--accent);
+  }
+  .teacher-chips button:hover { background: var(--accent); color: var(--accent-ink); }
+  .suggestions { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+  .suggestions button { text-align: left; border: none; background: none; padding: 7px 10px; border-radius: var(--radius); }
+  .suggestions button:hover, .suggestions button.hilite { background: var(--accent-soft); }
+  .group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  #searchBox { width: 100%; max-width: 480px; font-size: 17px; padding: 12px 14px; }
+  .result-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .result-title h2 { font-size: 20px; }
+  .print-only { display: none; }
+  @media print { .print-only { display: block; } }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <h1>Class Namelists</h1>
+  <div class="meta" id="dataMeta"></div>
+</header>
+<main>
+  <div id="errorState" class="card" hidden>
+    <h2>No data found</h2>
+    <p>This page could not find its data file (<code>data.js</code>) in the same folder.</p>
+    <p class="muted">If you are the administrator: open <code>admin.html</code>, load or create the data,
+      and press <strong>Save</strong> — that regenerates <code>data.js</code> next to this page.
+      Otherwise, please contact your administrator.</p>
+  </div>
+
+  <div id="app" hidden>
+    <div class="tabs no-print">
+      <button id="tabTeacherBtn" class="active">My namelists</button>
+      <button id="tabStudentBtn">Find a student</button>
+    </div>
+
+    <section id="teacherTab">
+      <div class="card no-print">
+        <label for="searchBox"><h2>Type your name to see your namelists</h2></label>
+        <input type="search" id="searchBox" placeholder="e.g. Mrs Lim" autocomplete="off">
+        <div class="suggestions" id="suggestions"></div>
+        <div class="teacher-chips" id="teacherChips"></div>
+      </div>
+      <div id="teacherResults"></div>
+    </section>
+
+    <section id="studentTab" hidden>
+      <div class="card no-print">
+        <label for="studentBox"><h2>Search for a student</h2></label>
+        <input type="search" id="studentBox" placeholder="Name, class or student ID" autocomplete="off">
+      </div>
+      <div id="studentResults"></div>
+    </section>
+  </div>
+</main>
+
+<script src="data.js"></script>
+<script>
+/* Shared data layer for the namelist app.
+ *
+ * Model shape used everywhere:
+ *   {
+ *     students:    [{ id, name, class, combination }],
+ *     groups:      [{ code, name, subject, teacher }],
+ *     memberships: [{ studentId, groupCode }],
+ *   }
+ *
+ * Runs as a plain script in the browser and via require() in Node tests.
+ * Workbook conversion needs SheetJS available as globalThis.XLSX; the
+ * index/validation helpers work without it (the teacher page loads no XLSX).
+ */
+(function () {
+  'use strict';
+
+  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Subject Combination'];
+  var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teacher'];
+  var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
+
+  var STUDENT_FIELDS = {
+    id: ['studentid', 'id', 'studentno', 'indexno', 'regno', 'nric'],
+    name: ['name', 'studentname', 'fullname'],
+    class: ['class', 'formclass', 'form'],
+    combination: ['subjectcombination', 'combination', 'subjects', 'combi'],
+  };
+  var GROUP_FIELDS = {
+    code: ['groupcode', 'code'],
+    name: ['groupname', 'group', 'name'],
+    subject: ['subject'],
+    teacher: ['teacher', 'teachername', 'tutor'],
+  };
+  var MEMBERSHIP_FIELDS = {
+    studentId: ['studentid', 'id', 'student'],
+    groupCode: ['groupcode', 'group', 'code'],
+  };
+
+  function xlsx() {
+    if (!globalThis.XLSX) throw new Error('SheetJS (XLSX) is not loaded');
+    return globalThis.XLSX;
+  }
+
+  function norm(v) {
+    return String(v == null ? '' : v).trim();
+  }
+
+  function normKey(v) {
+    return norm(v).toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  function emptyModel() {
+    return { students: [], groups: [], memberships: [] };
+  }
+
+  /* Match a header row against field aliases; returns { field: columnIndex }. */
+  function mapHeaders(headerRow, fields) {
+    var keys = headerRow.map(normKey);
+    var idx = {};
+    Object.keys(fields).forEach(function (field) {
+      for (var a = 0; a < fields[field].length; a++) {
+        var at = keys.indexOf(fields[field][a]);
+        if (at !== -1) { idx[field] = at; return; }
+      }
+    });
+    return idx;
+  }
+
+  function sheetRows(ws) {
+    return xlsx().utils.sheet_to_json(ws, { header: 1, defval: '', raw: false, blankrows: false });
+  }
+
+  function isBlankRow(row) {
+    for (var i = 0; i < row.length; i++) if (norm(row[i]) !== '') return false;
+    return true;
+  }
+
+  function readTable(ws, fields, requiredFields, sheetName, warnings) {
+    var rows = sheetRows(ws);
+    if (!rows.length) return [];
+    var idx = mapHeaders(rows[0], fields);
+    Object.keys(fields).forEach(function (field) {
+      if (!(field in idx)) {
+        warnings.push('Sheet "' + sheetName + '": no column matched "' + field + '" — those values will be blank.');
+      }
+    });
+    var out = [];
+    for (var r = 1; r < rows.length; r++) {
+      var row = rows[r];
+      if (!row || isBlankRow(row)) continue;
+      var rec = {};
+      Object.keys(fields).forEach(function (field) {
+        rec[field] = field in idx ? norm(row[idx[field]]) : '';
+      });
+      var missing = requiredFields.filter(function (f) { return rec[f] === ''; });
+      if (missing.length) {
+        warnings.push('Sheet "' + sheetName + '" row ' + (r + 1) + ': missing ' + missing.join(', ') + ' — row skipped.');
+        continue;
+      }
+      out.push(rec);
+    }
+    return out;
+  }
+
+  function findSheet(wb, wanted) {
+    var target = normKey(wanted);
+    for (var i = 0; i < wb.SheetNames.length; i++) {
+      if (normKey(wb.SheetNames[i]) === target) return wb.Sheets[wb.SheetNames[i]];
+    }
+    return null;
+  }
+
+  function workbookToModel(wb) {
+    var warnings = [];
+    var model = emptyModel();
+    var students = findSheet(wb, 'Students');
+    var groups = findSheet(wb, 'Groups');
+    var memberships = findSheet(wb, 'Memberships');
+    if (students) model.students = readTable(students, STUDENT_FIELDS, ['id'], 'Students', warnings);
+    else warnings.push('Sheet "Students" not found.');
+    if (groups) model.groups = readTable(groups, GROUP_FIELDS, ['code'], 'Groups', warnings);
+    else warnings.push('Sheet "Groups" not found.');
+    if (memberships) model.memberships = readTable(memberships, MEMBERSHIP_FIELDS, ['studentId', 'groupCode'], 'Memberships', warnings);
+    else warnings.push('Sheet "Memberships" not found.');
+    return { model: model, warnings: warnings.concat(validateModel(model)) };
+  }
+
+  function modelToWorkbook(model) {
+    var X = xlsx();
+    var wb = X.utils.book_new();
+    var ws;
+
+    ws = X.utils.aoa_to_sheet([STUDENT_HEADERS].concat(model.students.map(function (s) {
+      return [s.id, s.name, s.class, s.combination];
+    })));
+    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 10 }, { wch: 24 }];
+    X.utils.book_append_sheet(wb, ws, 'Students');
+
+    ws = X.utils.aoa_to_sheet([GROUP_HEADERS].concat(model.groups.map(function (g) {
+      return [g.code, g.name, g.subject, g.teacher];
+    })));
+    ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 18 }, { wch: 24 }];
+    X.utils.book_append_sheet(wb, ws, 'Groups');
+
+    ws = X.utils.aoa_to_sheet([MEMBERSHIP_HEADERS].concat(model.memberships.map(function (m) {
+      return [m.studentId, m.groupCode];
+    })));
+    ws['!cols'] = [{ wch: 12 }, { wch: 12 }];
+    X.utils.book_append_sheet(wb, ws, 'Memberships');
+
+    return wb;
+  }
+
+  function modelToDataJs(model, savedAtIso) {
+    var data = {
+      savedAt: savedAtIso,
+      students: model.students,
+      groups: model.groups,
+      memberships: model.memberships,
+    };
+    return '// Auto-generated by admin.html — do not edit by hand.\n' +
+      'window.NAMELIST_DATA = ' + JSON.stringify(data, null, 1) + ';\n';
+  }
+
+  function validateModel(model) {
+    var warnings = [];
+    var studentIds = {};
+    var groupCodes = {};
+    model.students.forEach(function (s) {
+      if (studentIds[s.id]) warnings.push('Duplicate StudentID "' + s.id + '" (' + s.name + ').');
+      studentIds[s.id] = true;
+    });
+    model.groups.forEach(function (g) {
+      if (groupCodes[g.code]) warnings.push('Duplicate GroupCode "' + g.code + '".');
+      groupCodes[g.code] = true;
+      if (!g.teacher) warnings.push('Group "' + g.code + '" has no teacher assigned.');
+    });
+    var seen = {};
+    model.memberships.forEach(function (m) {
+      if (!studentIds[m.studentId]) warnings.push('Membership refers to unknown StudentID "' + m.studentId + '".');
+      if (!groupCodes[m.groupCode]) warnings.push('Membership refers to unknown GroupCode "' + m.groupCode + '".');
+      var key = m.studentId + ' ' + m.groupCode;
+      if (seen[key]) warnings.push('Duplicate membership: student "' + m.studentId + '" in group "' + m.groupCode + '".');
+      seen[key] = true;
+    });
+    return warnings;
+  }
+
+  function byClassThenName(a, b) {
+    return a.class.localeCompare(b.class) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+  }
+
+  /* Lookup structures shared by both pages. `data` is a model or NAMELIST_DATA. */
+  function buildIndexes(data) {
+    var studentsById = new Map();
+    data.students.forEach(function (s) { studentsById.set(s.id, s); });
+    var groupsByCode = new Map();
+    data.groups.forEach(function (g) { groupsByCode.set(g.code, g); });
+
+    var membersByGroup = new Map();
+    var groupsByStudent = new Map();
+    data.memberships.forEach(function (m) {
+      var s = studentsById.get(m.studentId);
+      var g = groupsByCode.get(m.groupCode);
+      if (!s || !g) return;
+      if (!membersByGroup.has(g.code)) membersByGroup.set(g.code, []);
+      membersByGroup.get(g.code).push(s);
+      if (!groupsByStudent.has(s.id)) groupsByStudent.set(s.id, []);
+      groupsByStudent.get(s.id).push(g);
+    });
+    membersByGroup.forEach(function (list) { list.sort(byClassThenName); });
+
+    var groupsByTeacher = new Map();
+    data.groups.forEach(function (g) {
+      var t = norm(g.teacher);
+      if (!t) return;
+      if (!groupsByTeacher.has(t)) groupsByTeacher.set(t, []);
+      groupsByTeacher.get(t).push(g);
+    });
+    groupsByTeacher.forEach(function (list) {
+      list.sort(function (a, b) {
+        return a.subject.localeCompare(b.subject) || a.name.localeCompare(b.name);
+      });
+    });
+    var teachers = Array.from(groupsByTeacher.keys()).sort(function (a, b) { return a.localeCompare(b); });
+
+    return {
+      studentsById: studentsById,
+      groupsByCode: groupsByCode,
+      membersByGroup: membersByGroup,
+      groupsByStudent: groupsByStudent,
+      groupsByTeacher: groupsByTeacher,
+      teachers: teachers,
+    };
+  }
+
+  globalThis.NamelistSchema = {
+    STUDENT_HEADERS: STUDENT_HEADERS,
+    GROUP_HEADERS: GROUP_HEADERS,
+    MEMBERSHIP_HEADERS: MEMBERSHIP_HEADERS,
+    STUDENT_FIELDS: STUDENT_FIELDS,
+    GROUP_FIELDS: GROUP_FIELDS,
+    MEMBERSHIP_FIELDS: MEMBERSHIP_FIELDS,
+    norm: norm,
+    normKey: normKey,
+    emptyModel: emptyModel,
+    mapHeaders: mapHeaders,
+    sheetRows: sheetRows,
+    workbookToModel: workbookToModel,
+    modelToWorkbook: modelToWorkbook,
+    modelToDataJs: modelToDataJs,
+    validateModel: validateModel,
+    buildIndexes: buildIndexes,
+    byClassThenName: byClassThenName,
+  };
+})();
+
+</script>
+<script>
+(function () {
+  'use strict';
+  var S = window.NamelistSchema;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var data = window.NAMELIST_DATA;
+  if (!data || !Array.isArray(data.students)) {
+    $('errorState').hidden = false;
+    $('dataMeta').textContent = '';
+    return;
+  }
+  var ix = S.buildIndexes(data);
+  $('app').hidden = false;
+  if (data.savedAt) {
+    var d = new Date(data.savedAt);
+    $('dataMeta').textContent = 'Data updated: ' + (isNaN(d) ? data.savedAt : d.toLocaleString());
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* ---------- tabs ---------- */
+  $('tabTeacherBtn').addEventListener('click', function () { switchTab('teacher'); });
+  $('tabStudentBtn').addEventListener('click', function () { switchTab('student'); });
+  function switchTab(which) {
+    $('teacherTab').hidden = which !== 'teacher';
+    $('studentTab').hidden = which !== 'student';
+    $('tabTeacherBtn').classList.toggle('active', which === 'teacher');
+    $('tabStudentBtn').classList.toggle('active', which === 'student');
+  }
+
+  /* ---------- teacher view ---------- */
+  var searchBox = $('searchBox');
+  var selectedTeacher = null;
+
+  function renderChips() {
+    var chips = $('teacherChips');
+    if (!ix.teachers.length) {
+      chips.innerHTML = '<p class="muted">No teachers are assigned to any group yet.</p>';
+      return;
+    }
+    chips.innerHTML = '';
+    ix.teachers.forEach(function (t) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = t;
+      b.addEventListener('click', function () { selectTeacher(t); });
+      chips.appendChild(b);
+    });
+  }
+
+  function renderSuggestions() {
+    var q = searchBox.value.trim().toLowerCase();
+    var box = $('suggestions');
+    box.innerHTML = '';
+    $('teacherChips').style.display = q ? 'none' : '';
+    if (!q) return;
+    var matches = ix.teachers.filter(function (t) { return t.toLowerCase().indexOf(q) !== -1; });
+    matches.slice(0, 12).forEach(function (t, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = t;
+      if (i === 0) b.classList.add('hilite');
+      b.addEventListener('click', function () { selectTeacher(t); });
+      box.appendChild(b);
+    });
+    if (!matches.length) box.innerHTML = '<p class="muted small">No teacher matches “' + esc(searchBox.value.trim()) + '”.</p>';
+  }
+
+  function selectTeacher(name) {
+    selectedTeacher = name;
+    searchBox.value = name;
+    $('suggestions').innerHTML = '';
+    $('teacherChips').style.display = 'none';
+    try { localStorage.setItem('namelist.lastTeacher', name); } catch (e) { /* private mode */ }
+    renderTeacherResults();
+  }
+
+  function renderTeacherResults() {
+    var out = $('teacherResults');
+    if (!selectedTeacher) { out.innerHTML = ''; return; }
+    var groups = ix.groupsByTeacher.get(selectedTeacher) || [];
+    var total = 0;
+    var html = '<div class="result-title"><h2>' + esc(selectedTeacher) + '</h2>' +
+      '<span class="no-print"><button class="primary" onclick="window.print()">Print</button></span></div>' +
+      '<p class="print-only small muted">Namelists for ' + esc(selectedTeacher) +
+      (data.savedAt ? ' — data updated ' + esc(new Date(data.savedAt).toLocaleString()) : '') + '</p>';
+    if (!groups.length) {
+      html += '<div class="card"><p class="empty">No teaching groups are assigned to this name.</p></div>';
+    }
+    groups.forEach(function (g) {
+      var members = ix.membersByGroup.get(g.code) || [];
+      total += members.length;
+      html += '<div class="card"><div class="group-head"><h3>' + esc(g.name || g.code) +
+        (g.subject ? ' <span class="muted">· ' + esc(g.subject) + '</span>' : '') +
+        '</h3><span class="badge">' + members.length + ' student' + (members.length === 1 ? '' : 's') + '</span></div>';
+      if (members.length) {
+        html += '<table class="list"><thead><tr><th style="width:40px">#</th><th>Name</th><th>Class</th><th>Student ID</th></tr></thead><tbody>';
+        members.forEach(function (s, i) {
+          html += '<tr><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.id) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      } else {
+        html += '<p class="empty">No students in this group yet.</p>';
+      }
+      html += '</div>';
+    });
+    if (groups.length) {
+      html += '<p class="muted small">' + groups.length + ' group' + (groups.length === 1 ? '' : 's') +
+        ', ' + total + ' student place' + (total === 1 ? '' : 's') + ' in total.</p>';
+    }
+    out.innerHTML = html;
+  }
+
+  searchBox.addEventListener('input', function () {
+    selectedTeacher = null;
+    $('teacherResults').innerHTML = '';
+    renderSuggestions();
+  });
+  searchBox.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') {
+      var first = $('suggestions').querySelector('button');
+      if (first) selectTeacher(first.textContent);
+    }
+  });
+
+  renderChips();
+  try {
+    var last = localStorage.getItem('namelist.lastTeacher');
+    if (last && ix.groupsByTeacher.has(last)) selectTeacher(last);
+  } catch (e) { /* private mode */ }
+
+  /* ---------- student lookup ---------- */
+  $('studentBox').addEventListener('input', renderStudentResults);
+  function renderStudentResults() {
+    var q = $('studentBox').value.trim().toLowerCase();
+    var out = $('studentResults');
+    if (!q) { out.innerHTML = ''; return; }
+    var matches = data.students.filter(function (s) {
+      return (s.name + ' ' + s.class + ' ' + s.id).toLowerCase().indexOf(q) !== -1;
+    });
+    if (!matches.length) {
+      out.innerHTML = '<div class="card"><p class="empty">No student matches “' + esc($('studentBox').value.trim()) + '”.</p></div>';
+      return;
+    }
+    var html = '';
+    matches.sort(S.byClassThenName).slice(0, 30).forEach(function (s) {
+      var groups = ix.groupsByStudent.get(s.id) || [];
+      html += '<div class="card"><div class="group-head"><h3>' + esc(s.name) +
+        ' <span class="muted">· ' + esc(s.class) + ' · ' + esc(s.id) + '</span></h3>' +
+        (s.combination ? '<span class="badge">' + esc(s.combination) + '</span>' : '') + '</div>';
+      if (groups.length) {
+        html += '<table class="list"><thead><tr><th>Subject</th><th>Group</th><th>Teacher</th></tr></thead><tbody>';
+        groups.forEach(function (g) {
+          html += '<tr><td>' + esc(g.subject) + '</td><td>' + esc(g.name || g.code) + '</td><td>' + esc(g.teacher) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      } else {
+        html += '<p class="empty">Not in any teaching group.</p>';
+      }
+      html += '</div>';
+    });
+    if (matches.length > 30) html += '<p class="muted small">Showing first 30 of ' + matches.length + ' matches — keep typing to narrow down.</p>';
+    out.innerHTML = html;
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Namelist Admin</title>
+<link rel="stylesheet" href="shared/styles.css">
+<style>
+  .topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .topbar .spacer { flex: 1; }
+  .mem-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .mem-grid { grid-template-columns: 1fr; } }
+  .scrolly { max-height: 420px; overflow-y: auto; }
+  #startScreen .card, #setupScreen .card { max-width: 640px; margin: 40px auto; }
+  .bigbtn { font-size: 17px; padding: 12px 22px; }
+  .notice { background: var(--accent-soft); border-radius: var(--radius); padding: 10px 14px; margin: 12px 0; }
+  .unsupported { background: #fbe9e7; color: var(--danger); border-radius: var(--radius); padding: 10px 14px; margin: 12px 0; }
+  dialog label { font-weight: 600; font-size: 14px; }
+  dialog input[type="text"], dialog select { width: 100%; }
+  .import-map { display: grid; grid-template-columns: 160px 1fr; gap: 8px 12px; align-items: center; margin: 10px 0; }
+  td.actions { white-space: nowrap; text-align: right; }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <h1>Namelist Admin</h1>
+  <div class="meta" id="folderMeta"></div>
+</header>
+<main>
+
+  <!-- ============ start ============ -->
+  <section id="startScreen">
+    <div class="card">
+      <h2>Open your data folder</h2>
+      <p>Pick the shared folder that contains (or will contain) <code>namelist.xlsx</code>.
+        Your browser will ask you to allow this page to <strong>edit files</strong> in that folder — choose Allow.</p>
+      <p class="muted small">You will be asked once per session. This page saves three things on every Save:
+        the Excel master file, the <code>data.js</code> snapshot the teacher page reads, and a timestamped
+        backup in <code>backups/</code>.</p>
+      <div class="unsupported" id="unsupportedNote" hidden>
+        This browser does not support folder access. Please open this page in
+        <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong>.
+      </div>
+      <p><button class="primary bigbtn" id="openFolderBtn">Open data folder…</button></p>
+    </div>
+  </section>
+
+  <!-- ============ first run: no xlsx yet ============ -->
+  <section id="setupScreen" hidden>
+    <div class="card">
+      <h2>No <code>namelist.xlsx</code> in this folder yet</h2>
+      <p>Folder: <span class="badge" id="setupFolderName"></span></p>
+      <p>You can start from your existing raw document (an Excel or CSV with your students),
+        or start with an empty list. Nothing is written until you press <strong>Save</strong>.</p>
+      <div class="toolbar">
+        <button class="primary" id="setupImportBtn">Import a raw document…</button>
+        <button id="setupEmptyBtn">Start with an empty list</button>
+        <button id="setupBackBtn">Choose a different folder</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ main editor ============ -->
+  <section id="mainScreen" hidden>
+    <div class="topbar">
+      <span class="badge" id="folderName"></span>
+      <span class="muted small" id="dirtyNote"></span>
+      <span class="spacer"></span>
+      <button id="importBtn">Import…</button>
+      <button id="reloadBtn">Reload from file</button>
+      <button class="primary" id="saveBtn" disabled>Save</button>
+    </div>
+
+    <div class="warnings" id="warningsBox" hidden>
+      <strong>Check these:</strong>
+      <ul id="warningsList"></ul>
+    </div>
+
+    <div class="tabs">
+      <button data-tab="students" class="active">Students <span class="badge" id="countStudents">0</span></button>
+      <button data-tab="groups">Teaching groups <span class="badge" id="countGroups">0</span></button>
+      <button data-tab="memberships">Group members</button>
+    </div>
+
+    <section id="tab-students">
+      <div class="toolbar">
+        <input type="search" id="studentSearch" placeholder="Search name, class or ID" style="min-width:220px">
+        <select id="studentClassFilter"><option value="">All classes</option></select>
+        <span class="spacer"></span>
+        <button class="primary" id="addStudentBtn">Add student</button>
+      </div>
+      <div class="card">
+        <table class="list" id="studentsTable">
+          <thead><tr><th>Student ID</th><th>Name</th><th>Class</th><th>Subject combination</th><th>Groups</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p class="empty" id="studentsEmpty" hidden>No students yet — use <strong>Add student</strong> or <strong>Import…</strong></p>
+        <p class="muted small" id="studentsMore" hidden></p>
+      </div>
+    </section>
+
+    <section id="tab-groups" hidden>
+      <div class="toolbar">
+        <input type="search" id="groupSearch" placeholder="Search group, subject or teacher" style="min-width:220px">
+        <span class="spacer"></span>
+        <button class="primary" id="addGroupBtn">Add group</button>
+      </div>
+      <div class="card">
+        <table class="list" id="groupsTable">
+          <thead><tr><th>Code</th><th>Group name</th><th>Subject</th><th>Teacher</th><th>Members</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p class="empty" id="groupsEmpty" hidden>No teaching groups yet — use <strong>Add group</strong>.</p>
+      </div>
+    </section>
+
+    <section id="tab-memberships" hidden>
+      <div class="toolbar">
+        <label for="memGroupSelect"><strong>Group:</strong></label>
+        <select id="memGroupSelect" style="min-width:280px"></select>
+      </div>
+      <div class="mem-grid" id="memPanels" hidden>
+        <div class="card">
+          <h3>Current members <span class="badge" id="memCount">0</span></h3>
+          <div class="scrolly">
+            <table class="list" id="memTable">
+              <thead><tr><th>Name</th><th>Class</th><th>ID</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="empty" id="memEmpty" hidden>No students in this group yet.</p>
+        </div>
+        <div class="card">
+          <h3>Add students</h3>
+          <div class="toolbar">
+            <input type="search" id="memSearch" placeholder="Search" style="flex:1; min-width:140px">
+            <select id="memClassFilter"><option value="">All classes</option></select>
+            <button id="memAddAllBtn">Add all shown</button>
+          </div>
+          <div class="scrolly">
+            <table class="list" id="memCandidates">
+              <thead><tr><th>Name</th><th>Class</th><th>Combination</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="muted small" id="memCandMore" hidden></p>
+        </div>
+      </div>
+      <p class="empty" id="memNoGroups" hidden>Create a teaching group first (in the <strong>Teaching groups</strong> tab).</p>
+    </section>
+  </section>
+
+  <!-- ============ dialogs ============ -->
+  <dialog id="studentDialog">
+    <h2 id="studentDialogTitle">Add student</h2>
+    <form class="fields" id="studentForm">
+      <label for="sfId">Student ID *</label><input type="text" id="sfId" required>
+      <label for="sfName">Name *</label><input type="text" id="sfName" required>
+      <label for="sfClass">Class</label><input type="text" id="sfClass" list="classList">
+      <label for="sfComb">Subject combination</label><input type="text" id="sfComb">
+      <div class="actions">
+        <button type="button" id="studentCancelBtn">Cancel</button>
+        <button type="submit" class="primary">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="groupDialog">
+    <h2 id="groupDialogTitle">Add group</h2>
+    <form class="fields" id="groupForm">
+      <label for="gfCode">Group code *</label><input type="text" id="gfCode" required>
+      <label for="gfName">Group name</label><input type="text" id="gfName">
+      <label for="gfSubject">Subject</label><input type="text" id="gfSubject" list="subjectList">
+      <label for="gfTeacher">Teacher</label><input type="text" id="gfTeacher" list="teacherList">
+      <div class="actions">
+        <button type="button" id="groupCancelBtn">Cancel</button>
+        <button type="submit" class="primary">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="importDialog">
+    <h2>Import a raw document</h2>
+    <p class="small muted">Pick an Excel/CSV file with your student list. If it is a complete namelist
+      workbook (Students + Groups + Memberships sheets), you can load everything at once.</p>
+    <p><input type="file" id="importFile" accept=".xlsx,.xls,.xlsm,.csv"></p>
+    <div id="importOptions" hidden>
+      <div class="notice" id="importFullNotice" hidden>
+        This file looks like a complete namelist workbook.
+        <button class="linklike" id="importFullBtn">Load everything from it</button> (replaces all current data)
+      </div>
+      <div class="import-map">
+        <label for="impSheet">Sheet</label><select id="impSheet"></select>
+        <label for="impId">Student ID column *</label><select id="impId"></select>
+        <label for="impName">Name column *</label><select id="impName"></select>
+        <label for="impClass">Class column</label><select id="impClass"></select>
+        <label for="impComb">Combination column</label><select id="impComb"></select>
+      </div>
+      <p id="importPreview" class="small muted"></p>
+      <p>
+        <label><input type="radio" name="impMode" value="merge" checked> Merge — update existing students by ID, add new ones</label><br>
+        <label><input type="radio" name="impMode" value="replace"> Replace — delete all current students first</label>
+      </p>
+    </div>
+    <div class="actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px">
+      <button type="button" id="importCancelBtn">Cancel</button>
+      <button type="button" class="primary" id="importGoBtn" disabled>Import students</button>
+    </div>
+  </dialog>
+
+  <datalist id="classList"></datalist>
+  <datalist id="subjectList"></datalist>
+  <datalist id="teacherList"></datalist>
+  <div class="toast" id="toast"></div>
+</main>
+
+<script src="../vendor/xlsx.full.min.js"></script>
+<script src="shared/schema.js"></script>
+<script>
+(function () {
+  'use strict';
+  var S = window.NamelistSchema;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var dirHandle = null;
+  var fileHandle = null;
+  var model = S.emptyModel();
+  var ix = S.buildIndexes(model);
+  var dirty = false;
+  var loadedLastModified = null;
+  var loadWarnings = [];
+  var currentTab = 'students';
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._h);
+    toast._h = setTimeout(function () { t.classList.remove('show'); }, 2600);
+  }
+
+  function show(screen) {
+    ['startScreen', 'setupScreen', 'mainScreen'].forEach(function (id) {
+      $(id).hidden = id !== screen;
+    });
+  }
+
+  /* ================= folder / load ================= */
+
+  if (!window.showDirectoryPicker) {
+    $('unsupportedNote').hidden = false;
+    $('openFolderBtn').disabled = true;
+  }
+
+  $('openFolderBtn').addEventListener('click', async function () {
+    var handle;
+    try {
+      handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    } catch (e) {
+      return; // user cancelled the picker
+    }
+    dirHandle = handle;
+    $('folderMeta').textContent = 'Folder: ' + dirHandle.name;
+    $('folderName').textContent = dirHandle.name;
+    $('setupFolderName').textContent = dirHandle.name;
+    await loadFromFolder();
+  });
+
+  async function loadFromFolder() {
+    try {
+      fileHandle = await dirHandle.getFileHandle('namelist.xlsx');
+    } catch (e) {
+      fileHandle = null;
+      show('setupScreen');
+      return;
+    }
+    try {
+      var f = await fileHandle.getFile();
+      var wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      var res = S.workbookToModel(wb);
+      model = res.model;
+      loadWarnings = res.warnings;
+      loadedLastModified = f.lastModified;
+      setDirty(false);
+      enterMain();
+      toast('Loaded ' + model.students.length + ' students, ' + model.groups.length + ' groups');
+    } catch (err) {
+      alert('Could not read namelist.xlsx: ' + err.message);
+    }
+  }
+
+  function enterMain() {
+    show('mainScreen');
+    refresh();
+  }
+
+  $('setupBackBtn').addEventListener('click', function () { show('startScreen'); });
+  $('setupEmptyBtn').addEventListener('click', function () {
+    model = S.emptyModel();
+    loadWarnings = [];
+    loadedLastModified = null;
+    setDirty(true);
+    enterMain();
+  });
+  $('setupImportBtn').addEventListener('click', function () { openImportDialog(); });
+
+  $('reloadBtn').addEventListener('click', async function () {
+    if (!dirHandle) return;
+    if (dirty && !confirm('Discard your unsaved changes and reload from the file?')) return;
+    await loadFromFolder();
+  });
+
+  /* ================= save ================= */
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function stamp(d) {
+    return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' +
+      pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+  }
+
+  async function writeFile(handle, contents) {
+    var w = await handle.createWritable();
+    await w.write(contents);
+    await w.close();
+  }
+
+  async function writeBackup(file) {
+    if (!file.size) return;
+    var bytes = await file.arrayBuffer();
+    var dir = await dirHandle.getDirectoryHandle('backups', { create: true });
+    var name = 'namelist-' + stamp(new Date(file.lastModified)) + '.xlsx';
+    var h = await dir.getFileHandle(name, { create: true });
+    await writeFile(h, bytes);
+  }
+
+  $('saveBtn').addEventListener('click', save);
+  async function save() {
+    if (!dirHandle) return;
+    $('saveBtn').disabled = true;
+    try {
+      if (fileHandle) {
+        var current = await fileHandle.getFile();
+        if (loadedLastModified !== null && current.lastModified !== loadedLastModified) {
+          var ok = confirm(
+            'Warning: namelist.xlsx was changed by someone else after you loaded it.\n\n' +
+            'OK — save your version anyway (their version is kept as a backup)\n' +
+            'Cancel — do not save (you can Reload to see their changes)');
+          if (!ok) { $('saveBtn').disabled = !dirty; return; }
+        }
+        await writeBackup(current);
+      } else {
+        fileHandle = await dirHandle.getFileHandle('namelist.xlsx', { create: true });
+      }
+      var wb = S.modelToWorkbook(model);
+      var bytes = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      await writeFile(fileHandle, bytes);
+      var dj = await dirHandle.getFileHandle('data.js', { create: true });
+      await writeFile(dj, S.modelToDataJs(model, new Date().toISOString()));
+      loadedLastModified = (await fileHandle.getFile()).lastModified;
+      setDirty(false);
+      toast('Saved — Excel and teacher page are up to date');
+    } catch (err) {
+      alert('Save failed: ' + err.message);
+    }
+    $('saveBtn').disabled = !dirty;
+  }
+
+  function setDirty(v) {
+    dirty = v;
+    $('saveBtn').disabled = !v;
+    $('dirtyNote').textContent = v ? 'Unsaved changes' : '';
+    document.title = (v ? '● ' : '') + 'Namelist Admin';
+  }
+
+  function markDirty() {
+    setDirty(true);
+    refresh();
+  }
+
+  window.addEventListener('beforeunload', function (e) {
+    if (dirty) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  /* ================= shared refresh ================= */
+
+  function refresh() {
+    ix = S.buildIndexes(model);
+    $('countStudents').textContent = model.students.length;
+    $('countGroups').textContent = model.groups.length;
+
+    var warnings = loadWarnings.concat(S.validateModel(model));
+    // De-duplicate: load warnings already include validation at load time.
+    warnings = Array.from(new Set(warnings));
+    $('warningsBox').hidden = !warnings.length;
+    $('warningsList').innerHTML = warnings.slice(0, 20).map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') +
+      (warnings.length > 20 ? '<li>… and ' + (warnings.length - 20) + ' more</li>' : '');
+
+    fillClassOptions($('studentClassFilter'));
+    fillClassOptions($('memClassFilter'));
+    fillDatalists();
+
+    if (currentTab === 'students') renderStudents();
+    if (currentTab === 'groups') renderGroups();
+    if (currentTab === 'memberships') renderMemberships();
+  }
+
+  function uniqueClasses() {
+    return Array.from(new Set(model.students.map(function (s) { return s.class; }).filter(Boolean))).sort();
+  }
+
+  function fillClassOptions(sel) {
+    var cur = sel.value;
+    sel.innerHTML = '<option value="">All classes</option>' + uniqueClasses().map(function (c) {
+      return '<option value="' + esc(c) + '">' + esc(c) + '</option>';
+    }).join('');
+    sel.value = cur;
+  }
+
+  function fillDatalists() {
+    $('classList').innerHTML = uniqueClasses().map(function (c) { return '<option value="' + esc(c) + '">'; }).join('');
+    var subjects = Array.from(new Set(model.groups.map(function (g) { return g.subject; }).filter(Boolean))).sort();
+    $('subjectList').innerHTML = subjects.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('');
+    $('teacherList').innerHTML = ix.teachers.map(function (t) { return '<option value="' + esc(t) + '">'; }).join('');
+  }
+
+  /* ================= tabs ================= */
+
+  document.querySelectorAll('.tabs button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      currentTab = btn.dataset.tab;
+      document.querySelectorAll('.tabs button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+      ['students', 'groups', 'memberships'].forEach(function (t) { $('tab-' + t).hidden = t !== currentTab; });
+      refresh();
+    });
+  });
+
+  /* ================= students tab ================= */
+
+  var STUDENT_ROW_CAP = 400;
+  $('studentSearch').addEventListener('input', renderStudents);
+  $('studentClassFilter').addEventListener('change', renderStudents);
+  $('addStudentBtn').addEventListener('click', function () { openStudentDialog(null); });
+
+  function filteredStudents() {
+    var q = $('studentSearch').value.trim().toLowerCase();
+    var cls = $('studentClassFilter').value;
+    return model.students.filter(function (s) {
+      if (cls && s.class !== cls) return false;
+      if (q && (s.name + ' ' + s.class + ' ' + s.id + ' ' + s.combination).toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+  }
+
+  function renderStudents() {
+    var rows = filteredStudents().slice().sort(S.byClassThenName);
+    var shown = rows.slice(0, STUDENT_ROW_CAP);
+    var tbody = $('studentsTable').querySelector('tbody');
+    tbody.innerHTML = shown.map(function (s) {
+      var g = (ix.groupsByStudent.get(s.id) || []).length;
+      return '<tr data-id="' + esc(s.id) + '">' +
+        '<td>' + esc(s.id) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td>' +
+        '<td>' + esc(s.combination) + '</td><td>' + g + '</td>' +
+        '<td class="actions"><button class="linklike" data-act="edit">Edit</button>' +
+        '<button class="linklike danger" data-act="del">Delete</button></td></tr>';
+    }).join('');
+    $('studentsEmpty').hidden = model.students.length > 0;
+    $('studentsMore').hidden = rows.length <= STUDENT_ROW_CAP;
+    if (rows.length > STUDENT_ROW_CAP) {
+      $('studentsMore').textContent = 'Showing first ' + STUDENT_ROW_CAP + ' of ' + rows.length + ' — use search or the class filter to narrow down.';
+    }
+  }
+
+  $('studentsTable').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-act]');
+    if (!btn) return;
+    var id = btn.closest('tr').dataset.id;
+    var student = ix.studentsById.get(id);
+    if (!student) return;
+    if (btn.dataset.act === 'edit') openStudentDialog(student);
+    if (btn.dataset.act === 'del') {
+      var n = (ix.groupsByStudent.get(id) || []).length;
+      if (!confirm('Delete ' + student.name + ' (' + id + ')' + (n ? ' and remove them from ' + n + ' group(s)' : '') + '?')) return;
+      model.students = model.students.filter(function (s) { return s.id !== id; });
+      model.memberships = model.memberships.filter(function (m) { return m.studentId !== id; });
+      markDirty();
+    }
+  });
+
+  var editingStudentId = null;
+  function openStudentDialog(student) {
+    editingStudentId = student ? student.id : null;
+    $('studentDialogTitle').textContent = student ? 'Edit student' : 'Add student';
+    $('sfId').value = student ? student.id : '';
+    $('sfName').value = student ? student.name : '';
+    $('sfClass').value = student ? student.class : '';
+    $('sfComb').value = student ? student.combination : '';
+    $('studentDialog').showModal();
+    $('sfId').focus();
+  }
+  $('studentCancelBtn').addEventListener('click', function () { $('studentDialog').close(); });
+  $('studentForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var id = S.norm($('sfId').value);
+    var rec = { id: id, name: S.norm($('sfName').value), class: S.norm($('sfClass').value), combination: S.norm($('sfComb').value) };
+    if (!id || !rec.name) return;
+    var clash = ix.studentsById.get(id);
+    if (clash && id !== editingStudentId) {
+      alert('Student ID "' + id + '" is already used by ' + clash.name + '.');
+      return;
+    }
+    if (editingStudentId === null) {
+      model.students.push(rec);
+    } else {
+      var at = model.students.findIndex(function (s) { return s.id === editingStudentId; });
+      model.students[at] = rec;
+      if (id !== editingStudentId) {
+        model.memberships.forEach(function (m) { if (m.studentId === editingStudentId) m.studentId = id; });
+      }
+    }
+    $('studentDialog').close();
+    markDirty();
+  });
+
+  /* ================= groups tab ================= */
+
+  $('groupSearch').addEventListener('input', renderGroups);
+  $('addGroupBtn').addEventListener('click', function () { openGroupDialog(null); });
+
+  function renderGroups() {
+    var q = $('groupSearch').value.trim().toLowerCase();
+    var rows = model.groups.filter(function (g) {
+      return !q || (g.code + ' ' + g.name + ' ' + g.subject + ' ' + g.teacher).toLowerCase().indexOf(q) !== -1;
+    }).slice().sort(function (a, b) {
+      return a.subject.localeCompare(b.subject) || a.name.localeCompare(b.name) || a.code.localeCompare(b.code);
+    });
+    var tbody = $('groupsTable').querySelector('tbody');
+    tbody.innerHTML = rows.map(function (g) {
+      var n = (ix.membersByGroup.get(g.code) || []).length;
+      return '<tr data-code="' + esc(g.code) + '">' +
+        '<td>' + esc(g.code) + '</td><td>' + esc(g.name) + '</td><td>' + esc(g.subject) + '</td>' +
+        '<td>' + esc(g.teacher) + '</td><td>' + n + '</td>' +
+        '<td class="actions"><button class="linklike" data-act="edit">Edit</button>' +
+        '<button class="linklike danger" data-act="del">Delete</button></td></tr>';
+    }).join('');
+    $('groupsEmpty').hidden = model.groups.length > 0;
+  }
+
+  $('groupsTable').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-act]');
+    if (!btn) return;
+    var code = btn.closest('tr').dataset.code;
+    var group = ix.groupsByCode.get(code);
+    if (!group) return;
+    if (btn.dataset.act === 'edit') openGroupDialog(group);
+    if (btn.dataset.act === 'del') {
+      var n = (ix.membersByGroup.get(code) || []).length;
+      if (!confirm('Delete group "' + (group.name || code) + '"' + (n ? ' and its ' + n + ' membership(s)' : '') + '?')) return;
+      model.groups = model.groups.filter(function (g) { return g.code !== code; });
+      model.memberships = model.memberships.filter(function (m) { return m.groupCode !== code; });
+      markDirty();
+    }
+  });
+
+  var editingGroupCode = null;
+  function openGroupDialog(group) {
+    editingGroupCode = group ? group.code : null;
+    $('groupDialogTitle').textContent = group ? 'Edit group' : 'Add group';
+    $('gfCode').value = group ? group.code : '';
+    $('gfName').value = group ? group.name : '';
+    $('gfSubject').value = group ? group.subject : '';
+    $('gfTeacher').value = group ? group.teacher : '';
+    $('groupDialog').showModal();
+    $('gfCode').focus();
+  }
+  $('groupCancelBtn').addEventListener('click', function () { $('groupDialog').close(); });
+  $('groupForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var code = S.norm($('gfCode').value);
+    var rec = { code: code, name: S.norm($('gfName').value), subject: S.norm($('gfSubject').value), teacher: S.norm($('gfTeacher').value) };
+    if (!code) return;
+    var clash = ix.groupsByCode.get(code);
+    if (clash && code !== editingGroupCode) {
+      alert('Group code "' + code + '" is already used by "' + (clash.name || clash.code) + '".');
+      return;
+    }
+    if (editingGroupCode === null) {
+      model.groups.push(rec);
+    } else {
+      var at = model.groups.findIndex(function (g) { return g.code === editingGroupCode; });
+      model.groups[at] = rec;
+      if (code !== editingGroupCode) {
+        model.memberships.forEach(function (m) { if (m.groupCode === editingGroupCode) m.groupCode = code; });
+      }
+    }
+    $('groupDialog').close();
+    markDirty();
+  });
+
+  /* ================= memberships tab ================= */
+
+  var MEM_CAND_CAP = 200;
+  $('memGroupSelect').addEventListener('change', renderMemberships);
+  $('memSearch').addEventListener('input', renderMemberships);
+  $('memClassFilter').addEventListener('change', renderMemberships);
+
+  function selectedGroupCode() {
+    return $('memGroupSelect').value;
+  }
+
+  function renderMemberships() {
+    var sel = $('memGroupSelect');
+    var prev = sel.value;
+    var groups = model.groups.slice().sort(function (a, b) {
+      return a.subject.localeCompare(b.subject) || a.name.localeCompare(b.name) || a.code.localeCompare(b.code);
+    });
+    sel.innerHTML = groups.map(function (g) {
+      var label = (g.name || g.code) + (g.subject ? ' — ' + g.subject : '') + (g.teacher ? ' (' + g.teacher + ')' : '');
+      return '<option value="' + esc(g.code) + '">' + esc(label) + '</option>';
+    }).join('');
+    if (groups.some(function (g) { return g.code === prev; })) sel.value = prev;
+
+    $('memNoGroups').hidden = groups.length > 0;
+    $('memPanels').hidden = groups.length === 0;
+    if (!groups.length) return;
+
+    var code = selectedGroupCode();
+    var members = ix.membersByGroup.get(code) || [];
+    $('memCount').textContent = members.length;
+    $('memTable').querySelector('tbody').innerHTML = members.map(function (s) {
+      return '<tr data-id="' + esc(s.id) + '"><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.id) + '</td>' +
+        '<td class="actions"><button class="linklike danger" data-act="remove">Remove</button></td></tr>';
+    }).join('');
+    $('memEmpty').hidden = members.length > 0;
+
+    var inGroup = {};
+    members.forEach(function (s) { inGroup[s.id] = true; });
+    var q = $('memSearch').value.trim().toLowerCase();
+    var cls = $('memClassFilter').value;
+    var candidates = model.students.filter(function (s) {
+      if (inGroup[s.id]) return false;
+      if (cls && s.class !== cls) return false;
+      if (q && (s.name + ' ' + s.class + ' ' + s.id + ' ' + s.combination).toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    }).sort(S.byClassThenName);
+    var shown = candidates.slice(0, MEM_CAND_CAP);
+    $('memCandidates').querySelector('tbody').innerHTML = shown.map(function (s) {
+      return '<tr data-id="' + esc(s.id) + '"><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.combination) + '</td>' +
+        '<td class="actions"><button class="linklike" data-act="add">Add</button></td></tr>';
+    }).join('');
+    $('memCandMore').hidden = candidates.length <= MEM_CAND_CAP;
+    if (candidates.length > MEM_CAND_CAP) {
+      $('memCandMore').textContent = 'Showing first ' + MEM_CAND_CAP + ' of ' + candidates.length + ' — use search or the class filter.';
+    }
+  }
+
+  $('memTable').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-act="remove"]');
+    if (!btn) return;
+    var id = btn.closest('tr').dataset.id;
+    var code = selectedGroupCode();
+    model.memberships = model.memberships.filter(function (m) { return !(m.studentId === id && m.groupCode === code); });
+    markDirty();
+  });
+
+  $('memCandidates').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-act="add"]');
+    if (!btn) return;
+    addMembership(btn.closest('tr').dataset.id, selectedGroupCode());
+    markDirty();
+  });
+
+  $('memAddAllBtn').addEventListener('click', function () {
+    var code = selectedGroupCode();
+    if (!code) return;
+    var rows = $('memCandidates').querySelectorAll('tbody tr');
+    if (!rows.length) return;
+    if (!confirm('Add all ' + rows.length + ' shown students to this group?')) return;
+    rows.forEach(function (tr) { addMembership(tr.dataset.id, code); });
+    markDirty();
+  });
+
+  function addMembership(studentId, groupCode) {
+    if (!studentId || !groupCode) return;
+    var exists = model.memberships.some(function (m) { return m.studentId === studentId && m.groupCode === groupCode; });
+    if (!exists) model.memberships.push({ studentId: studentId, groupCode: groupCode });
+  }
+
+  /* ================= import ================= */
+
+  var importWb = null;
+
+  $('importBtn').addEventListener('click', openImportDialog);
+  $('importCancelBtn').addEventListener('click', function () { $('importDialog').close(); });
+
+  function openImportDialog() {
+    importWb = null;
+    $('importFile').value = '';
+    $('importOptions').hidden = true;
+    $('importGoBtn').disabled = true;
+    $('importFullNotice').hidden = true;
+    $('importDialog').showModal();
+  }
+
+  $('importFile').addEventListener('change', async function () {
+    var file = $('importFile').files[0];
+    if (!file) return;
+    try {
+      importWb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    } catch (err) {
+      alert('Could not read this file: ' + err.message);
+      return;
+    }
+    $('importOptions').hidden = false;
+    $('importGoBtn').disabled = false;
+
+    var looksFull = ['Students', 'Groups', 'Memberships'].every(function (n) {
+      return importWb.SheetNames.some(function (sn) { return S.normKey(sn) === S.normKey(n); });
+    });
+    $('importFullNotice').hidden = !looksFull;
+
+    $('impSheet').innerHTML = importWb.SheetNames.map(function (n) {
+      return '<option value="' + esc(n) + '">' + esc(n) + '</option>';
+    }).join('');
+    fillImportMapping();
+  });
+
+  $('impSheet').addEventListener('change', fillImportMapping);
+
+  function importHeaderRow() {
+    var ws = importWb.Sheets[$('impSheet').value];
+    var rows = S.sheetRows(ws);
+    return { headers: rows.length ? rows[0] : [], rowCount: Math.max(0, rows.length - 1), rows: rows };
+  }
+
+  function fillImportMapping() {
+    if (!importWb) return;
+    var info = importHeaderRow();
+    var options = ['<option value="">— none —</option>'].concat(info.headers.map(function (h, i) {
+      return '<option value="' + i + '">' + esc(S.norm(h) || '(column ' + (i + 1) + ')') + '</option>';
+    })).join('');
+    ['impId', 'impName', 'impClass', 'impComb'].forEach(function (id) { $(id).innerHTML = options; });
+    var guess = S.mapHeaders(info.headers, S.STUDENT_FIELDS);
+    if ('id' in guess) $('impId').value = guess.id;
+    if ('name' in guess) $('impName').value = guess.name;
+    if ('class' in guess) $('impClass').value = guess.class;
+    if ('combination' in guess) $('impComb').value = guess.combination;
+    $('importPreview').textContent = info.rowCount + ' data row(s) found in sheet "' + $('impSheet').value + '".';
+  }
+
+  $('importFullBtn').addEventListener('click', function () {
+    if (!importWb) return;
+    if (!confirm('Replace ALL current data (students, groups, memberships) with this workbook?')) return;
+    var res = S.workbookToModel(importWb);
+    model = res.model;
+    loadWarnings = res.warnings;
+    $('importDialog').close();
+    setDirty(true);
+    enterMain();
+    toast('Loaded ' + model.students.length + ' students, ' + model.groups.length + ' groups — press Save to write files');
+  });
+
+  $('importGoBtn').addEventListener('click', function () {
+    if (!importWb) return;
+    var idCol = $('impId').value, nameCol = $('impName').value;
+    if (idCol === '' || nameCol === '') {
+      alert('Please choose the Student ID and Name columns.');
+      return;
+    }
+    var info = importHeaderRow();
+    var mode = document.querySelector('input[name="impMode"]:checked').value;
+    var clsCol = $('impClass').value, combCol = $('impComb').value;
+    var incoming = [];
+    var skipped = 0;
+    for (var r = 1; r < info.rows.length; r++) {
+      var row = info.rows[r];
+      var rec = {
+        id: S.norm(row[idCol]),
+        name: S.norm(row[nameCol]),
+        class: clsCol === '' ? '' : S.norm(row[clsCol]),
+        combination: combCol === '' ? '' : S.norm(row[combCol]),
+      };
+      if (!rec.id || !rec.name) { skipped++; continue; }
+      incoming.push(rec);
+    }
+    if (!incoming.length) {
+      alert('No usable rows found (each row needs a Student ID and a Name).');
+      return;
+    }
+    var added = 0, updated = 0;
+    if (mode === 'replace') {
+      var keep = {};
+      incoming.forEach(function (s) { keep[s.id] = true; });
+      model.students = [];
+      model.memberships = model.memberships.filter(function (m) { return keep[m.studentId]; });
+    }
+    var byId = {};
+    model.students.forEach(function (s, i) { byId[s.id] = i; });
+    incoming.forEach(function (rec) {
+      if (rec.id in byId) { model.students[byId[rec.id]] = rec; updated++; }
+      else { byId[rec.id] = model.students.length; model.students.push(rec); added++; }
+    });
+    $('importDialog').close();
+    setDirty(true);
+    enterMain();
+    toast('Imported: ' + added + ' added, ' + updated + ' updated' + (skipped ? ', ' + skipped + ' rows skipped' : ''));
+  });
+
+  /* Test hook: lets automated tests render the editor without folder access. */
+  window.__loadModelForTest = function (m) {
+    model = m;
+    loadWarnings = [];
+    $('folderName').textContent = '(test)';
+    setDirty(false);
+    enterMain();
+  };
+})();
+</script>
+</body>
+</html>

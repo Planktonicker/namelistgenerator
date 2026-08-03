@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Class Namelists</title>
+<link rel="stylesheet" href="shared/styles.css">
+<style>
+  .teacher-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .teacher-chips button {
+    border-radius: 999px;
+    padding: 5px 14px;
+    background: var(--accent-soft);
+    border-color: transparent;
+    color: var(--accent);
+  }
+  .teacher-chips button:hover { background: var(--accent); color: var(--accent-ink); }
+  .suggestions { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+  .suggestions button { text-align: left; border: none; background: none; padding: 7px 10px; border-radius: var(--radius); }
+  .suggestions button:hover, .suggestions button.hilite { background: var(--accent-soft); }
+  .group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  #searchBox { width: 100%; max-width: 480px; font-size: 17px; padding: 12px 14px; }
+  .result-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .result-title h2 { font-size: 20px; }
+  .print-only { display: none; }
+  @media print { .print-only { display: block; } }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <h1>Class Namelists</h1>
+  <div class="meta" id="dataMeta"></div>
+</header>
+<main>
+  <div id="errorState" class="card" hidden>
+    <h2>No data found</h2>
+    <p>This page could not find its data file (<code>data.js</code>) in the same folder.</p>
+    <p class="muted">If you are the administrator: open <code>admin.html</code>, load or create the data,
+      and press <strong>Save</strong> — that regenerates <code>data.js</code> next to this page.
+      Otherwise, please contact your administrator.</p>
+  </div>
+
+  <div id="app" hidden>
+    <div class="tabs no-print">
+      <button id="tabTeacherBtn" class="active">My namelists</button>
+      <button id="tabStudentBtn">Find a student</button>
+    </div>
+
+    <section id="teacherTab">
+      <div class="card no-print">
+        <label for="searchBox"><h2>Type your name to see your namelists</h2></label>
+        <input type="search" id="searchBox" placeholder="e.g. Mrs Lim" autocomplete="off">
+        <div class="suggestions" id="suggestions"></div>
+        <div class="teacher-chips" id="teacherChips"></div>
+      </div>
+      <div id="teacherResults"></div>
+    </section>
+
+    <section id="studentTab" hidden>
+      <div class="card no-print">
+        <label for="studentBox"><h2>Search for a student</h2></label>
+        <input type="search" id="studentBox" placeholder="Name, class or student ID" autocomplete="off">
+      </div>
+      <div id="studentResults"></div>
+    </section>
+  </div>
+</main>
+
+<script src="data.js"></script>
+<script src="shared/schema.js"></script>
+<script>
+(function () {
+  'use strict';
+  var S = window.NamelistSchema;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var data = window.NAMELIST_DATA;
+  if (!data || !Array.isArray(data.students)) {
+    $('errorState').hidden = false;
+    $('dataMeta').textContent = '';
+    return;
+  }
+  var ix = S.buildIndexes(data);
+  $('app').hidden = false;
+  if (data.savedAt) {
+    var d = new Date(data.savedAt);
+    $('dataMeta').textContent = 'Data updated: ' + (isNaN(d) ? data.savedAt : d.toLocaleString());
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* ---------- tabs ---------- */
+  $('tabTeacherBtn').addEventListener('click', function () { switchTab('teacher'); });
+  $('tabStudentBtn').addEventListener('click', function () { switchTab('student'); });
+  function switchTab(which) {
+    $('teacherTab').hidden = which !== 'teacher';
+    $('studentTab').hidden = which !== 'student';
+    $('tabTeacherBtn').classList.toggle('active', which === 'teacher');
+    $('tabStudentBtn').classList.toggle('active', which === 'student');
+  }
+
+  /* ---------- teacher view ---------- */
+  var searchBox = $('searchBox');
+  var selectedTeacher = null;
+
+  function renderChips() {
+    var chips = $('teacherChips');
+    if (!ix.teachers.length) {
+      chips.innerHTML = '<p class="muted">No teachers are assigned to any group yet.</p>';
+      return;
+    }
+    chips.innerHTML = '';
+    ix.teachers.forEach(function (t) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = t;
+      b.addEventListener('click', function () { selectTeacher(t); });
+      chips.appendChild(b);
+    });
+  }
+
+  function renderSuggestions() {
+    var q = searchBox.value.trim().toLowerCase();
+    var box = $('suggestions');
+    box.innerHTML = '';
+    $('teacherChips').style.display = q ? 'none' : '';
+    if (!q) return;
+    var matches = ix.teachers.filter(function (t) { return t.toLowerCase().indexOf(q) !== -1; });
+    matches.slice(0, 12).forEach(function (t, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = t;
+      if (i === 0) b.classList.add('hilite');
+      b.addEventListener('click', function () { selectTeacher(t); });
+      box.appendChild(b);
+    });
+    if (!matches.length) box.innerHTML = '<p class="muted small">No teacher matches “' + esc(searchBox.value.trim()) + '”.</p>';
+  }
+
+  function selectTeacher(name) {
+    selectedTeacher = name;
+    searchBox.value = name;
+    $('suggestions').innerHTML = '';
+    $('teacherChips').style.display = 'none';
+    try { localStorage.setItem('namelist.lastTeacher', name); } catch (e) { /* private mode */ }
+    renderTeacherResults();
+  }
+
+  function renderTeacherResults() {
+    var out = $('teacherResults');
+    if (!selectedTeacher) { out.innerHTML = ''; return; }
+    var groups = ix.groupsByTeacher.get(selectedTeacher) || [];
+    var total = 0;
+    var html = '<div class="result-title"><h2>' + esc(selectedTeacher) + '</h2>' +
+      '<span class="no-print"><button class="primary" onclick="window.print()">Print</button></span></div>' +
+      '<p class="print-only small muted">Namelists for ' + esc(selectedTeacher) +
+      (data.savedAt ? ' — data updated ' + esc(new Date(data.savedAt).toLocaleString()) : '') + '</p>';
+    if (!groups.length) {
+      html += '<div class="card"><p class="empty">No teaching groups are assigned to this name.</p></div>';
+    }
+    groups.forEach(function (g) {
+      var members = ix.membersByGroup.get(g.code) || [];
+      total += members.length;
+      html += '<div class="card"><div class="group-head"><h3>' + esc(g.name || g.code) +
+        (g.subject ? ' <span class="muted">· ' + esc(g.subject) + '</span>' : '') +
+        '</h3><span class="badge">' + members.length + ' student' + (members.length === 1 ? '' : 's') + '</span></div>';
+      if (members.length) {
+        html += '<table class="list"><thead><tr><th style="width:40px">#</th><th>Name</th><th>Class</th><th>Student ID</th></tr></thead><tbody>';
+        members.forEach(function (s, i) {
+          html += '<tr><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.id) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      } else {
+        html += '<p class="empty">No students in this group yet.</p>';
+      }
+      html += '</div>';
+    });
+    if (groups.length) {
+      html += '<p class="muted small">' + groups.length + ' group' + (groups.length === 1 ? '' : 's') +
+        ', ' + total + ' student place' + (total === 1 ? '' : 's') + ' in total.</p>';
+    }
+    out.innerHTML = html;
+  }
+
+  searchBox.addEventListener('input', function () {
+    selectedTeacher = null;
+    $('teacherResults').innerHTML = '';
+    renderSuggestions();
+  });
+  searchBox.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') {
+      var first = $('suggestions').querySelector('button');
+      if (first) selectTeacher(first.textContent);
+    }
+  });
+
+  renderChips();
+  try {
+    var last = localStorage.getItem('namelist.lastTeacher');
+    if (last && ix.groupsByTeacher.has(last)) selectTeacher(last);
+  } catch (e) { /* private mode */ }
+
+  /* ---------- student lookup ---------- */
+  $('studentBox').addEventListener('input', renderStudentResults);
+  function renderStudentResults() {
+    var q = $('studentBox').value.trim().toLowerCase();
+    var out = $('studentResults');
+    if (!q) { out.innerHTML = ''; return; }
+    var matches = data.students.filter(function (s) {
+      return (s.name + ' ' + s.class + ' ' + s.id).toLowerCase().indexOf(q) !== -1;
+    });
+    if (!matches.length) {
+      out.innerHTML = '<div class="card"><p class="empty">No student matches “' + esc($('studentBox').value.trim()) + '”.</p></div>';
+      return;
+    }
+    var html = '';
+    matches.sort(S.byClassThenName).slice(0, 30).forEach(function (s) {
+      var groups = ix.groupsByStudent.get(s.id) || [];
+      html += '<div class="card"><div class="group-head"><h3>' + esc(s.name) +
+        ' <span class="muted">· ' + esc(s.class) + ' · ' + esc(s.id) + '</span></h3>' +
+        (s.combination ? '<span class="badge">' + esc(s.combination) + '</span>' : '') + '</div>';
+      if (groups.length) {
+        html += '<table class="list"><thead><tr><th>Subject</th><th>Group</th><th>Teacher</th></tr></thead><tbody>';
+        groups.forEach(function (g) {
+          html += '<tr><td>' + esc(g.subject) + '</td><td>' + esc(g.name || g.code) + '</td><td>' + esc(g.teacher) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      } else {
+        html += '<p class="empty">Not in any teaching group.</p>';
+      }
+      html += '</div>';
+    });
+    if (matches.length > 30) html += '<p class="muted small">Showing first 30 of ' + matches.length + ' matches — keep typing to narrow down.</p>';
+    out.innerHTML = html;
+  }
+})();
+</script>
+</body>
+</html>

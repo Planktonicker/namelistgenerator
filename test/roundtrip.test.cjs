@@ -118,6 +118,59 @@ test('subjectSummary shows the key only when the value needs it', () => {
     ['EL', 'MT', 'HMT']).includes('mt cl g2'));
 });
 
+test('applyLevelUpdate matches by name, keeps IDs and memberships, scopes columns', () => {
+  const model = {
+    students: [
+      { id: '1R1-01', name: 'Alice Tan', class: '1R1', gender: 'F', pg: '3', subjects: { EL: 'EL G3', MT: 'CL G3' } },
+      { id: '1R1-02', name: 'Bob Lim', class: '1R1', gender: 'M', pg: '2', subjects: { EL: 'EL G2', MT: 'ML G2' } },
+      { id: '2R1-01', name: 'Sec Two Kid', class: '2R1', gender: 'M', pg: '1', subjects: { EL: 'EL G1' } },
+    ],
+    groups: [{ code: 'G1', name: 'G', subject: 'X', teacher: 'T' }],
+    memberships: [
+      { studentId: '1R1-01', groupCode: 'G1' },
+      { studentId: '2R1-01', groupCode: 'G1' },
+    ],
+    subjectKeys: ['EL', 'MT'],
+    sources: [],
+  };
+  // New file: Alice's EL band changed, Bob missing, one new student.
+  // File has EL and GEOG columns but no MT column.
+  const imported = [
+    { id: '1R1-01', name: 'ALICE TAN', class: '1R1', gender: 'F', pg: '3', subjects: { EL: 'EL G1', GEOG: 'GEOG G1' } },
+    { id: '1R1-02', name: 'New Person', class: '1R1', gender: 'M', pg: '2', subjects: { EL: 'EL G2' } },
+  ];
+  const report = S.applyLevelUpdate(model, imported, ['EL', 'GEOG']);
+  assert.deepStrictEqual(report.classes, ['1R1']);
+  assert.strictEqual(report.updated, 1);
+  assert.strictEqual(report.added, 1);
+  assert.deepStrictEqual(report.missingIds, ['1R1-02']);   // Bob
+
+  const alice = model.students.find((s) => s.id === '1R1-01');
+  assert.strictEqual(alice.name, 'ALICE TAN');             // takes the file's casing
+  assert.deepStrictEqual(alice.subjects, { EL: 'EL G1', MT: 'CL G3', GEOG: 'GEOG G1' }); // MT untouched
+  // new student got a free ID, not Bob's
+  const newKid = model.students.find((s) => s.name === 'New Person');
+  assert.strictEqual(newKid.id, '1R1-03');
+  // untouched level and memberships intact
+  assert.ok(model.students.some((s) => s.id === '2R1-01'));
+  assert.strictEqual(model.memberships.length, 2);
+  assert.deepStrictEqual(model.subjectKeys, ['EL', 'MT', 'GEOG']);
+});
+
+test('findNewestMatch picks the latest matching file and skips lock files', () => {
+  const files = [
+    { name: 'Sec 1 Subject Allocation_14 Jan.xlsx', lastModified: 100 },
+    { name: 'Sec 1 Subject Allocation_21 July.xlsx', lastModified: 900 },
+    { name: '~$Sec 1 Subject Allocation_21 July.xlsx', lastModified: 999 },
+    { name: 'Sec 2 Subject Allocation_13Jan.xlsx', lastModified: 500 },
+  ];
+  assert.strictEqual(S.findNewestMatch(files, 'Sec 1 Subject Allocation').name,
+    'Sec 1 Subject Allocation_21 July.xlsx');
+  assert.strictEqual(S.findNewestMatch(files, 'sec 2 subject').name,
+    'Sec 2 Subject Allocation_13Jan.xlsx');
+  assert.strictEqual(S.findNewestMatch(files, 'Sec 3'), null);
+});
+
 test('validation flags duplicates and dangling memberships', () => {
   const model = {
     students: [

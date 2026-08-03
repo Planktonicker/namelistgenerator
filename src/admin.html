@@ -89,6 +89,7 @@
       <button data-tab="students" class="active">Students <span class="badge" id="countStudents">0</span></button>
       <button data-tab="groups">Teaching groups <span class="badge" id="countGroups">0</span></button>
       <button data-tab="memberships">Group members</button>
+      <button data-tab="sources">School files</button>
     </div>
 
     <section id="tab-students">
@@ -171,6 +172,28 @@
       </div>
       <p class="empty" id="memNoGroups" hidden>Create a teaching group first (in the <strong>Teaching groups</strong> tab).</p>
     </section>
+
+    <section id="tab-sources" hidden>
+      <div class="card">
+        <h3>Update levels from the school's files</h3>
+        <p class="hint">Register each level with a filename pattern (e.g. “Sec 1 Subject Allocation”).
+          When the school saves a new version — even under a new dated name — choose the folder and the
+          newest matching file is found automatically. Updates match students <strong>by name</strong>, so
+          their groups are kept, and only that level's classes are touched. The school's files themselves
+          are never modified.</p>
+        <div class="toolbar">
+          <button class="primary" id="addSourceBtn">Add level</button>
+          <button id="srcFolderBtn">Choose school files folder…</button>
+          <span class="badge plain" id="srcFolderName" hidden></span>
+        </div>
+        <table class="list" id="sourcesTable">
+          <thead><tr><th>Level</th><th>File pattern</th><th>Last imported</th><th>Newest matching file</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p class="empty" id="sourcesEmpty" hidden>No levels registered yet — use <strong>Add level</strong>.</p>
+        <input type="file" id="srcFileInput" accept=".xlsx,.xls,.xlsm,.csv" hidden>
+      </div>
+    </section>
   </section>
 
   <!-- ============ selection action bar ============ -->
@@ -208,6 +231,18 @@
       <label for="gfTeacher">Teacher</label><input type="text" id="gfTeacher" list="teacherList">
       <div class="actions">
         <button type="button" id="groupCancelBtn">Cancel</button>
+        <button type="submit" class="primary">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="sourceDialog">
+    <h2 id="sourceDialogTitle">Add level</h2>
+    <form class="fields" id="sourceForm">
+      <label for="srcLevel">Level *</label><input type="text" id="srcLevel" required placeholder="e.g. Sec 1">
+      <label for="srcPattern">File pattern *</label><input type="text" id="srcPattern" required placeholder="e.g. Sec 1 Subject Allocation">
+      <div class="actions">
+        <button type="button" id="sourceCancelBtn">Cancel</button>
         <button type="submit" class="primary">OK</button>
       </div>
     </form>
@@ -481,6 +516,7 @@
     if (currentTab === 'students') renderStudents();
     if (currentTab === 'groups') renderGroups();
     if (currentTab === 'memberships') renderMemberships();
+    if (currentTab === 'sources') renderSources();
   }
 
   function uniqueValues(field) {
@@ -509,7 +545,7 @@
     btn.addEventListener('click', function () {
       currentTab = btn.dataset.tab;
       document.querySelectorAll('.tabs button').forEach(function (b) { b.classList.toggle('active', b === btn); });
-      ['students', 'groups', 'memberships'].forEach(function (t) { $('tab-' + t).hidden = t !== currentTab; });
+      ['students', 'groups', 'memberships', 'sources'].forEach(function (t) { $('tab-' + t).hidden = t !== currentTab; });
       refresh();
     });
   });
@@ -989,6 +1025,184 @@
     candSelected.clear();
   });
 
+  /* ================= school-file sources ================= */
+
+  var srcDirHandle = null;
+  var srcFiles = [];        // [{ name, lastModified, handle }]
+  var editingSourceIndex = null;
+  var pendingUpdateIndex = null;
+
+  $('addSourceBtn').addEventListener('click', function () { openSourceDialog(null); });
+  $('sourceCancelBtn').addEventListener('click', function () { $('sourceDialog').close(); });
+
+  function openSourceDialog(index) {
+    editingSourceIndex = index;
+    var src = index === null ? null : model.sources[index];
+    $('sourceDialogTitle').textContent = src ? 'Edit level' : 'Add level';
+    $('srcLevel').value = src ? src.level : '';
+    $('srcPattern').value = src ? src.pattern : '';
+    $('sourceDialog').showModal();
+    $('srcLevel').focus();
+  }
+
+  $('sourceForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var prev = editingSourceIndex === null ? null : model.sources[editingSourceIndex];
+    var rec = {
+      level: S.norm($('srcLevel').value),
+      pattern: S.norm($('srcPattern').value),
+      lastFile: prev ? prev.lastFile : '',
+      lastImported: prev ? prev.lastImported : '',
+    };
+    if (!rec.level || !rec.pattern) return;
+    if (prev) model.sources[editingSourceIndex] = rec;
+    else model.sources.push(rec);
+    $('sourceDialog').close();
+    markDirty();
+  });
+
+  $('srcFolderBtn').addEventListener('click', async function () {
+    var handle;
+    try { handle = await window.showDirectoryPicker({ mode: 'read' }); }
+    catch (e) { return; } // user cancelled
+    srcDirHandle = handle;
+    srcFiles = [];
+    for await (var entry of srcDirHandle.values()) {
+      if (entry.kind !== 'file' || !/\.(xlsx|xls|xlsm|csv)$/i.test(entry.name)) continue;
+      var f = await entry.getFile();
+      srcFiles.push({ name: entry.name, lastModified: f.lastModified, handle: entry });
+    }
+    $('srcFolderName').textContent = srcDirHandle.name + ' — ' + srcFiles.length + ' spreadsheet(s) found';
+    $('srcFolderName').hidden = false;
+    renderSources();
+  });
+
+  function renderSources() {
+    var tbody = $('sourcesTable').querySelector('tbody');
+    tbody.innerHTML = (model.sources || []).map(function (src, i) {
+      var newestCell;
+      if (!srcDirHandle) {
+        newestCell = '<span class="muted small">choose the folder to check</span>';
+      } else {
+        var newest = S.findNewestMatch(srcFiles, src.pattern);
+        if (!newest) newestCell = '<span class="muted small">no file matches</span>';
+        else {
+          var isNew = !src.lastImported || newest.lastModified > new Date(src.lastImported).getTime();
+          newestCell = esc(newest.name) + '<br><span class="small' + (isNew ? '' : ' muted') + '">modified ' +
+            esc(new Date(newest.lastModified).toLocaleDateString()) +
+            (isNew ? ' — newer than last import' : '') + '</span>';
+        }
+      }
+      var lastCell = src.lastImported
+        ? esc(new Date(src.lastImported).toLocaleString()) +
+          (src.lastFile ? '<br><span class="muted small">' + esc(src.lastFile) + '</span>' : '')
+        : '<span class="muted small">never</span>';
+      return '<tr data-i="' + i + '"><td>' + esc(src.level) + '</td><td>' + esc(src.pattern) + '</td>' +
+        '<td>' + lastCell + '</td><td>' + newestCell + '</td>' +
+        '<td class="actions"><button class="linklike" data-act="update">Update…</button>' +
+        '<button class="linklike" data-act="edit">Edit</button>' +
+        '<button class="linklike danger" data-act="del">Delete</button></td></tr>';
+    }).join('');
+    $('sourcesEmpty').hidden = (model.sources || []).length > 0;
+  }
+
+  $('sourcesTable').addEventListener('click', async function (ev) {
+    var btn = ev.target.closest('button[data-act]');
+    if (!btn) return;
+    var i = parseInt(btn.closest('tr').dataset.i, 10);
+    var src = model.sources[i];
+    if (!src) return;
+    if (btn.dataset.act === 'edit') openSourceDialog(i);
+    if (btn.dataset.act === 'del') {
+      if (!confirm('Remove level "' + src.level + '" from this list? (Students are not affected.)')) return;
+      model.sources.splice(i, 1);
+      markDirty();
+    }
+    if (btn.dataset.act === 'update') {
+      var newest = srcDirHandle ? S.findNewestMatch(srcFiles, src.pattern) : null;
+      if (newest) {
+        runLevelUpdate(i, await newest.handle.getFile());
+      } else {
+        pendingUpdateIndex = i;
+        $('srcFileInput').value = '';
+        $('srcFileInput').click();
+      }
+    }
+  });
+
+  $('srcFileInput').addEventListener('change', function () {
+    var f = $('srcFileInput').files[0];
+    if (f && pendingUpdateIndex !== null) runLevelUpdate(pendingUpdateIndex, f);
+    pendingUpdateIndex = null;
+  });
+
+  async function runLevelUpdate(index, file) {
+    var src = model.sources[index];
+    var wb;
+    try { wb = XLSX.read(await file.arrayBuffer(), { type: 'array' }); }
+    catch (err) { alert('Could not read "' + file.name + '": ' + err.message); return; }
+
+    // Pick the sheet that looks most like a student list.
+    var bestRows = null, bestSheet = '', bestScore = -1;
+    wb.SheetNames.forEach(function (name) {
+      var rows = S.sheetRows(wb.Sheets[name]);
+      var hr = S.detectHeaderRow(rows);
+      var m = S.mapHeaders(rows[hr] || [], S.STUDENT_FIELDS);
+      var score = Object.keys(m).length + ('name' in m ? 2 : 0) +
+        Math.min(Math.max(rows.length - hr - 1, 0), 50) / 100;
+      if (score > bestScore) { bestScore = score; bestSheet = name; bestRows = rows; }
+    });
+    var hr = S.detectHeaderRow(bestRows || []);
+    var headers = (bestRows || [])[hr] || [];
+    var guess = S.mapHeaders(headers, S.STUDENT_FIELDS);
+    if (!('name' in guess) || !('class' in guess)) {
+      alert('Could not recognise Name and Class columns in "' + file.name + '" (sheet "' + bestSheet +
+        '").\nUse Import… to map the columns by hand.');
+      return;
+    }
+    var mappedIdx = Object.keys(guess).map(function (k) { return guess[k]; });
+    var subjectCols = [];
+    headers.forEach(function (h, ci) {
+      var label = S.norm(h);
+      if (!label || mappedIdx.indexOf(ci) !== -1) return;
+      if (/psle|remark|^no$|^s\/?n$|^serial/i.test(label)) return;
+      subjectCols.push({ index: ci, header: label });
+    });
+    var res = S.importStudents(bestRows, {
+      headerRow: hr,
+      cols: {
+        id: null, name: guess.name, class: guess.class,
+        gender: 'gender' in guess ? guess.gender : null,
+        pg: 'pg' in guess ? guess.pg : null,
+      },
+      subjectCols: subjectCols,
+    });
+    if (!res.students.length) { alert('No usable student rows found in "' + file.name + '".'); return; }
+    var importedKeys = subjectCols.map(function (c) { return S.norm(c.header); });
+    var classes = Array.from(new Set(res.students.map(function (s) { return s.class; }).filter(Boolean))).sort(S.cmp);
+    if (!confirm('Update level "' + src.level + '" from:\n' + file.name + ' (sheet "' + bestSheet + '")\n\n' +
+      res.students.length + ' students in classes ' + classes.join(', ') + '.\n' +
+      'Students are matched by name, so their groups are kept. Only these classes are touched.\n\nProceed?')) return;
+
+    var report = S.applyLevelUpdate(model, res.students, importedKeys);
+    if (report.missingIds.length) {
+      var names = report.missingLabels.slice(0, 12).join('\n') + (report.missingLabels.length > 12 ? '\n…' : '');
+      if (confirm(report.missingIds.length + ' student(s) are no longer in the file:\n' + names +
+        '\n\nOK — remove them (and their group memberships)\nCancel — keep them for now')) {
+        deleteStudents(report.missingIds);
+      }
+    }
+    if (res.warnings.length) {
+      loadWarnings = loadWarnings.concat(res.warnings.map(function (w) { return 'Update ' + src.level + ': ' + w; }));
+    }
+    src.lastFile = file.name;
+    src.lastImported = new Date().toISOString();
+    markDirty();
+    toast(src.level + ': ' + report.updated + ' updated, ' + report.added + ' added' +
+      (report.missingIds.length ? ', ' + report.missingIds.length + ' no longer in file' : '') +
+      ' — press Save when done');
+  }
+
   /* ================= import ================= */
 
   var importWb = null;
@@ -1167,6 +1381,7 @@
   window.__loadModelForTest = function (m) {
     model = m;
     model.subjectKeys = model.subjectKeys || [];
+    model.sources = model.sources || [];
     loadWarnings = [];
     $('folderName').textContent = '(test)';
     setDirty(false);

@@ -33,6 +33,9 @@ const BAND_GROUPS = [
 function buildSampleModel() {
   const model = S.emptyModel();
   model.subjectKeys = ['TG', 'EL', 'MT', 'HMT', 'MA', 'SCI', 'HIST', 'GEOG', 'LIT'];
+  model.sources = [
+    { level: 'Sec 1', pattern: 'Sec 1 Subject Allocation', lastFile: '', lastImported: '' },
+  ];
 
   CLASSES.forEach((cls, c) => {
     model.groups.push({ code: 'EL-' + cls, name: 'English ' + cls, subject: 'English Language', teacher: EL_TEACHERS[c] });

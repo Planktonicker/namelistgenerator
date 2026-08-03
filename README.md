@@ -56,6 +56,27 @@ edits go through `admin.html`, the two can never drift apart.
    one. Then press **Save**.
 5. Make a desktop shortcut for teachers (see below).
 
+### Keeping levels up to date from the school's files
+
+The school's own allocation files (e.g. `Sec 1 Subject Allocation_14 Jan.xlsx`,
+dated `Sec 4_Final Classlist` versions) can live anywhere — a private admin share
+like `S:\_Admin\...` is fine, and they are never modified or exposed to teachers.
+In the **School files** tab:
+
+1. **Add level** once per level, with a filename pattern (e.g. `Sec 1 Subject Allocation`).
+   The mapping is saved inside `namelist.xlsx`, so all admins share it.
+2. When files change: **Choose school files folder…** → pick the folder. The newest
+   file matching each pattern is found automatically — dated renames need no config
+   change — and levels with a file newer than their last import are flagged.
+3. Click **Update…** on a level. The right sheet, header row and columns are detected
+   automatically; you see a summary (how many students, which classes) before anything
+   changes. Students are matched **by name**, so their IDs and group memberships are
+   kept; only that level's classes are touched, only the subject columns present in
+   the file are refreshed, and you decide whether students who dropped off the list
+   are removed. Then press **Save** as usual.
+
+Running the same file twice is harmless — everyone matches, nothing changes.
+
 ### Daily use
 
 - **Teachers:** double-click the shortcut → type your name → your namelists appear.

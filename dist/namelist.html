@@ -25,6 +25,10 @@
 
 * { box-sizing: border-box; }
 
+/* The hidden attribute must always win, even over display rules like
+ * .selbar { display: flex }. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
@@ -379,6 +383,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teacher'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
+  var SOURCE_HEADERS = ['Level', 'FilePattern', 'LastFile', 'LastImported'];
 
   var STUDENT_FIELDS = {
     id: ['studentid', 'id', 'studentno', 'indexno', 'regno', 'nric'],
@@ -397,6 +402,12 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     studentId: ['studentid', 'id', 'student'],
     groupCode: ['groupcode', 'group', 'code'],
   };
+  var SOURCE_FIELDS = {
+    level: ['level'],
+    pattern: ['filepattern', 'pattern'],
+    lastFile: ['lastfile'],
+    lastImported: ['lastimported'],
+  };
 
   function xlsx() {
     if (!globalThis.XLSX) throw new Error('SheetJS (XLSX) is not loaded');
@@ -412,7 +423,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   }
 
   function emptyModel() {
-    return { students: [], groups: [], memberships: [], subjectKeys: [] };
+    return { students: [], groups: [], memberships: [], subjectKeys: [], sources: [] };
   }
 
   /* Match a header row against field aliases; returns { field: columnIndex }. */
@@ -527,6 +538,8 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     else warnings.push('Sheet "Groups" not found.');
     if (memberships) model.memberships = readTable(memberships, MEMBERSHIP_FIELDS, ['studentId', 'groupCode'], 'Memberships', warnings);
     else warnings.push('Sheet "Memberships" not found.');
+    var sources = findSheet(wb, 'Sources');   // optional sheet — older files lack it
+    if (sources) model.sources = readTable(sources, SOURCE_FIELDS, ['level'], 'Sources', warnings);
     return { model: model, warnings: warnings.concat(validateModel(model)) };
   }
 
@@ -556,6 +569,12 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     })));
     ws['!cols'] = [{ wch: 12 }, { wch: 12 }];
     X.utils.book_append_sheet(wb, ws, 'Memberships');
+
+    ws = X.utils.aoa_to_sheet([SOURCE_HEADERS].concat((model.sources || []).map(function (s) {
+      return [s.level, s.pattern, s.lastFile, s.lastImported];
+    })));
+    ws['!cols'] = [{ wch: 12 }, { wch: 30 }, { wch: 40 }, { wch: 22 }];
+    X.utils.book_append_sheet(wb, ws, 'Sources');
 
     return wb;
   }
@@ -664,6 +683,98 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     return { students: students, warnings: warnings };
   }
 
+  /* Update one level's students from a freshly imported school file,
+   * preserving student IDs (and therefore group memberships) by matching
+   * names. Only the classes present in `imported` are touched, and on
+   * matched students only the subject columns in `importedKeys` are
+   * overwritten (a file without a GEOG column never clears GEOG).
+   * Nothing is removed here — students missing from the file are reported
+   * in the result so the caller can decide.
+   * Returns { classes, updated, added, missingIds, missingLabels }. */
+  function applyLevelUpdate(model, imported, importedKeys) {
+    importedKeys = importedKeys || [];
+    var classSet = {};
+    imported.forEach(function (s) { if (s.class) classSet[s.class] = true; });
+
+    var pool = model.students.filter(function (s) { return classSet[s.class]; });
+    var byNameClass = {};
+    var byName = {};
+    pool.forEach(function (s) {
+      var nk = normKey(s.name);
+      byNameClass[nk + '|' + s.class] = s;
+      byName[nk] = nk in byName ? null : s;   // null marks an ambiguous name
+    });
+
+    var usedIds = {};
+    model.students.forEach(function (s) { usedIds[s.id] = true; });
+    function freeId(cls) {
+      var base = cls || 'S';
+      var i = 1, id;
+      do {
+        id = base + '-' + (i < 10 ? '0' : '') + i;
+        i++;
+      } while (usedIds[id]);
+      usedIds[id] = true;
+      return id;
+    }
+
+    var matched = {};
+    var updated = 0, added = 0;
+    imported.forEach(function (imp) {
+      var nk = normKey(imp.name);
+      var m = byNameClass[nk + '|' + imp.class] || byName[nk] || null;
+      if (m && matched[m.id]) m = null;
+      if (m) {
+        matched[m.id] = true;
+        m.name = imp.name;
+        if (imp.class) m.class = imp.class;
+        if (imp.gender) m.gender = imp.gender;
+        if (imp.pg) m.pg = imp.pg;
+        m.subjects = m.subjects || {};
+        importedKeys.forEach(function (k) {
+          if (imp.subjects[k]) m.subjects[k] = imp.subjects[k];
+          else delete m.subjects[k];
+        });
+        updated++;
+      } else {
+        model.students.push({
+          id: freeId(imp.class), name: imp.name, class: imp.class,
+          gender: imp.gender, pg: imp.pg, subjects: imp.subjects,
+        });
+        added++;
+      }
+    });
+
+    importedKeys.forEach(function (k) {
+      if (!model.subjectKeys.some(function (e) { return normKey(e) === normKey(k); })) {
+        model.subjectKeys.push(k);
+      }
+    });
+
+    var missing = pool.filter(function (s) { return !matched[s.id]; });
+    return {
+      classes: Object.keys(classSet).sort(cmp),
+      updated: updated,
+      added: added,
+      missingIds: missing.map(function (s) { return s.id; }),
+      missingLabels: missing.map(function (s) { return s.name + ' (' + s.class + ')'; }),
+    };
+  }
+
+  /* Pick the most recently modified file whose name contains the pattern.
+   * `files` entries need { name, lastModified }. Office lock files (~$…)
+   * are ignored. */
+  function findNewestMatch(files, pattern) {
+    var p = normKey(pattern);
+    var best = null;
+    (files || []).forEach(function (f) {
+      if (/^~\$/.test(f.name)) return;
+      if (p && normKey(f.name).indexOf(p) === -1) return;
+      if (!best || f.lastModified > best.lastModified) best = f;
+    });
+    return best;
+  }
+
   /* "EL G3" already names its subject; "CHINESE" under HMT does not — show
    * the key when the value doesn't already start with it. */
   function displayPair(key, value) {
@@ -752,6 +863,8 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     displayPair: displayPair,
     subjectSummary: subjectSummary,
     studentSearchText: studentSearchText,
+    applyLevelUpdate: applyLevelUpdate,
+    findNewestMatch: findNewestMatch,
   };
 })();
 

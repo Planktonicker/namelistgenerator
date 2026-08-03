@@ -6,24 +6,26 @@
 <title>Class Namelists</title>
 <link rel="stylesheet" href="shared/styles.css">
 <style>
-  .teacher-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .teacher-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
   .teacher-chips button {
     border-radius: 999px;
-    padding: 5px 14px;
+    padding: 6px 16px;
     background: var(--accent-soft);
     border-color: transparent;
     color: var(--accent);
+    box-shadow: none;
   }
   .teacher-chips button:hover { background: var(--accent); color: var(--accent-ink); }
   .suggestions { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
-  .suggestions button { text-align: left; border: none; background: none; padding: 7px 10px; border-radius: var(--radius); }
+  .suggestions button { text-align: left; border: none; background: none; box-shadow: none; padding: 8px 12px; border-radius: 8px; }
   .suggestions button:hover, .suggestions button.hilite { background: var(--accent-soft); }
-  .group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  #searchBox { width: 100%; max-width: 480px; font-size: 17px; padding: 12px 14px; }
-  .result-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
-  .result-title h2 { font-size: 20px; }
-  .print-only { display: none; }
-  @media print { .print-only { display: block; } }
+  .group-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .group-head .left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .group-head h3 { margin: 0; font-size: 16px; }
+  #searchBox { width: 100%; max-width: 520px; font-size: 18px; padding: 13px 16px; }
+  .result-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 12px; }
+  .result-title h2 { font-size: 21px; margin: 0; }
+  .tagline { color: var(--muted); font-size: 13px; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -59,11 +61,13 @@
     <section id="studentTab" hidden>
       <div class="card no-print">
         <label for="studentBox"><h2>Search for a student</h2></label>
-        <input type="search" id="studentBox" placeholder="Name, class or student ID" autocomplete="off">
+        <input type="search" id="studentBox" placeholder="Name, class, ID or tag (e.g. MA G3)" autocomplete="off">
       </div>
       <div id="studentResults"></div>
     </section>
   </div>
+
+  <div class="print-sheet" id="printSheet"></div>
 </main>
 
 <script src="data.js"></script>
@@ -77,7 +81,6 @@
   var data = window.NAMELIST_DATA;
   if (!data || !Array.isArray(data.students)) {
     $('errorState').hidden = false;
-    $('dataMeta').textContent = '';
     return;
   }
   var ix = S.buildIndexes(data);
@@ -92,6 +95,37 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+
+  /* ---------- printing ---------- */
+
+  function groupLabel(g) {
+    return (g.name || g.code) + (g.subject ? ' — ' + g.subject : '');
+  }
+
+  function printGroups(groups, teacherName) {
+    var today = new Date().toLocaleDateString();
+    var html = groups.map(function (g) {
+      var members = ix.membersByGroup.get(g.code) || [];
+      var rows = members.map(function (s, i) {
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) +
+          '</td><td>' + esc(s.id) + '</td><td style="width:30%"></td></tr>';
+      }).join('');
+      return '<div class="card"><h2>' + esc(groupLabel(g)) + '</h2>' +
+        '<p class="sub">' + (g.teacher ? 'Teacher: ' + esc(g.teacher) + ' · ' : '') +
+        members.length + ' student' + (members.length === 1 ? '' : 's') + ' · Printed ' + esc(today) +
+        (data.savedAt ? ' · Data updated ' + esc(new Date(data.savedAt).toLocaleDateString()) : '') + '</p>' +
+        '<table class="list"><thead><tr><th style="width:34px">#</th><th>Name</th><th>Class</th><th>ID</th><th>Remarks</th></tr></thead>' +
+        '<tbody>' + (rows || '<tr><td colspan="5">No students in this group.</td></tr>') + '</tbody></table></div>';
+    }).join('');
+    $('printSheet').innerHTML = html;
+    document.body.classList.add('print-sheet-mode');
+    window.print();
+  }
+
+  window.addEventListener('afterprint', function () {
+    document.body.classList.remove('print-sheet-mode');
+    $('printSheet').innerHTML = '';
+  });
 
   /* ---------- tabs ---------- */
   $('tabTeacherBtn').addEventListener('click', function () { switchTab('teacher'); });
@@ -156,18 +190,20 @@
     var groups = ix.groupsByTeacher.get(selectedTeacher) || [];
     var total = 0;
     var html = '<div class="result-title"><h2>' + esc(selectedTeacher) + '</h2>' +
-      '<span class="no-print"><button class="primary" onclick="window.print()">Print</button></span></div>' +
-      '<p class="print-only small muted">Namelists for ' + esc(selectedTeacher) +
-      (data.savedAt ? ' — data updated ' + esc(new Date(data.savedAt).toLocaleString()) : '') + '</p>';
+      '<span class="no-print">' +
+      (groups.length ? '<button class="primary" id="printAllBtn">Print all namelists</button>' : '') +
+      '</span></div>';
     if (!groups.length) {
       html += '<div class="card"><p class="empty">No teaching groups are assigned to this name.</p></div>';
     }
-    groups.forEach(function (g) {
+    groups.forEach(function (g, gi) {
       var members = ix.membersByGroup.get(g.code) || [];
       total += members.length;
-      html += '<div class="card"><div class="group-head"><h3>' + esc(g.name || g.code) +
-        (g.subject ? ' <span class="muted">· ' + esc(g.subject) + '</span>' : '') +
-        '</h3><span class="badge">' + members.length + ' student' + (members.length === 1 ? '' : 's') + '</span></div>';
+      html += '<div class="card"><div class="group-head">' +
+        '<div class="left"><h3>' + esc(g.name || g.code) + '</h3>' +
+        (g.subject ? '<span class="badge plain">' + esc(g.subject) + '</span>' : '') +
+        '<span class="badge">' + members.length + ' student' + (members.length === 1 ? '' : 's') + '</span></div>' +
+        '<span class="no-print"><button class="print-group" data-gi="' + gi + '">Print</button></span></div>';
       if (members.length) {
         html += '<table class="list"><thead><tr><th style="width:40px">#</th><th>Name</th><th>Class</th><th>Student ID</th></tr></thead><tbody>';
         members.forEach(function (s, i) {
@@ -180,10 +216,15 @@
       html += '</div>';
     });
     if (groups.length) {
-      html += '<p class="muted small">' + groups.length + ' group' + (groups.length === 1 ? '' : 's') +
+      html += '<p class="muted small no-print">' + groups.length + ' group' + (groups.length === 1 ? '' : 's') +
         ', ' + total + ' student place' + (total === 1 ? '' : 's') + ' in total.</p>';
     }
     out.innerHTML = html;
+    var printAll = $('printAllBtn');
+    if (printAll) printAll.addEventListener('click', function () { printGroups(groups, selectedTeacher); });
+    out.querySelectorAll('button.print-group').forEach(function (b) {
+      b.addEventListener('click', function () { printGroups([groups[+b.dataset.gi]], selectedTeacher); });
+    });
   }
 
   searchBox.addEventListener('input', function () {
@@ -211,7 +252,7 @@
     var out = $('studentResults');
     if (!q) { out.innerHTML = ''; return; }
     var matches = data.students.filter(function (s) {
-      return (s.name + ' ' + s.class + ' ' + s.id).toLowerCase().indexOf(q) !== -1;
+      return (s.name + ' ' + s.class + ' ' + s.id + ' ' + (s.tags || '')).toLowerCase().indexOf(q) !== -1;
     });
     if (!matches.length) {
       out.innerHTML = '<div class="card"><p class="empty">No student matches “' + esc($('studentBox').value.trim()) + '”.</p></div>';
@@ -220,9 +261,11 @@
     var html = '';
     matches.sort(S.byClassThenName).slice(0, 30).forEach(function (s) {
       var groups = ix.groupsByStudent.get(s.id) || [];
-      html += '<div class="card"><div class="group-head"><h3>' + esc(s.name) +
-        ' <span class="muted">· ' + esc(s.class) + ' · ' + esc(s.id) + '</span></h3>' +
-        (s.combination ? '<span class="badge">' + esc(s.combination) + '</span>' : '') + '</div>';
+      html += '<div class="card"><div class="group-head"><div class="left"><h3>' + esc(s.name) + '</h3>' +
+        '<span class="badge plain">' + esc(s.class) + '</span>' +
+        (s.pg ? '<span class="badge plain">PG' + esc(s.pg) + '</span>' : '') +
+        '<span class="muted small">' + esc(s.id) + '</span></div></div>' +
+        (s.tags ? '<p class="tagline">' + esc(s.tags) + '</p>' : '');
       if (groups.length) {
         html += '<table class="list"><thead><tr><th>Subject</th><th>Group</th><th>Teacher</th></tr></thead><tbody>';
         groups.forEach(function (g) {

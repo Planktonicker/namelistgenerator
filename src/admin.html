@@ -9,16 +9,21 @@
   .topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
   .topbar .spacer { flex: 1; }
   .mem-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  @media (max-width: 800px) { .mem-grid { grid-template-columns: 1fr; } }
-  .scrolly { max-height: 420px; overflow-y: auto; }
-  #startScreen .card, #setupScreen .card { max-width: 640px; margin: 40px auto; }
-  .bigbtn { font-size: 17px; padding: 12px 22px; }
-  .notice { background: var(--accent-soft); border-radius: var(--radius); padding: 10px 14px; margin: 12px 0; }
-  .unsupported { background: #fbe9e7; color: var(--danger); border-radius: var(--radius); padding: 10px 14px; margin: 12px 0; }
+  @media (max-width: 860px) { .mem-grid { grid-template-columns: 1fr; } }
+  #startScreen .card, #setupScreen .card { max-width: 660px; margin: 40px auto; }
+  .bigbtn { font-size: 17px; padding: 12px 24px; }
+  .notice { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
+  .unsupported { background: #fbe9e7; color: var(--danger); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
   dialog label { font-weight: 600; font-size: 14px; }
   dialog input[type="text"], dialog select { width: 100%; }
-  .import-map { display: grid; grid-template-columns: 160px 1fr; gap: 8px 12px; align-items: center; margin: 10px 0; }
+  .import-map { display: grid; grid-template-columns: 170px 1fr; gap: 8px 12px; align-items: center; margin: 10px 0; }
+  .tagcols { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0 2px; }
+  .tagcols label { font-weight: 500; font-size: 13px; white-space: nowrap; cursor: pointer; }
   td.actions { white-space: nowrap; text-align: right; }
+  td.tags { font-size: 13px; color: var(--muted); }
+  table.list.selectable tbody { user-select: none; cursor: pointer; }
+  .rowcheck { pointer-events: none; }
+  .hint { font-size: 13px; color: var(--muted); margin: 4px 0 0; }
 </style>
 </head>
 <body>
@@ -34,7 +39,7 @@
       <h2>Open your data folder</h2>
       <p>Pick the shared folder that contains (or will contain) <code>namelist.xlsx</code>.
         Your browser will ask you to allow this page to <strong>edit files</strong> in that folder — choose Allow.</p>
-      <p class="muted small">You will be asked once per session. This page saves three things on every Save:
+      <p class="muted small">You will be asked once per session. Every Save writes three things:
         the Excel master file, the <code>data.js</code> snapshot the teacher page reads, and a timestamped
         backup in <code>backups/</code>.</p>
       <div class="unsupported" id="unsupportedNote" hidden>
@@ -72,8 +77,10 @@
     </div>
 
     <div class="warnings" id="warningsBox" hidden>
-      <strong>Check these:</strong>
-      <ul id="warningsList"></ul>
+      <details>
+        <summary>Check these (<span id="warningsCount"></span>)</summary>
+        <ul id="warningsList"></ul>
+      </details>
     </div>
 
     <div class="tabs">
@@ -84,14 +91,27 @@
 
     <section id="tab-students">
       <div class="toolbar">
-        <input type="search" id="studentSearch" placeholder="Search name, class or ID" style="min-width:220px">
+        <input type="search" id="studentSearch" placeholder="Search name, class, ID or tag (e.g. MA G3)" style="min-width:260px">
         <select id="studentClassFilter"><option value="">All classes</option></select>
+        <select id="studentPgFilter"><option value="">All PG</option></select>
         <span class="spacer"></span>
         <button class="primary" id="addStudentBtn">Add student</button>
       </div>
       <div class="card">
-        <table class="list" id="studentsTable">
-          <thead><tr><th>Student ID</th><th>Name</th><th>Class</th><th>Subject combination</th><th>Groups</th><th></th></tr></thead>
+        <p class="hint no-print">Click rows to select students — hold <strong>Shift</strong> to select a range,
+          or use the header checkbox to select everything shown. Then assign them to a group from the bar below.</p>
+        <table class="list selectable" id="studentsTable">
+          <thead><tr>
+            <th class="checkcol"><input type="checkbox" id="studentsCheckAll" title="Select all shown"></th>
+            <th class="sortable" data-key="id">ID</th>
+            <th class="sortable" data-key="name">Name</th>
+            <th class="sortable" data-key="class">Class</th>
+            <th class="sortable" data-key="gender">Gender</th>
+            <th class="sortable" data-key="pg">PG</th>
+            <th>Tags</th>
+            <th>Groups</th>
+            <th></th>
+          </tr></thead>
           <tbody></tbody>
         </table>
         <p class="empty" id="studentsEmpty" hidden>No students yet — use <strong>Add student</strong> or <strong>Import…</strong></p>
@@ -117,14 +137,16 @@
     <section id="tab-memberships" hidden>
       <div class="toolbar">
         <label for="memGroupSelect"><strong>Group:</strong></label>
-        <select id="memGroupSelect" style="min-width:280px"></select>
+        <select id="memGroupSelect" style="min-width:300px"></select>
+        <span class="spacer"></span>
+        <button id="memPrintBtn">Print this namelist</button>
       </div>
       <div class="mem-grid" id="memPanels" hidden>
         <div class="card">
           <h3>Current members <span class="badge" id="memCount">0</span></h3>
           <div class="scrolly">
             <table class="list" id="memTable">
-              <thead><tr><th>Name</th><th>Class</th><th>ID</th><th></th></tr></thead>
+              <thead><tr><th style="width:34px">#</th><th>Name</th><th>Class</th><th>ID</th><th></th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -133,13 +155,18 @@
         <div class="card">
           <h3>Add students</h3>
           <div class="toolbar">
-            <input type="search" id="memSearch" placeholder="Search" style="flex:1; min-width:140px">
+            <input type="search" id="memSearch" placeholder="Search or tag (e.g. EL G2)" style="flex:1; min-width:150px">
             <select id="memClassFilter"><option value="">All classes</option></select>
+            <select id="memPgFilter"><option value="">All PG</option></select>
+          </div>
+          <p class="hint">Click rows (Shift for a range), then add — or add everything that matches the filter.</p>
+          <div class="toolbar">
+            <button class="primary" id="memAddSelBtn" disabled>Add selected</button>
             <button id="memAddAllBtn">Add all shown</button>
           </div>
           <div class="scrolly">
-            <table class="list" id="memCandidates">
-              <thead><tr><th>Name</th><th>Class</th><th>Combination</th><th></th></tr></thead>
+            <table class="list selectable" id="memCandidates">
+              <thead><tr><th class="checkcol"></th><th>Name</th><th>Class</th><th>PG</th><th>Tags</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -150,6 +177,15 @@
     </section>
   </section>
 
+  <!-- ============ selection action bar ============ -->
+  <div class="selbar" id="selBar" hidden>
+    <span class="count" id="selCount"></span>
+    <select id="selGroupSelect"></select>
+    <button class="primary" id="selAddBtn">Add to group</button>
+    <button class="danger" id="selDeleteBtn">Delete</button>
+    <button id="selClearBtn">Clear</button>
+  </div>
+
   <!-- ============ dialogs ============ -->
   <dialog id="studentDialog">
     <h2 id="studentDialogTitle">Add student</h2>
@@ -157,7 +193,9 @@
       <label for="sfId">Student ID *</label><input type="text" id="sfId" required>
       <label for="sfName">Name *</label><input type="text" id="sfName" required>
       <label for="sfClass">Class</label><input type="text" id="sfClass" list="classList">
-      <label for="sfComb">Subject combination</label><input type="text" id="sfComb">
+      <label for="sfGender">Gender</label><input type="text" id="sfGender" list="genderList">
+      <label for="sfPg">PG</label><input type="text" id="sfPg" list="pgList">
+      <label for="sfTags">Tags</label><input type="text" id="sfTags" placeholder="e.g. TG1 · EL G3 · MT CL G2">
       <div class="actions">
         <button type="button" id="studentCancelBtn">Cancel</button>
         <button type="submit" class="primary">OK</button>
@@ -168,8 +206,8 @@
   <dialog id="groupDialog">
     <h2 id="groupDialogTitle">Add group</h2>
     <form class="fields" id="groupForm">
-      <label for="gfCode">Group code *</label><input type="text" id="gfCode" required>
-      <label for="gfName">Group name</label><input type="text" id="gfName">
+      <label for="gfCode">Group code *</label><input type="text" id="gfCode" required placeholder="e.g. EL-1R1">
+      <label for="gfName">Group name</label><input type="text" id="gfName" placeholder="e.g. English 1R1">
       <label for="gfSubject">Subject</label><input type="text" id="gfSubject" list="subjectList">
       <label for="gfTeacher">Teacher</label><input type="text" id="gfTeacher" list="teacherList">
       <div class="actions">
@@ -181,8 +219,9 @@
 
   <dialog id="importDialog">
     <h2>Import a raw document</h2>
-    <p class="small muted">Pick an Excel/CSV file with your student list. If it is a complete namelist
-      workbook (Students + Groups + Memberships sheets), you can load everything at once.</p>
+    <p class="small muted">Pick an Excel/CSV with your student list. Titles or notes above the real header
+      row are handled automatically. If the file is a complete namelist workbook
+      (Students + Groups + Memberships sheets), you can load everything at once.</p>
     <p><input type="file" id="importFile" accept=".xlsx,.xls,.xlsm,.csv"></p>
     <div id="importOptions" hidden>
       <div class="notice" id="importFullNotice" hidden>
@@ -191,11 +230,17 @@
       </div>
       <div class="import-map">
         <label for="impSheet">Sheet</label><select id="impSheet"></select>
-        <label for="impId">Student ID column *</label><select id="impId"></select>
+        <label for="impHeaderRow">Header row</label><select id="impHeaderRow"></select>
         <label for="impName">Name column *</label><select id="impName"></select>
         <label for="impClass">Class column</label><select id="impClass"></select>
-        <label for="impComb">Combination column</label><select id="impComb"></select>
+        <label for="impGender">Gender column</label><select id="impGender"></select>
+        <label for="impPg">PG column</label><select id="impPg"></select>
+        <label for="impId">Student ID column</label><select id="impId"></select>
       </div>
+      <p class="hint" id="autoIdHint" hidden>No ID column: IDs will be generated from class + row order
+        (1R1-01, 1R1-02, …), which keeps register order.</p>
+      <p style="margin-bottom:4px"><strong class="small">Keep these columns as searchable tags:</strong></p>
+      <div class="tagcols" id="tagCols"></div>
       <p id="importPreview" class="small muted"></p>
       <p>
         <label><input type="radio" name="impMode" value="merge" checked> Merge — update existing students by ID, add new ones</label><br>
@@ -211,7 +256,10 @@
   <datalist id="classList"></datalist>
   <datalist id="subjectList"></datalist>
   <datalist id="teacherList"></datalist>
+  <datalist id="pgList"></datalist>
+  <datalist id="genderList"><option value="F"></option><option value="M"></option></datalist>
   <div class="toast" id="toast"></div>
+  <div class="print-sheet" id="printSheet"></div>
 </main>
 
 <script src="../vendor/xlsx.full.min.js"></script>
@@ -242,7 +290,7 @@
     t.textContent = msg;
     t.classList.add('show');
     clearTimeout(toast._h);
-    toast._h = setTimeout(function () { t.classList.remove('show'); }, 2600);
+    toast._h = setTimeout(function () { t.classList.remove('show'); }, 2800);
   }
 
   function show(screen) {
@@ -387,6 +435,30 @@
     if (dirty) { e.preventDefault(); e.returnValue = ''; }
   });
 
+  /* ================= printing ================= */
+
+  function printGroupSheet(group) {
+    var members = ix.membersByGroup.get(group.code) || [];
+    var today = new Date().toLocaleDateString();
+    var rows = members.map(function (s, i) {
+      return '<tr><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) +
+        '</td><td>' + esc(s.id) + '</td><td style="width:30%"></td></tr>';
+    }).join('');
+    $('printSheet').innerHTML = '<div class="card"><h2>' +
+      esc((group.name || group.code) + (group.subject ? ' — ' + group.subject : '')) + '</h2>' +
+      '<p class="sub">' + (group.teacher ? 'Teacher: ' + esc(group.teacher) + ' · ' : '') +
+      members.length + ' student' + (members.length === 1 ? '' : 's') + ' · Printed ' + esc(today) + '</p>' +
+      '<table class="list"><thead><tr><th style="width:34px">#</th><th>Name</th><th>Class</th><th>ID</th><th>Remarks</th></tr></thead>' +
+      '<tbody>' + (rows || '<tr><td colspan="5">No students in this group.</td></tr>') + '</tbody></table></div>';
+    document.body.classList.add('print-sheet-mode');
+    window.print();
+  }
+
+  window.addEventListener('afterprint', function () {
+    document.body.classList.remove('print-sheet-mode');
+    $('printSheet').innerHTML = '';
+  });
+
   /* ================= shared refresh ================= */
 
   function refresh() {
@@ -394,37 +466,43 @@
     $('countStudents').textContent = model.students.length;
     $('countGroups').textContent = model.groups.length;
 
-    var warnings = loadWarnings.concat(S.validateModel(model));
-    // De-duplicate: load warnings already include validation at load time.
-    warnings = Array.from(new Set(warnings));
-    $('warningsBox').hidden = !warnings.length;
-    $('warningsList').innerHTML = warnings.slice(0, 20).map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') +
-      (warnings.length > 20 ? '<li>… and ' + (warnings.length - 20) + ' more</li>' : '');
+    selectedIds.forEach(function (id) { if (!ix.studentsById.has(id)) selectedIds.delete(id); });
+    candSelected.forEach(function (id) { if (!ix.studentsById.has(id)) candSelected.delete(id); });
 
-    fillClassOptions($('studentClassFilter'));
-    fillClassOptions($('memClassFilter'));
+    var warnings = Array.from(new Set(loadWarnings.concat(S.validateModel(model))));
+    $('warningsBox').hidden = !warnings.length;
+    $('warningsCount').textContent = warnings.length;
+    $('warningsList').innerHTML = warnings.slice(0, 30).map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') +
+      (warnings.length > 30 ? '<li>… and ' + (warnings.length - 30) + ' more</li>' : '');
+
+    fillOptions($('studentClassFilter'), uniqueValues('class'), 'All classes');
+    fillOptions($('studentPgFilter'), uniqueValues('pg'), 'All PG');
+    fillOptions($('memClassFilter'), uniqueValues('class'), 'All classes');
+    fillOptions($('memPgFilter'), uniqueValues('pg'), 'All PG');
     fillDatalists();
+    renderSelBar();
 
     if (currentTab === 'students') renderStudents();
     if (currentTab === 'groups') renderGroups();
     if (currentTab === 'memberships') renderMemberships();
   }
 
-  function uniqueClasses() {
-    return Array.from(new Set(model.students.map(function (s) { return s.class; }).filter(Boolean))).sort();
+  function uniqueValues(field) {
+    return Array.from(new Set(model.students.map(function (s) { return s[field]; }).filter(Boolean))).sort(S.cmp);
   }
 
-  function fillClassOptions(sel) {
+  function fillOptions(sel, values, allLabel) {
     var cur = sel.value;
-    sel.innerHTML = '<option value="">All classes</option>' + uniqueClasses().map(function (c) {
-      return '<option value="' + esc(c) + '">' + esc(c) + '</option>';
+    sel.innerHTML = '<option value="">' + esc(allLabel) + '</option>' + values.map(function (v) {
+      return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
     }).join('');
     sel.value = cur;
   }
 
   function fillDatalists() {
-    $('classList').innerHTML = uniqueClasses().map(function (c) { return '<option value="' + esc(c) + '">'; }).join('');
-    var subjects = Array.from(new Set(model.groups.map(function (g) { return g.subject; }).filter(Boolean))).sort();
+    $('classList').innerHTML = uniqueValues('class').map(function (c) { return '<option value="' + esc(c) + '">'; }).join('');
+    $('pgList').innerHTML = uniqueValues('pg').map(function (p) { return '<option value="' + esc(p) + '">'; }).join('');
+    var subjects = Array.from(new Set(model.groups.map(function (g) { return g.subject; }).filter(Boolean))).sort(S.cmp);
     $('subjectList').innerHTML = subjects.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('');
     $('teacherList').innerHTML = ix.teachers.map(function (t) { return '<option value="' + esc(t) + '">'; }).join('');
   }
@@ -440,41 +518,117 @@
     });
   });
 
+  /* ================= row selection helper ================= */
+
+  /* Click a row to toggle it; Shift+click selects the range since the last
+   * clicked row. Row checkboxes are display-only (pointer-events: none). */
+  function wireRowSelection(tbody, set, onChange) {
+    var last = -1;
+    tbody.addEventListener('click', function (ev) {
+      var tr = ev.target.closest('tr[data-id]');
+      if (!tr || ev.target.closest('button')) return;
+      var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-id]'));
+      var idx = rows.indexOf(tr);
+      var willSelect = !set.has(tr.dataset.id);
+      if (ev.shiftKey && last >= 0 && last < rows.length) {
+        var a = Math.min(last, idx), b = Math.max(last, idx);
+        for (var k = a; k <= b; k++) {
+          if (willSelect) set.add(rows[k].dataset.id); else set.delete(rows[k].dataset.id);
+        }
+      } else {
+        if (willSelect) set.add(tr.dataset.id); else set.delete(tr.dataset.id);
+      }
+      last = idx;
+      onChange();
+    });
+  }
+
   /* ================= students tab ================= */
 
-  var STUDENT_ROW_CAP = 400;
+  var STUDENT_ROW_CAP = 500;
+  var selectedIds = new Set();
+  var sortKey = 'class';
+  var sortDir = 1;
+
   $('studentSearch').addEventListener('input', renderStudents);
   $('studentClassFilter').addEventListener('change', renderStudents);
+  $('studentPgFilter').addEventListener('change', renderStudents);
   $('addStudentBtn').addEventListener('click', function () { openStudentDialog(null); });
+
+  document.querySelectorAll('#studentsTable th.sortable').forEach(function (th) {
+    th.addEventListener('click', function () {
+      if (sortKey === th.dataset.key) sortDir = -sortDir;
+      else { sortKey = th.dataset.key; sortDir = 1; }
+      renderStudents();
+    });
+  });
 
   function filteredStudents() {
     var q = $('studentSearch').value.trim().toLowerCase();
     var cls = $('studentClassFilter').value;
+    var pg = $('studentPgFilter').value;
     return model.students.filter(function (s) {
       if (cls && s.class !== cls) return false;
-      if (q && (s.name + ' ' + s.class + ' ' + s.id + ' ' + s.combination).toLowerCase().indexOf(q) === -1) return false;
+      if (pg && s.pg !== pg) return false;
+      if (q && (s.name + ' ' + s.class + ' ' + s.id + ' ' + s.pg + ' ' + (s.tags || '')).toLowerCase().indexOf(q) === -1) return false;
       return true;
     });
   }
 
+  function sortedFilteredStudents() {
+    var rows = filteredStudents();
+    rows.sort(function (a, b) {
+      return sortDir * S.cmp(a[sortKey], b[sortKey]) || S.byClassThenName(a, b);
+    });
+    return rows;
+  }
+
   function renderStudents() {
-    var rows = filteredStudents().slice().sort(S.byClassThenName);
+    var rows = sortedFilteredStudents();
     var shown = rows.slice(0, STUDENT_ROW_CAP);
+    document.querySelectorAll('#studentsTable th.sortable').forEach(function (th) {
+      th.classList.toggle('sorted-asc', th.dataset.key === sortKey && sortDir === 1);
+      th.classList.toggle('sorted-desc', th.dataset.key === sortKey && sortDir === -1);
+    });
     var tbody = $('studentsTable').querySelector('tbody');
     tbody.innerHTML = shown.map(function (s) {
       var g = (ix.groupsByStudent.get(s.id) || []).length;
-      return '<tr data-id="' + esc(s.id) + '">' +
+      var sel = selectedIds.has(s.id);
+      return '<tr data-id="' + esc(s.id) + '"' + (sel ? ' class="selected"' : '') + '>' +
+        '<td class="checkcol"><input type="checkbox" class="rowcheck" tabindex="-1"' + (sel ? ' checked' : '') + '></td>' +
         '<td>' + esc(s.id) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td>' +
-        '<td>' + esc(s.combination) + '</td><td>' + g + '</td>' +
+        '<td>' + esc(s.gender) + '</td><td>' + esc(s.pg) + '</td>' +
+        '<td class="tags">' + esc(s.tags) + '</td><td>' + g + '</td>' +
         '<td class="actions"><button class="linklike" data-act="edit">Edit</button>' +
         '<button class="linklike danger" data-act="del">Delete</button></td></tr>';
     }).join('');
     $('studentsEmpty').hidden = model.students.length > 0;
     $('studentsMore').hidden = rows.length <= STUDENT_ROW_CAP;
     if (rows.length > STUDENT_ROW_CAP) {
-      $('studentsMore').textContent = 'Showing first ' + STUDENT_ROW_CAP + ' of ' + rows.length + ' — use search or the class filter to narrow down.';
+      $('studentsMore').textContent = 'Showing first ' + STUDENT_ROW_CAP + ' of ' + rows.length + ' — use search or the filters to narrow down.';
     }
+    var allSelected = rows.length > 0 && rows.every(function (s) { return selectedIds.has(s.id); });
+    var someSelected = rows.some(function (s) { return selectedIds.has(s.id); });
+    $('studentsCheckAll').checked = allSelected;
+    $('studentsCheckAll').indeterminate = !allSelected && someSelected;
+    renderSelBar();
   }
+
+  wireRowSelection($('studentsTable').querySelector('tbody'), selectedIds, renderStudents);
+
+  $('studentsCheckAll').addEventListener('change', function () {
+    var rows = sortedFilteredStudents();
+    if ($('studentsCheckAll').checked) rows.forEach(function (s) { selectedIds.add(s.id); });
+    else rows.forEach(function (s) { selectedIds.delete(s.id); });
+    renderStudents();
+  });
+
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' && selectedIds.size && !document.querySelector('dialog[open]')) {
+      selectedIds.clear();
+      renderStudents();
+    }
+  });
 
   $('studentsTable').addEventListener('click', function (ev) {
     var btn = ev.target.closest('button[data-act]');
@@ -486,11 +640,69 @@
     if (btn.dataset.act === 'del') {
       var n = (ix.groupsByStudent.get(id) || []).length;
       if (!confirm('Delete ' + student.name + ' (' + id + ')' + (n ? ' and remove them from ' + n + ' group(s)' : '') + '?')) return;
-      model.students = model.students.filter(function (s) { return s.id !== id; });
-      model.memberships = model.memberships.filter(function (m) { return m.studentId !== id; });
-      markDirty();
+      deleteStudents([id]);
     }
   });
+
+  function deleteStudents(ids) {
+    var kill = new Set(ids);
+    model.students = model.students.filter(function (s) { return !kill.has(s.id); });
+    model.memberships = model.memberships.filter(function (m) { return !kill.has(m.studentId); });
+    ids.forEach(function (id) { selectedIds.delete(id); });
+    markDirty();
+  }
+
+  /* ---- selection action bar ---- */
+
+  function renderSelBar() {
+    var n = selectedIds.size;
+    $('selBar').hidden = n === 0 || currentTab !== 'students' || $('mainScreen').hidden;
+    if (!n) return;
+    $('selCount').textContent = n + ' selected';
+    var sel = $('selGroupSelect');
+    var cur = sel.value;
+    var groups = sortedGroups();
+    sel.innerHTML = groups.map(function (g) {
+      return '<option value="' + esc(g.code) + '">' + esc(groupOptionLabel(g)) + '</option>';
+    }).join('') + '<option value="__new">+ New group…</option>';
+    if (groups.some(function (g) { return g.code === cur; }) || cur === '__new') sel.value = cur;
+  }
+
+  $('selClearBtn').addEventListener('click', function () { selectedIds.clear(); renderStudents(); });
+
+  $('selDeleteBtn').addEventListener('click', function () {
+    var n = selectedIds.size;
+    if (!n) return;
+    var mems = model.memberships.filter(function (m) { return selectedIds.has(m.studentId); }).length;
+    if (!confirm('Delete ' + n + ' selected student(s)' + (mems ? ' and their ' + mems + ' group membership(s)' : '') + '?')) return;
+    deleteStudents(Array.from(selectedIds));
+  });
+
+  $('selAddBtn').addEventListener('click', function () {
+    if (!selectedIds.size) return;
+    var code = $('selGroupSelect').value;
+    if (code === '__new' || !code) {
+      pendingBulkAdd = true;
+      openGroupDialog(null);
+      return;
+    }
+    addStudentsToGroup(Array.from(selectedIds), code);
+  });
+
+  function addStudentsToGroup(ids, code) {
+    var group = ix.groupsByCode.get(code);
+    if (!group) return;
+    var added = 0;
+    ids.forEach(function (id) {
+      var exists = model.memberships.some(function (m) { return m.studentId === id && m.groupCode === code; });
+      if (!exists) { model.memberships.push({ studentId: id, groupCode: code }); added++; }
+    });
+    markDirty();
+    toast(added + ' student' + (added === 1 ? '' : 's') + ' added to ' + (group.name || group.code) +
+      (added < ids.length ? ' (' + (ids.length - added) + ' already in it)' : ''));
+  }
+
+  /* ================= student dialog ================= */
 
   var editingStudentId = null;
   function openStudentDialog(student) {
@@ -499,7 +711,9 @@
     $('sfId').value = student ? student.id : '';
     $('sfName').value = student ? student.name : '';
     $('sfClass').value = student ? student.class : '';
-    $('sfComb').value = student ? student.combination : '';
+    $('sfGender').value = student ? student.gender : '';
+    $('sfPg').value = student ? student.pg : '';
+    $('sfTags').value = student ? student.tags : '';
     $('studentDialog').showModal();
     $('sfId').focus();
   }
@@ -507,7 +721,10 @@
   $('studentForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     var id = S.norm($('sfId').value);
-    var rec = { id: id, name: S.norm($('sfName').value), class: S.norm($('sfClass').value), combination: S.norm($('sfComb').value) };
+    var rec = {
+      id: id, name: S.norm($('sfName').value), class: S.norm($('sfClass').value),
+      gender: S.norm($('sfGender').value), pg: S.norm($('sfPg').value), tags: S.norm($('sfTags').value),
+    };
     if (!id || !rec.name) return;
     var clash = ix.studentsById.get(id);
     if (clash && id !== editingStudentId) {
@@ -521,6 +738,7 @@
       model.students[at] = rec;
       if (id !== editingStudentId) {
         model.memberships.forEach(function (m) { if (m.studentId === editingStudentId) m.studentId = id; });
+        if (selectedIds.delete(editingStudentId)) selectedIds.add(id);
       }
     }
     $('studentDialog').close();
@@ -529,15 +747,23 @@
 
   /* ================= groups tab ================= */
 
+  function sortedGroups() {
+    return model.groups.slice().sort(function (a, b) {
+      return S.cmp(a.subject, b.subject) || S.cmp(a.name, b.name) || S.cmp(a.code, b.code);
+    });
+  }
+
+  function groupOptionLabel(g) {
+    return (g.name || g.code) + (g.subject ? ' — ' + g.subject : '') + (g.teacher ? ' (' + g.teacher + ')' : '');
+  }
+
   $('groupSearch').addEventListener('input', renderGroups);
-  $('addGroupBtn').addEventListener('click', function () { openGroupDialog(null); });
+  $('addGroupBtn').addEventListener('click', function () { pendingBulkAdd = false; openGroupDialog(null); });
 
   function renderGroups() {
     var q = $('groupSearch').value.trim().toLowerCase();
-    var rows = model.groups.filter(function (g) {
+    var rows = sortedGroups().filter(function (g) {
       return !q || (g.code + ' ' + g.name + ' ' + g.subject + ' ' + g.teacher).toLowerCase().indexOf(q) !== -1;
-    }).slice().sort(function (a, b) {
-      return a.subject.localeCompare(b.subject) || a.name.localeCompare(b.name) || a.code.localeCompare(b.code);
     });
     var tbody = $('groupsTable').querySelector('tbody');
     tbody.innerHTML = rows.map(function (g) {
@@ -557,7 +783,7 @@
     var code = btn.closest('tr').dataset.code;
     var group = ix.groupsByCode.get(code);
     if (!group) return;
-    if (btn.dataset.act === 'edit') openGroupDialog(group);
+    if (btn.dataset.act === 'edit') { pendingBulkAdd = false; openGroupDialog(group); }
     if (btn.dataset.act === 'del') {
       var n = (ix.membersByGroup.get(code) || []).length;
       if (!confirm('Delete group "' + (group.name || code) + '"' + (n ? ' and its ' + n + ' membership(s)' : '') + '?')) return;
@@ -568,9 +794,11 @@
   });
 
   var editingGroupCode = null;
+  var pendingBulkAdd = false;
   function openGroupDialog(group) {
     editingGroupCode = group ? group.code : null;
-    $('groupDialogTitle').textContent = group ? 'Edit group' : 'Add group';
+    $('groupDialogTitle').textContent = group ? 'Edit group' :
+      (pendingBulkAdd ? 'New group for ' + selectedIds.size + ' selected student(s)' : 'Add group');
     $('gfCode').value = group ? group.code : '';
     $('gfName').value = group ? group.name : '';
     $('gfSubject').value = group ? group.subject : '';
@@ -578,7 +806,7 @@
     $('groupDialog').showModal();
     $('gfCode').focus();
   }
-  $('groupCancelBtn').addEventListener('click', function () { $('groupDialog').close(); });
+  $('groupCancelBtn').addEventListener('click', function () { pendingBulkAdd = false; $('groupDialog').close(); });
   $('groupForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     var code = S.norm($('gfCode').value);
@@ -599,65 +827,96 @@
       }
     }
     $('groupDialog').close();
-    markDirty();
+    ix = S.buildIndexes(model);
+    if (pendingBulkAdd && selectedIds.size) {
+      pendingBulkAdd = false;
+      addStudentsToGroup(Array.from(selectedIds), code);
+    } else {
+      markDirty();
+    }
   });
 
   /* ================= memberships tab ================= */
 
-  var MEM_CAND_CAP = 200;
-  $('memGroupSelect').addEventListener('change', renderMemberships);
+  var MEM_CAND_CAP = 250;
+  var candSelected = new Set();
+
+  $('memGroupSelect').addEventListener('change', function () { candSelected.clear(); renderMemberships(); });
   $('memSearch').addEventListener('input', renderMemberships);
   $('memClassFilter').addEventListener('change', renderMemberships);
+  $('memPgFilter').addEventListener('change', renderMemberships);
 
   function selectedGroupCode() {
     return $('memGroupSelect').value;
   }
 
+  $('memPrintBtn').addEventListener('click', function () {
+    var group = ix.groupsByCode.get(selectedGroupCode());
+    if (group) printGroupSheet(group);
+  });
+
+  function memCandidates() {
+    var code = selectedGroupCode();
+    var members = ix.membersByGroup.get(code) || [];
+    var inGroup = {};
+    members.forEach(function (s) { inGroup[s.id] = true; });
+    var q = $('memSearch').value.trim().toLowerCase();
+    var cls = $('memClassFilter').value;
+    var pg = $('memPgFilter').value;
+    return model.students.filter(function (s) {
+      if (inGroup[s.id]) return false;
+      if (cls && s.class !== cls) return false;
+      if (pg && s.pg !== pg) return false;
+      if (q && (s.name + ' ' + s.class + ' ' + s.id + ' ' + s.pg + ' ' + (s.tags || '')).toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    }).sort(S.byClassThenName);
+  }
+
   function renderMemberships() {
     var sel = $('memGroupSelect');
     var prev = sel.value;
-    var groups = model.groups.slice().sort(function (a, b) {
-      return a.subject.localeCompare(b.subject) || a.name.localeCompare(b.name) || a.code.localeCompare(b.code);
-    });
+    var groups = sortedGroups();
     sel.innerHTML = groups.map(function (g) {
-      var label = (g.name || g.code) + (g.subject ? ' — ' + g.subject : '') + (g.teacher ? ' (' + g.teacher + ')' : '');
-      return '<option value="' + esc(g.code) + '">' + esc(label) + '</option>';
+      return '<option value="' + esc(g.code) + '">' + esc(groupOptionLabel(g)) + '</option>';
     }).join('');
     if (groups.some(function (g) { return g.code === prev; })) sel.value = prev;
 
     $('memNoGroups').hidden = groups.length > 0;
     $('memPanels').hidden = groups.length === 0;
+    $('memPrintBtn').disabled = groups.length === 0;
     if (!groups.length) return;
 
     var code = selectedGroupCode();
     var members = ix.membersByGroup.get(code) || [];
     $('memCount').textContent = members.length;
-    $('memTable').querySelector('tbody').innerHTML = members.map(function (s) {
-      return '<tr data-id="' + esc(s.id) + '"><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.id) + '</td>' +
+    $('memTable').querySelector('tbody').innerHTML = members.map(function (s, i) {
+      return '<tr data-id="' + esc(s.id) + '"><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.id) + '</td>' +
         '<td class="actions"><button class="linklike danger" data-act="remove">Remove</button></td></tr>';
     }).join('');
     $('memEmpty').hidden = members.length > 0;
 
-    var inGroup = {};
-    members.forEach(function (s) { inGroup[s.id] = true; });
-    var q = $('memSearch').value.trim().toLowerCase();
-    var cls = $('memClassFilter').value;
-    var candidates = model.students.filter(function (s) {
-      if (inGroup[s.id]) return false;
-      if (cls && s.class !== cls) return false;
-      if (q && (s.name + ' ' + s.class + ' ' + s.id + ' ' + s.combination).toLowerCase().indexOf(q) === -1) return false;
-      return true;
-    }).sort(S.byClassThenName);
+    var candidates = memCandidates();
+    var candIds = new Set(candidates.map(function (s) { return s.id; }));
+    candSelected.forEach(function (id) { if (!candIds.has(id)) candSelected.delete(id); });
+
     var shown = candidates.slice(0, MEM_CAND_CAP);
     $('memCandidates').querySelector('tbody').innerHTML = shown.map(function (s) {
-      return '<tr data-id="' + esc(s.id) + '"><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.combination) + '</td>' +
-        '<td class="actions"><button class="linklike" data-act="add">Add</button></td></tr>';
+      var isSel = candSelected.has(s.id);
+      return '<tr data-id="' + esc(s.id) + '"' + (isSel ? ' class="selected"' : '') + '>' +
+        '<td class="checkcol"><input type="checkbox" class="rowcheck" tabindex="-1"' + (isSel ? ' checked' : '') + '></td>' +
+        '<td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.pg) + '</td>' +
+        '<td class="tags">' + esc(s.tags) + '</td></tr>';
     }).join('');
     $('memCandMore').hidden = candidates.length <= MEM_CAND_CAP;
     if (candidates.length > MEM_CAND_CAP) {
-      $('memCandMore').textContent = 'Showing first ' + MEM_CAND_CAP + ' of ' + candidates.length + ' — use search or the class filter.';
+      $('memCandMore').textContent = 'Showing first ' + MEM_CAND_CAP + ' of ' + candidates.length + ' — use search or the filters.';
     }
+    $('memAddSelBtn').disabled = candSelected.size === 0;
+    $('memAddSelBtn').textContent = candSelected.size ? 'Add selected (' + candSelected.size + ')' : 'Add selected';
+    $('memAddAllBtn').disabled = candidates.length === 0;
   }
+
+  wireRowSelection($('memCandidates').querySelector('tbody'), candSelected, renderMemberships);
 
   $('memTable').addEventListener('click', function (ev) {
     var btn = ev.target.closest('button[data-act="remove"]');
@@ -668,38 +927,33 @@
     markDirty();
   });
 
-  $('memCandidates').addEventListener('click', function (ev) {
-    var btn = ev.target.closest('button[data-act="add"]');
-    if (!btn) return;
-    addMembership(btn.closest('tr').dataset.id, selectedGroupCode());
-    markDirty();
+  $('memAddSelBtn').addEventListener('click', function () {
+    if (!candSelected.size) return;
+    addStudentsToGroup(Array.from(candSelected), selectedGroupCode());
+    candSelected.clear();
   });
 
   $('memAddAllBtn').addEventListener('click', function () {
     var code = selectedGroupCode();
     if (!code) return;
-    var rows = $('memCandidates').querySelectorAll('tbody tr');
-    if (!rows.length) return;
-    if (!confirm('Add all ' + rows.length + ' shown students to this group?')) return;
-    rows.forEach(function (tr) { addMembership(tr.dataset.id, code); });
-    markDirty();
+    var candidates = memCandidates();
+    if (!candidates.length) return;
+    if (!confirm('Add all ' + candidates.length + ' matching students to this group?')) return;
+    addStudentsToGroup(candidates.map(function (s) { return s.id; }), code);
+    candSelected.clear();
   });
-
-  function addMembership(studentId, groupCode) {
-    if (!studentId || !groupCode) return;
-    var exists = model.memberships.some(function (m) { return m.studentId === studentId && m.groupCode === groupCode; });
-    if (!exists) model.memberships.push({ studentId: studentId, groupCode: groupCode });
-  }
 
   /* ================= import ================= */
 
   var importWb = null;
+  var importRows = [];
 
   $('importBtn').addEventListener('click', openImportDialog);
   $('importCancelBtn').addEventListener('click', function () { $('importDialog').close(); });
 
   function openImportDialog() {
     importWb = null;
+    importRows = [];
     $('importFile').value = '';
     $('importOptions').hidden = true;
     $('importGoBtn').disabled = true;
@@ -727,30 +981,70 @@
     $('impSheet').innerHTML = importWb.SheetNames.map(function (n) {
       return '<option value="' + esc(n) + '">' + esc(n) + '</option>';
     }).join('');
-    fillImportMapping();
+    loadImportSheet();
   });
 
-  $('impSheet').addEventListener('change', fillImportMapping);
+  $('impSheet').addEventListener('change', loadImportSheet);
+  $('impHeaderRow').addEventListener('change', fillImportMapping);
+  ['impId', 'impName', 'impClass', 'impGender', 'impPg'].forEach(function (id) {
+    $(id).addEventListener('change', updateImportHints);
+  });
 
-  function importHeaderRow() {
+  function loadImportSheet() {
     var ws = importWb.Sheets[$('impSheet').value];
-    var rows = S.sheetRows(ws);
-    return { headers: rows.length ? rows[0] : [], rowCount: Math.max(0, rows.length - 1), rows: rows };
+    importRows = ws ? S.sheetRows(ws) : [];
+    var detected = S.detectHeaderRow(importRows);
+    $('impHeaderRow').innerHTML = importRows.slice(0, 15).map(function (row, r) {
+      var preview = row.filter(function (c) { return S.norm(c); }).slice(0, 6).join(', ').slice(0, 70);
+      return '<option value="' + r + '">Row ' + (r + 1) + ': ' + esc(preview || '(blank)') + '</option>';
+    }).join('');
+    $('impHeaderRow').value = String(detected);
+    fillImportMapping();
   }
 
+  function headerRowIndex() { return parseInt($('impHeaderRow').value, 10) || 0; }
+
   function fillImportMapping() {
-    if (!importWb) return;
-    var info = importHeaderRow();
-    var options = ['<option value="">— none —</option>'].concat(info.headers.map(function (h, i) {
+    var headers = importRows[headerRowIndex()] || [];
+    var options = ['<option value="">— none —</option>'].concat(headers.map(function (h, i) {
       return '<option value="' + i + '">' + esc(S.norm(h) || '(column ' + (i + 1) + ')') + '</option>';
     })).join('');
-    ['impId', 'impName', 'impClass', 'impComb'].forEach(function (id) { $(id).innerHTML = options; });
-    var guess = S.mapHeaders(info.headers, S.STUDENT_FIELDS);
+    ['impId', 'impName', 'impClass', 'impGender', 'impPg'].forEach(function (id) { $(id).innerHTML = options; });
+    var guess = S.mapHeaders(headers, S.STUDENT_FIELDS);
     if ('id' in guess) $('impId').value = guess.id;
     if ('name' in guess) $('impName').value = guess.name;
     if ('class' in guess) $('impClass').value = guess.class;
-    if ('combination' in guess) $('impComb').value = guess.combination;
-    $('importPreview').textContent = info.rowCount + ' data row(s) found in sheet "' + $('impSheet').value + '".';
+    if ('gender' in guess) $('impGender').value = guess.gender;
+    if ('pg' in guess) $('impPg').value = guess.pg;
+    renderTagCols();
+    updateImportHints();
+  }
+
+  function mappedIndexes() {
+    return ['impId', 'impName', 'impClass', 'impGender', 'impPg'].map(function (id) {
+      return $(id).value === '' ? -1 : parseInt($(id).value, 10);
+    });
+  }
+
+  function renderTagCols() {
+    var headers = importRows[headerRowIndex()] || [];
+    var mapped = mappedIndexes();
+    var boxes = [];
+    headers.forEach(function (h, i) {
+      var label = S.norm(h);
+      if (!label || mapped.indexOf(i) !== -1) return;
+      var off = /psle|remark|^no$|^s\/?n$|^serial/i.test(label);
+      boxes.push('<label><input type="checkbox" data-index="' + i + '" data-header="' + esc(label) + '"' +
+        (off ? '' : ' checked') + '> ' + esc(label) + '</label>');
+    });
+    $('tagCols').innerHTML = boxes.join('') || '<span class="muted small">No extra columns.</span>';
+  }
+
+  function updateImportHints() {
+    renderTagCols();
+    $('autoIdHint').hidden = $('impId').value !== '';
+    var n = Math.max(0, importRows.length - headerRowIndex() - 1);
+    $('importPreview').textContent = n + ' data row(s) below the header in sheet "' + $('impSheet').value + '".';
   }
 
   $('importFullBtn').addEventListener('click', function () {
@@ -759,6 +1053,7 @@
     var res = S.workbookToModel(importWb);
     model = res.model;
     loadWarnings = res.warnings;
+    selectedIds.clear();
     $('importDialog').close();
     setDirty(true);
     enterMain();
@@ -767,48 +1062,51 @@
 
   $('importGoBtn').addEventListener('click', function () {
     if (!importWb) return;
-    var idCol = $('impId').value, nameCol = $('impName').value;
-    if (idCol === '' || nameCol === '') {
-      alert('Please choose the Student ID and Name columns.');
+    if ($('impName').value === '') {
+      alert('Please choose the Name column.');
       return;
     }
-    var info = importHeaderRow();
+    var tagCols = [];
+    $('tagCols').querySelectorAll('input:checked').forEach(function (cb) {
+      tagCols.push({ index: parseInt(cb.dataset.index, 10), header: cb.dataset.header });
+    });
+    var mapping = {
+      headerRow: headerRowIndex(),
+      cols: {
+        id: $('impId').value === '' ? null : parseInt($('impId').value, 10),
+        name: parseInt($('impName').value, 10),
+        class: $('impClass').value === '' ? null : parseInt($('impClass').value, 10),
+        gender: $('impGender').value === '' ? null : parseInt($('impGender').value, 10),
+        pg: $('impPg').value === '' ? null : parseInt($('impPg').value, 10),
+      },
+      tagCols: tagCols,
+    };
+    var res = S.importStudents(importRows, mapping);
+    if (!res.students.length) {
+      alert('No usable rows found (each row needs at least a Name).');
+      return;
+    }
+    loadWarnings = loadWarnings.concat(res.warnings.map(function (w) { return 'Import: ' + w; }));
     var mode = document.querySelector('input[name="impMode"]:checked').value;
-    var clsCol = $('impClass').value, combCol = $('impComb').value;
-    var incoming = [];
-    var skipped = 0;
-    for (var r = 1; r < info.rows.length; r++) {
-      var row = info.rows[r];
-      var rec = {
-        id: S.norm(row[idCol]),
-        name: S.norm(row[nameCol]),
-        class: clsCol === '' ? '' : S.norm(row[clsCol]),
-        combination: combCol === '' ? '' : S.norm(row[combCol]),
-      };
-      if (!rec.id || !rec.name) { skipped++; continue; }
-      incoming.push(rec);
-    }
-    if (!incoming.length) {
-      alert('No usable rows found (each row needs a Student ID and a Name).');
-      return;
-    }
     var added = 0, updated = 0;
     if (mode === 'replace') {
       var keep = {};
-      incoming.forEach(function (s) { keep[s.id] = true; });
+      res.students.forEach(function (s) { keep[s.id] = true; });
       model.students = [];
       model.memberships = model.memberships.filter(function (m) { return keep[m.studentId]; });
+      selectedIds.clear();
     }
     var byId = {};
     model.students.forEach(function (s, i) { byId[s.id] = i; });
-    incoming.forEach(function (rec) {
+    res.students.forEach(function (rec) {
       if (rec.id in byId) { model.students[byId[rec.id]] = rec; updated++; }
       else { byId[rec.id] = model.students.length; model.students.push(rec); added++; }
     });
     $('importDialog').close();
     setDirty(true);
     enterMain();
-    toast('Imported: ' + added + ' added, ' + updated + ' updated' + (skipped ? ', ' + skipped + ' rows skipped' : ''));
+    toast('Imported: ' + added + ' added, ' + updated + ' updated' +
+      (res.warnings.length ? ', ' + res.warnings.length + ' row(s) skipped' : ''));
   });
 
   /* Test hook: lets automated tests render the editor without folder access. */

@@ -4,9 +4,12 @@ An offline namelist tool for schools that lives entirely in one shared folder.
 No server, no installation, no internet — just two HTML files next to an Excel file.
 
 - **Teachers** open `namelist.html` (via a desktop shortcut), type their name, and see
-  all their teaching-group namelists instantly. Zero clicks to load data.
-- **Admins** open `admin.html` to add/edit students, subject combinations, teaching
-  groups, and group members. Saving updates the Excel master file, the teacher page's
+  all their teaching-group namelists instantly — zero clicks to load data — and can
+  print any one namelist or all of them as clean class registers.
+- **Admins** open `admin.html` to import the raw student list, then build teaching
+  groups fast: sort by any column, filter by class/PG or any tag (e.g. "MA G3"),
+  click rows (Shift for ranges, or select-all-shown) and assign the whole selection
+  to a group in one action. Saving updates the Excel master file, the teacher page's
   data, and a timestamped backup — all in one go.
 - **`namelist.xlsx`** in the same folder is the master data store. It opens normally
   in Excel for viewing or printing, but should only be *edited* through `admin.html`.
@@ -37,18 +40,28 @@ edits go through `admin.html`, the two can never drift apart.
 1. Copy `dist/namelist.html` and `dist/admin.html` into the shared folder.
 2. Open `admin.html` in Chrome/Edge → **Open data folder…** → pick that folder → **Allow**.
 3. No `namelist.xlsx` yet? Choose **Import a raw document…** and point it at your
-   existing student list (Excel/CSV) — column names are matched automatically and can
-   be corrected in the dialog — or start with an empty list.
-4. Create your teaching groups (Teaching groups tab), assign students to them
-   (Group members tab), then press **Save**.
+   existing student list (Excel/CSV). The importer:
+   - finds the real header row automatically, even below titles/dates;
+   - auto-matches Name / Class / Gender / PG columns (correct them in the dialog if needed);
+   - generates student IDs from class + row order (`1R1-01`, `1R1-02`, …) when the
+     file has no unique ID column, keeping register order;
+   - keeps the remaining columns (TG, EL, MT, HMT, MA, SCI, HIST, GEOG, LIT, …) as
+     **searchable tags** per student — untick any you don't want (PSLE/remark columns
+     are unticked by default).
+4. Create teaching groups and fill them: in the **Students** tab, filter or search
+   (e.g. class `1R1`, or tag `MA G3`), click rows / Shift-click a range / tick the
+   header checkbox, then **Add to group** — straight into an existing group or a new
+   one. Then press **Save**.
 5. Make a desktop shortcut for teachers (see below).
 
 ### Daily use
 
 - **Teachers:** double-click the shortcut → type your name → your namelists appear.
-  Use **Print** for a clean printout. "Find a student" looks up any student's groups.
+  **Print** any single group or all of them; printouts include a Remarks column for
+  marking. "Find a student" looks up any student by name, class, ID or tag.
 - **Admins:** open `admin.html` → pick the folder (Chrome asks once per session) →
-  edit → **Save**. The moment you save, every teacher who reopens the page sees the update.
+  edit → **Save**. The moment you save, every teacher who reopens the page sees the
+  update. Any group's namelist can also be printed from the Group members tab.
 
 ## Windows shared-drive notes
 
@@ -104,8 +117,11 @@ containing `sample/namelist.xlsx`.
 
 | Sheet | Columns |
 |---|---|
-| Students | StudentID, Name, Class, Subject Combination |
+| Students | StudentID, Name, Class, Gender, PG, Tags |
 | Groups | GroupCode, GroupName, Subject, Teacher |
 | Memberships | StudentID, GroupCode |
+
+`Tags` is a " · "-separated list of searchable attributes per student (teaching
+group, subject bands, etc.), e.g. `TG1 · EL G3 · MT CL G2 · MA G3 · SCI G3`.
 
 A teacher's namelists = the members of every group whose Teacher field is their name.

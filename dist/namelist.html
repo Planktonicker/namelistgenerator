@@ -7,18 +7,20 @@
 <style>
 /* Shared look for the namelist pages. */
 :root {
-  --bg: #f4f6f8;
+  --bg: #f2f5f8;
   --surface: #ffffff;
-  --ink: #1a2733;
-  --muted: #5b6b7a;
-  --line: #dde4ea;
-  --accent: #0b5fa5;
+  --ink: #17222c;
+  --muted: #5f7080;
+  --line: #e2e8ee;
+  --accent: #0f5fa8;
+  --accent-dark: #0b4a84;
   --accent-ink: #ffffff;
-  --accent-soft: #e8f1f9;
+  --accent-soft: #e9f2fa;
   --warn-bg: #fdf3d7;
   --warn-ink: #7a5b00;
   --danger: #b3261e;
-  --radius: 8px;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(23, 34, 44, 0.06), 0 1px 6px rgba(23, 34, 44, 0.05);
 }
 
 * { box-sizing: border-box; }
@@ -34,25 +36,26 @@ html, body {
 }
 
 .app-header {
-  background: var(--accent);
+  background: linear-gradient(120deg, var(--accent-dark), var(--accent));
   color: var(--accent-ink);
-  padding: 14px 22px;
+  padding: 16px 24px;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
 }
-.app-header h1 { margin: 0; font-size: 20px; font-weight: 600; }
-.app-header .meta { font-size: 13px; opacity: 0.9; }
+.app-header h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 0.01em; }
+.app-header .meta { font-size: 13px; opacity: 0.92; }
 
-main { max-width: 1100px; margin: 0 auto; padding: 20px 22px 60px; }
+main { max-width: 1160px; margin: 0 auto; padding: 22px 24px 90px; }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 16px 18px;
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
   margin-bottom: 16px;
 }
 
@@ -64,9 +67,9 @@ h3 { font-size: 15px; margin: 0 0 8px; }
 input[type="text"], input[type="search"], select {
   font: inherit;
   color: inherit;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 8px;
   background: var(--surface);
   min-width: 0;
 }
@@ -74,38 +77,41 @@ input[type="text"]:focus, input[type="search"]:focus, select:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
+input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
 
 button {
   font: inherit;
   padding: 8px 14px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 8px;
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
+  box-shadow: 0 1px 1px rgba(23, 34, 44, 0.04);
 }
-button:hover { background: var(--accent-soft); }
+button:hover { background: var(--accent-soft); border-color: #c9d9e8; }
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
 }
-button.primary:hover { filter: brightness(1.1); }
+button.primary:hover { background: var(--accent-dark); }
 button.primary:disabled {
-  background: var(--muted);
-  border-color: var(--muted);
+  background: #9fb2c2;
+  border-color: #9fb2c2;
   cursor: default;
-  filter: none;
 }
 button.danger { color: var(--danger); }
 button.linklike {
   border: none;
   background: none;
+  box-shadow: none;
   color: var(--accent);
-  padding: 2px 4px;
+  padding: 2px 6px;
   text-decoration: underline;
 }
-button.linklike:hover { background: none; }
+button.linklike:hover { background: none; color: var(--accent-dark); }
+button.linklike.danger { color: var(--danger); }
 
 table.list {
   width: 100%;
@@ -114,18 +120,30 @@ table.list {
 }
 table.list th, table.list td {
   text-align: left;
-  padding: 6px 10px;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--line);
   vertical-align: top;
 }
 table.list th {
-  font-size: 13px;
+  font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.05em;
   color: var(--muted);
   border-bottom: 2px solid var(--line);
+  white-space: nowrap;
 }
-table.list tr:hover td { background: var(--accent-soft); }
+table.list tbody tr:nth-child(even) td { background: #fafcfe; }
+table.list tbody tr:hover td { background: var(--accent-soft); }
+table.list tr.selected td { background: #dcebf8 !important; }
+table.list th.sortable { cursor: pointer; user-select: none; }
+table.list th.sortable:hover { color: var(--accent); }
+table.list th.sortable::after { content: " ↕"; opacity: 0.4; }
+table.list th.sorted-asc::after { content: " ▲"; opacity: 1; color: var(--accent); }
+table.list th.sorted-desc::after { content: " ▼"; opacity: 1; color: var(--accent); }
+th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; padding-right: 2px; }
+
+.scrolly { max-height: 440px; overflow-y: auto; }
+.scrolly table.list thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
 
 .toolbar {
   display: flex;
@@ -143,8 +161,10 @@ table.list tr:hover td { background: var(--accent-soft); }
   border-radius: 999px;
   padding: 1px 10px;
   font-size: 13px;
+  font-weight: 600;
   white-space: nowrap;
 }
+.badge.plain { background: #eef2f5; color: var(--muted); font-weight: 500; }
 
 .warnings {
   background: var(--warn-bg);
@@ -155,6 +175,7 @@ table.list tr:hover td { background: var(--accent-soft); }
   margin-bottom: 16px;
 }
 .warnings ul { margin: 6px 0 0; padding-left: 20px; }
+.warnings summary { cursor: pointer; font-weight: 600; }
 
 .empty {
   color: var(--muted);
@@ -164,17 +185,20 @@ table.list tr:hover td { background: var(--accent-soft); }
 
 .tabs {
   display: flex;
-  gap: 6px;
-  margin-bottom: 16px;
+  gap: 4px;
+  margin-bottom: 18px;
   border-bottom: 2px solid var(--line);
 }
 .tabs button {
   border: none;
-  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: none;
+  border-radius: 8px 8px 0 0;
   background: none;
-  padding: 8px 16px;
+  padding: 9px 18px;
   color: var(--muted);
+  font-weight: 500;
 }
+.tabs button:hover { background: var(--accent-soft); color: var(--accent); }
 .tabs button.active {
   background: var(--surface);
   color: var(--accent);
@@ -182,26 +206,59 @@ table.list tr:hover td { background: var(--accent-soft); }
   box-shadow: inset 0 -3px 0 var(--accent);
 }
 
+/* Floating bar shown while students are selected */
+.selbar {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: #fff;
+  border-radius: 999px;
+  box-shadow: 0 6px 24px rgba(23, 34, 44, 0.35);
+  padding: 10px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  z-index: 40;
+  max-width: calc(100vw - 40px);
+}
+.selbar .count { font-weight: 700; white-space: nowrap; }
+.selbar select {
+  background: #2a3947;
+  color: #fff;
+  border-color: #46586a;
+  max-width: 300px;
+}
+.selbar button { border-color: #46586a; background: #2a3947; color: #fff; box-shadow: none; }
+.selbar button:hover { background: #37485a; }
+.selbar button.primary { background: var(--accent); border-color: var(--accent); }
+.selbar button.primary:hover { background: #1a70bd; }
+.selbar button.danger { color: #ff9d95; }
+
 dialog {
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 20px 22px;
-  max-width: 560px;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(23, 34, 44, 0.25);
+  padding: 22px 24px;
+  max-width: 620px;
   width: calc(100vw - 60px);
 }
-dialog::backdrop { background: rgba(20, 35, 50, 0.45); }
-dialog form.fields { display: grid; grid-template-columns: 140px 1fr; gap: 10px 12px; align-items: center; }
+dialog::backdrop { background: rgba(18, 30, 42, 0.5); }
+dialog form.fields { display: grid; grid-template-columns: 150px 1fr; gap: 10px 12px; align-items: center; }
 dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; grid-column: 1 / -1; }
 
 .toast {
   position: fixed;
-  bottom: 24px;
+  bottom: 84px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--ink);
   color: #fff;
-  padding: 10px 20px;
+  padding: 10px 22px;
   border-radius: 999px;
+  box-shadow: 0 6px 24px rgba(23, 34, 44, 0.3);
   opacity: 0;
   transition: opacity 0.25s;
   pointer-events: none;
@@ -209,35 +266,49 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
 }
 .toast.show { opacity: 1; }
 
+/* ---- printing ---- */
+.print-sheet { display: none; }
+
 @media print {
-  html, body { background: #fff; }
-  .no-print { display: none !important; }
+  html, body { background: #fff; font-size: 12px; }
+  .no-print, .app-header, .tabs, .toolbar, .selbar, .toast, .warnings { display: none !important; }
   main { max-width: none; padding: 0; }
-  .card { border: none; padding: 0; margin-bottom: 20px; break-inside: avoid; }
-  table.list th, table.list td { padding: 3px 8px; }
-  table.list tr:hover td { background: none; }
+  .card { border: none; box-shadow: none; padding: 0; margin-bottom: 18px; break-inside: avoid-page; }
+  .scrolly { max-height: none; overflow: visible; }
+  table.list th, table.list td { padding: 3px 8px; border-bottom: 1px solid #ccc; }
+  table.list tbody tr:nth-child(even) td, table.list tbody tr:hover td { background: none; }
+  th.checkcol, td.checkcol, td.actions, th.print-hide, td.print-hide { display: none !important; }
+
+  /* When a dedicated print sheet is active, show only it */
+  body.print-sheet-mode main > * { display: none !important; }
+  body.print-sheet-mode .print-sheet { display: block !important; }
+  .print-sheet h2 { font-size: 16px; margin-bottom: 2px; }
+  .print-sheet .sub { color: #444; margin: 0 0 10px; font-size: 12px; }
+  .print-sheet table.list th { color: #333; }
 }
 
 </style>
 <style>
-  .teacher-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .teacher-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
   .teacher-chips button {
     border-radius: 999px;
-    padding: 5px 14px;
+    padding: 6px 16px;
     background: var(--accent-soft);
     border-color: transparent;
     color: var(--accent);
+    box-shadow: none;
   }
   .teacher-chips button:hover { background: var(--accent); color: var(--accent-ink); }
   .suggestions { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
-  .suggestions button { text-align: left; border: none; background: none; padding: 7px 10px; border-radius: var(--radius); }
+  .suggestions button { text-align: left; border: none; background: none; box-shadow: none; padding: 8px 12px; border-radius: 8px; }
   .suggestions button:hover, .suggestions button.hilite { background: var(--accent-soft); }
-  .group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  #searchBox { width: 100%; max-width: 480px; font-size: 17px; padding: 12px 14px; }
-  .result-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
-  .result-title h2 { font-size: 20px; }
-  .print-only { display: none; }
-  @media print { .print-only { display: block; } }
+  .group-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .group-head .left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .group-head h3 { margin: 0; font-size: 16px; }
+  #searchBox { width: 100%; max-width: 520px; font-size: 18px; padding: 13px 16px; }
+  .result-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 12px; }
+  .result-title h2 { font-size: 21px; margin: 0; }
+  .tagline { color: var(--muted); font-size: 13px; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -273,11 +344,13 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     <section id="studentTab" hidden>
       <div class="card no-print">
         <label for="studentBox"><h2>Search for a student</h2></label>
-        <input type="search" id="studentBox" placeholder="Name, class or student ID" autocomplete="off">
+        <input type="search" id="studentBox" placeholder="Name, class, ID or tag (e.g. MA G3)" autocomplete="off">
       </div>
       <div id="studentResults"></div>
     </section>
   </div>
+
+  <div class="print-sheet" id="printSheet"></div>
 </main>
 
 <script src="data.js"></script>
@@ -286,10 +359,13 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
  *
  * Model shape used everywhere:
  *   {
- *     students:    [{ id, name, class, combination }],
+ *     students:    [{ id, name, class, gender, pg, tags }],
  *     groups:      [{ code, name, subject, teacher }],
  *     memberships: [{ studentId, groupCode }],
  *   }
+ *
+ * `tags` is a free-text " · "-separated list of searchable attributes
+ * (subject bands like "EL G3", teaching groups like "TG1", etc.).
  *
  * Runs as a plain script in the browser and via require() in Node tests.
  * Workbook conversion needs SheetJS available as globalThis.XLSX; the
@@ -298,7 +374,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
 (function () {
   'use strict';
 
-  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Subject Combination'];
+  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG', 'Tags'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teacher'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
 
@@ -306,7 +382,9 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     id: ['studentid', 'id', 'studentno', 'indexno', 'regno', 'nric'],
     name: ['name', 'studentname', 'fullname'],
     class: ['class', 'formclass', 'form'],
-    combination: ['subjectcombination', 'combination', 'subjects', 'combi'],
+    gender: ['gender', 'sex'],
+    pg: ['pg', 'postinggroup', 'stream'],
+    tags: ['tags', 'subjectcombination', 'combination', 'subjects', 'combi', 'subjectbands'],
   };
   var GROUP_FIELDS = {
     code: ['groupcode', 'code'],
@@ -362,7 +440,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     var rows = sheetRows(ws);
     if (!rows.length) return [];
     var idx = mapHeaders(rows[0], fields);
-    Object.keys(fields).forEach(function (field) {
+    requiredFields.forEach(function (field) {
       if (!(field in idx)) {
         warnings.push('Sheet "' + sheetName + '": no column matched "' + field + '" — those values will be blank.');
       }
@@ -399,7 +477,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     var students = findSheet(wb, 'Students');
     var groups = findSheet(wb, 'Groups');
     var memberships = findSheet(wb, 'Memberships');
-    if (students) model.students = readTable(students, STUDENT_FIELDS, ['id'], 'Students', warnings);
+    if (students) model.students = readTable(students, STUDENT_FIELDS, ['id', 'name'], 'Students', warnings);
     else warnings.push('Sheet "Students" not found.');
     if (groups) model.groups = readTable(groups, GROUP_FIELDS, ['code'], 'Groups', warnings);
     else warnings.push('Sheet "Groups" not found.');
@@ -414,9 +492,9 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     var ws;
 
     ws = X.utils.aoa_to_sheet([STUDENT_HEADERS].concat(model.students.map(function (s) {
-      return [s.id, s.name, s.class, s.combination];
+      return [s.id, s.name, s.class, s.gender, s.pg, s.tags];
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 10 }, { wch: 24 }];
+    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 8 }, { wch: 5 }, { wch: 60 }];
     X.utils.book_append_sheet(wb, ws, 'Students');
 
     ws = X.utils.aoa_to_sheet([GROUP_HEADERS].concat(model.groups.map(function (g) {
@@ -469,8 +547,75 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     return warnings;
   }
 
+  function cmp(a, b) {
+    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  }
+
   function byClassThenName(a, b) {
-    return a.class.localeCompare(b.class) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+    return cmp(a.class, b.class) || cmp(a.name, b.name) || cmp(a.id, b.id);
+  }
+
+  /* ---- raw-document import ------------------------------------------- */
+
+  /* Find the most plausible header row in the first 15 rows of a sheet
+   * (real documents often carry titles/dates above the actual table). */
+  function detectHeaderRow(rows) {
+    var best = 0;
+    var bestScore = -1;
+    var limit = Math.min(rows.length, 15);
+    for (var r = 0; r < limit; r++) {
+      var m = mapHeaders(rows[r] || [], STUDENT_FIELDS);
+      var score = Object.keys(m).length + ('name' in m ? 2 : 0);
+      if (score > bestScore) { bestScore = score; best = r; }
+    }
+    return best;
+  }
+
+  /* Extract students from raw sheet rows.
+   *   mapping: { headerRow, cols: {id?, name, class?, gender?, pg?},
+   *              tagCols: [{ index, header }] }
+   * Rows without a name are skipped. Without an id column, IDs are
+   * generated as "<class>-01", "<class>-02", … in row order, which keeps
+   * per-class register order sortable. Tag values that don't already start
+   * with their column header get it prefixed ("MT" + "CL G3" → "MT CL G3")
+   * so tags stay meaningful out of context. */
+  function importStudents(rows, mapping) {
+    var warnings = [];
+    var students = [];
+    var counters = {};
+    var usedIds = {};
+    var cols = mapping.cols || {};
+    function cell(row, key) {
+      return cols[key] == null || cols[key] === '' ? '' : norm(row[cols[key]]);
+    }
+    for (var r = mapping.headerRow + 1; r < rows.length; r++) {
+      var row = rows[r] || [];
+      if (isBlankRow(row)) continue;
+      var name = cell(row, 'name');
+      if (!name) { warnings.push('Row ' + (r + 1) + ': no name — skipped.'); continue; }
+      var cls = cell(row, 'class');
+      var id = cell(row, 'id');
+      if (!id) {
+        var base = cls || 'S';
+        counters[base] = (counters[base] || 0) + 1;
+        id = base + '-' + (counters[base] < 10 ? '0' : '') + counters[base];
+      }
+      if (usedIds[id]) { warnings.push('Row ' + (r + 1) + ': duplicate ID "' + id + '" — skipped.'); continue; }
+      usedIds[id] = true;
+      var tags = [];
+      (mapping.tagCols || []).forEach(function (tc) {
+        var v = norm(row[tc.index]);
+        if (!v) return;
+        var h = norm(tc.header);
+        tags.push(!h || normKey(v).indexOf(normKey(h)) === 0 ? v : h + ' ' + v);
+      });
+      students.push({
+        id: id, name: name, class: cls,
+        gender: cell(row, 'gender'), pg: cell(row, 'pg'),
+        tags: tags.join(' · '),
+      });
+    }
+    return { students: students, warnings: warnings };
   }
 
   /* Lookup structures shared by both pages. `data` is a model or NAMELIST_DATA. */
@@ -535,6 +680,9 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     validateModel: validateModel,
     buildIndexes: buildIndexes,
     byClassThenName: byClassThenName,
+    cmp: cmp,
+    detectHeaderRow: detectHeaderRow,
+    importStudents: importStudents,
   };
 })();
 
@@ -548,7 +696,6 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   var data = window.NAMELIST_DATA;
   if (!data || !Array.isArray(data.students)) {
     $('errorState').hidden = false;
-    $('dataMeta').textContent = '';
     return;
   }
   var ix = S.buildIndexes(data);
@@ -563,6 +710,37 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+
+  /* ---------- printing ---------- */
+
+  function groupLabel(g) {
+    return (g.name || g.code) + (g.subject ? ' — ' + g.subject : '');
+  }
+
+  function printGroups(groups, teacherName) {
+    var today = new Date().toLocaleDateString();
+    var html = groups.map(function (g) {
+      var members = ix.membersByGroup.get(g.code) || [];
+      var rows = members.map(function (s, i) {
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) +
+          '</td><td>' + esc(s.id) + '</td><td style="width:30%"></td></tr>';
+      }).join('');
+      return '<div class="card"><h2>' + esc(groupLabel(g)) + '</h2>' +
+        '<p class="sub">' + (g.teacher ? 'Teacher: ' + esc(g.teacher) + ' · ' : '') +
+        members.length + ' student' + (members.length === 1 ? '' : 's') + ' · Printed ' + esc(today) +
+        (data.savedAt ? ' · Data updated ' + esc(new Date(data.savedAt).toLocaleDateString()) : '') + '</p>' +
+        '<table class="list"><thead><tr><th style="width:34px">#</th><th>Name</th><th>Class</th><th>ID</th><th>Remarks</th></tr></thead>' +
+        '<tbody>' + (rows || '<tr><td colspan="5">No students in this group.</td></tr>') + '</tbody></table></div>';
+    }).join('');
+    $('printSheet').innerHTML = html;
+    document.body.classList.add('print-sheet-mode');
+    window.print();
+  }
+
+  window.addEventListener('afterprint', function () {
+    document.body.classList.remove('print-sheet-mode');
+    $('printSheet').innerHTML = '';
+  });
 
   /* ---------- tabs ---------- */
   $('tabTeacherBtn').addEventListener('click', function () { switchTab('teacher'); });
@@ -627,18 +805,20 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     var groups = ix.groupsByTeacher.get(selectedTeacher) || [];
     var total = 0;
     var html = '<div class="result-title"><h2>' + esc(selectedTeacher) + '</h2>' +
-      '<span class="no-print"><button class="primary" onclick="window.print()">Print</button></span></div>' +
-      '<p class="print-only small muted">Namelists for ' + esc(selectedTeacher) +
-      (data.savedAt ? ' — data updated ' + esc(new Date(data.savedAt).toLocaleString()) : '') + '</p>';
+      '<span class="no-print">' +
+      (groups.length ? '<button class="primary" id="printAllBtn">Print all namelists</button>' : '') +
+      '</span></div>';
     if (!groups.length) {
       html += '<div class="card"><p class="empty">No teaching groups are assigned to this name.</p></div>';
     }
-    groups.forEach(function (g) {
+    groups.forEach(function (g, gi) {
       var members = ix.membersByGroup.get(g.code) || [];
       total += members.length;
-      html += '<div class="card"><div class="group-head"><h3>' + esc(g.name || g.code) +
-        (g.subject ? ' <span class="muted">· ' + esc(g.subject) + '</span>' : '') +
-        '</h3><span class="badge">' + members.length + ' student' + (members.length === 1 ? '' : 's') + '</span></div>';
+      html += '<div class="card"><div class="group-head">' +
+        '<div class="left"><h3>' + esc(g.name || g.code) + '</h3>' +
+        (g.subject ? '<span class="badge plain">' + esc(g.subject) + '</span>' : '') +
+        '<span class="badge">' + members.length + ' student' + (members.length === 1 ? '' : 's') + '</span></div>' +
+        '<span class="no-print"><button class="print-group" data-gi="' + gi + '">Print</button></span></div>';
       if (members.length) {
         html += '<table class="list"><thead><tr><th style="width:40px">#</th><th>Name</th><th>Class</th><th>Student ID</th></tr></thead><tbody>';
         members.forEach(function (s, i) {
@@ -651,10 +831,15 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       html += '</div>';
     });
     if (groups.length) {
-      html += '<p class="muted small">' + groups.length + ' group' + (groups.length === 1 ? '' : 's') +
+      html += '<p class="muted small no-print">' + groups.length + ' group' + (groups.length === 1 ? '' : 's') +
         ', ' + total + ' student place' + (total === 1 ? '' : 's') + ' in total.</p>';
     }
     out.innerHTML = html;
+    var printAll = $('printAllBtn');
+    if (printAll) printAll.addEventListener('click', function () { printGroups(groups, selectedTeacher); });
+    out.querySelectorAll('button.print-group').forEach(function (b) {
+      b.addEventListener('click', function () { printGroups([groups[+b.dataset.gi]], selectedTeacher); });
+    });
   }
 
   searchBox.addEventListener('input', function () {
@@ -682,7 +867,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     var out = $('studentResults');
     if (!q) { out.innerHTML = ''; return; }
     var matches = data.students.filter(function (s) {
-      return (s.name + ' ' + s.class + ' ' + s.id).toLowerCase().indexOf(q) !== -1;
+      return (s.name + ' ' + s.class + ' ' + s.id + ' ' + (s.tags || '')).toLowerCase().indexOf(q) !== -1;
     });
     if (!matches.length) {
       out.innerHTML = '<div class="card"><p class="empty">No student matches “' + esc($('studentBox').value.trim()) + '”.</p></div>';
@@ -691,9 +876,11 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     var html = '';
     matches.sort(S.byClassThenName).slice(0, 30).forEach(function (s) {
       var groups = ix.groupsByStudent.get(s.id) || [];
-      html += '<div class="card"><div class="group-head"><h3>' + esc(s.name) +
-        ' <span class="muted">· ' + esc(s.class) + ' · ' + esc(s.id) + '</span></h3>' +
-        (s.combination ? '<span class="badge">' + esc(s.combination) + '</span>' : '') + '</div>';
+      html += '<div class="card"><div class="group-head"><div class="left"><h3>' + esc(s.name) + '</h3>' +
+        '<span class="badge plain">' + esc(s.class) + '</span>' +
+        (s.pg ? '<span class="badge plain">PG' + esc(s.pg) + '</span>' : '') +
+        '<span class="muted small">' + esc(s.id) + '</span></div></div>' +
+        (s.tags ? '<p class="tagline">' + esc(s.tags) + '</p>' : '');
       if (groups.length) {
         html += '<table class="list"><thead><tr><th>Subject</th><th>Group</th><th>Teacher</th></tr></thead><tbody>';
         groups.forEach(function (g) {

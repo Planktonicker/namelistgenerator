@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-/* Generates sample/namelist.xlsx and sample/data.js with realistic fake data.
+/* Generates sample/namelist.xlsx and sample/data.js with realistic fake data
+ * mirroring the real school structure: classes 1R1-1R6, PG 1/2/3, per-subject
+ * band tags, teachers allocated per class plus banded option groups.
  * Deterministic (no randomness) so tests and screenshots are reproducible. */
 'use strict';
 const fs = require('node:fs');
@@ -15,66 +17,51 @@ const FIRST = ['Aiden', 'Brenda', 'Clarissa', 'Darren', 'Elena', 'Farhan', 'Grac
 const LAST = ['Tan', 'Lim', 'Lee', 'Ng', 'Wong', 'Chua', 'Goh', 'Ong', 'Teo', 'Koh',
   'Abdullah', 'Kumar', 'Chen', 'Ho', 'Ismail', 'Loh', 'Nair', 'Phua', 'Sim', 'Yeo'];
 
-const CLASSES = ['4A', '4B', '4C', '4D', '4E'];
-const STUDENTS_PER_CLASS = 28;
+const CLASSES = ['1R1', '1R2', '1R3', '1R4', '1R5', '1R6'];
+const STUDENTS_PER_CLASS = 26;
+const MT_LANGS = ['CL', 'ML', 'TL'];
 
-const COMBOS = [
-  'Physics / Chemistry / Geography',
-  'Physics / Chemistry / Biology',
-  'Chemistry / Biology / Geography',
-  'Physics / Chemistry / Literature',
-  'Chemistry / Biology / History',
-  'Geography / History / Literature',
+const EL_TEACHERS = ['Mrs Lim Bee Leng', 'Mr Daniel Tan', 'Ms Nur Aisyah', 'Mrs Grace Chua', 'Mr Marcus Lee', 'Mdm Sarimah Bakar'];
+const MA_TEACHERS = ['Mr Rajesh Kumar', 'Mdm Halimah Yusof', 'Ms Serene Goh', 'Mr Alvin Ong', 'Mrs Doris Koh', 'Mr Wei Jie Chan'];
+const BAND_GROUPS = [
+  { code: 'SCI-G3', name: 'Science G3', subject: 'Science', teacher: 'Dr Sarah Loh', tag: 'SCI G3' },
+  { code: 'HIST-G3', name: 'History G3', subject: 'History', teacher: 'Ms Priyanka Nair', tag: 'HIST G3' },
+  { code: 'GEOG-G2', name: 'Geography G2', subject: 'Geography', teacher: 'Mr Kenneth Sim', tag: 'GEOG G2' },
+  { code: 'LIT-G3', name: 'Literature G3', subject: 'Literature', teacher: 'Mrs Evelyn Phua', tag: 'LIT G3' },
 ];
-
-/* subject → the option groups students of that subject are spread across */
-const OPTION_GROUPS = {
-  Physics: ['PHY-1', 'PHY-2'],
-  Chemistry: ['CHEM-1', 'CHEM-2'],
-  Biology: ['BIO-1'],
-  Geography: ['GEO-1'],
-  History: ['HIST-1'],
-  Literature: ['LIT-1'],
-};
-
-const TEACHERS = {
-  english: ['Mrs Lim Bee Leng', 'Mr Daniel Tan', 'Ms Nur Aisyah', 'Mrs Grace Chua', 'Mr Marcus Lee'],
-  maths: ['Mr Rajesh Kumar', 'Mdm Halimah Yusof', 'Ms Serene Goh', 'Mr Alvin Ong', 'Mrs Doris Koh'],
-  'PHY-1': 'Mr Benjamin Teo', 'PHY-2': 'Ms Cheryl Ng',
-  'CHEM-1': 'Mrs Angela Wong', 'CHEM-2': 'Mr Faizal Ismail',
-  'BIO-1': 'Dr Sarah Loh', 'GEO-1': 'Mr Kenneth Sim',
-  'HIST-1': 'Ms Priyanka Nair', 'LIT-1': 'Mrs Evelyn Phua',
-};
 
 function buildSampleModel() {
   const model = S.emptyModel();
 
   CLASSES.forEach((cls, c) => {
-    model.groups.push({ code: 'EL-' + cls, name: 'English ' + cls, subject: 'English Language', teacher: TEACHERS.english[c] });
-    model.groups.push({ code: 'MA-' + cls, name: 'Mathematics ' + cls, subject: 'Mathematics', teacher: TEACHERS.maths[c] });
+    model.groups.push({ code: 'EL-' + cls, name: 'English ' + cls, subject: 'English Language', teacher: EL_TEACHERS[c] });
+    model.groups.push({ code: 'MA-' + cls, name: 'Mathematics ' + cls, subject: 'Mathematics', teacher: MA_TEACHERS[c] });
   });
-  Object.entries(OPTION_GROUPS).forEach(([subject, codes]) => {
-    codes.forEach((code) => {
-      model.groups.push({ code, name: subject + ' ' + code.split('-')[1], subject, teacher: TEACHERS[code] });
-    });
+  BAND_GROUPS.forEach((g) => {
+    model.groups.push({ code: g.code, name: g.name, subject: g.subject, teacher: g.teacher });
   });
 
-  const optionRotation = {};
   let n = 0;
   CLASSES.forEach((cls) => {
-    for (let i = 0; i < STUDENTS_PER_CLASS; i++, n++) {
-      const id = 'S' + String(2601 + n).padStart(5, '0');
+    for (let i = 1; i <= STUDENTS_PER_CLASS; i++, n++) {
+      const id = cls + '-' + (i < 10 ? '0' : '') + i;
       const name = FIRST[n % FIRST.length] + ' ' + LAST[(n * 7 + i) % LAST.length];
-      const combination = COMBOS[n % COMBOS.length];
-      model.students.push({ id, name, class: cls, combination });
+      const gender = n % 2 ? 'M' : 'F';
+      const pg = String([1, 2, 3, 3][n % 4]);
+      const g = 'G' + pg;
+      const mt = MT_LANGS[n % 3] + ' ' + g;
+      const tags = ['TG' + ((n % 2) + 1), 'EL ' + g, 'MT ' + mt, 'MA ' + g, 'SCI ' + g,
+        'HIST ' + g, 'GEOG ' + g, 'LIT ' + g];
+      if (n % 7 === 0) tags.push('HMT ' + (n % 3 === 0 ? 'CHINESE' : 'MALAY'));
+      const student = { id, name, class: cls, gender, pg, tags: tags.join(' · ') };
+      model.students.push(student);
 
       model.memberships.push({ studentId: id, groupCode: 'EL-' + cls });
       model.memberships.push({ studentId: id, groupCode: 'MA-' + cls });
-      combination.split('/').map((s) => s.trim()).forEach((subject) => {
-        const codes = OPTION_GROUPS[subject];
-        if (!codes) return;
-        optionRotation[subject] = (optionRotation[subject] || 0) + 1;
-        model.memberships.push({ studentId: id, groupCode: codes[optionRotation[subject] % codes.length] });
+      BAND_GROUPS.forEach((bg) => {
+        if (student.tags.indexOf(bg.tag) !== -1) {
+          model.memberships.push({ studentId: id, groupCode: bg.code });
+        }
       });
     }
   });

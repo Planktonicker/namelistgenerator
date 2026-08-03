@@ -50,10 +50,14 @@ edits go through `admin.html`, the two can never drift apart.
    - keeps the remaining columns (TG, EL, MT, HMT, MA, SCI, HIST, GEOG, LIT, …) as
      **subject/band columns** — sortable and searchable per student; untick any you
      don't want (PSLE/remark columns are unticked by default).
-4. Create teaching groups and fill them: in the **Students** tab, filter or search
-   (e.g. class `1R1`, or tag `MA G3`), click rows / Shift-click a range / tick the
-   header checkbox, then **Add to group** — straight into an existing group or a new
-   one. Then press **Save**.
+4. Create teaching groups. The fast way is **auto-allocation**: in Add group, type
+   the teacher's name and pick the subject group she takes (e.g. `EL` → `EL G2`,
+   optionally limited to classes like `1R`) — every matching student is allocated
+   instantly, and new students from later school-file updates flow in automatically.
+   The group code/name are suggested for you. Members can still be adjusted by hand
+   afterwards (Students tab bulk-select, or the Group members tab) — auto-allocation
+   only ever *adds*, so manual changes stick; re-check a group any time with its
+   **Auto-fill from rule** button. Then press **Save**.
 5. Make a desktop shortcut for teachers (see below).
 
 ### Keeping levels up to date from the school's files

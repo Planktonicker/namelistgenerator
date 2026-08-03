@@ -171,6 +171,41 @@ test('findNewestMatch picks the latest matching file and skips lock files', () =
   assert.strictEqual(S.findNewestMatch(files, 'Sec 3'), null);
 });
 
+test('auto-fill rules match bands and class prefixes, never remove, respect onlyIds', () => {
+  const model = {
+    students: [
+      { id: '1R1-01', name: 'A', class: '1R1', gender: 'F', pg: '3', subjects: { EL: 'EL G3', HMT: 'CHINESE' } },
+      { id: '1R2-01', name: 'B', class: '1R2', gender: 'M', pg: '3', subjects: { EL: 'el g3' } },  // case-insensitive value
+      { id: '1R2-02', name: 'C', class: '1R2', gender: 'M', pg: '2', subjects: { EL: 'EL G2' } },
+      { id: '2R1-01', name: 'D', class: '2R1', gender: 'F', pg: '3', subjects: { EL: 'EL G3' } },
+    ],
+    groups: [
+      { code: 'ELG3-S1', name: '', subject: '', teacher: '', autoKey: 'EL', autoValue: 'EL G3', autoClasses: '1R' },
+      { code: 'HMT-ALL', name: '', subject: '', teacher: '', autoKey: 'HMT', autoValue: '', autoClasses: '' },
+      { code: 'MANUAL', name: '', subject: '', teacher: '', autoKey: '', autoValue: '', autoClasses: '' },
+    ],
+    memberships: [],
+    subjectKeys: ['EL', 'HMT'],
+    sources: [],
+  };
+  const g = model.groups[0];
+  assert.strictEqual(S.groupHasRule(g), true);
+  assert.strictEqual(S.groupHasRule(model.groups[2]), false);
+
+  // EL G3 in Sec 1 classes only: A and B (case-insensitive), not C (G2), not D (2R1)
+  assert.strictEqual(S.autoFillGroup(model, g), 2);
+  assert.deepStrictEqual(model.memberships.map((m) => m.studentId + '/' + m.groupCode).sort(),
+    ['1R1-01/ELG3-S1', '1R2-01/ELG3-S1']);
+  // re-run adds nothing (and never removes)
+  model.memberships = model.memberships.filter((m) => m.studentId !== '1R2-01'); // manual removal
+  assert.strictEqual(S.autoFillGroup(model, g, ['1R1-01']), 0);  // onlyIds: removed student not revisited
+  assert.strictEqual(model.memberships.length, 1);
+  // any-value rule: everyone with something in HMT
+  assert.strictEqual(S.autoFillGroup(model, model.groups[1]), 1);
+  // rule-less group never auto-fills
+  assert.strictEqual(S.autoFillGroup(model, model.groups[2]), 0);
+});
+
 test('validation flags duplicates and dangling memberships', () => {
   const model = {
     students: [

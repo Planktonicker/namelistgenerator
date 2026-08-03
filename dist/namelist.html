@@ -413,7 +413,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   'use strict';
 
   var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG'];
-  var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teacher'];
+  var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teacher', 'AutoSubject', 'AutoValue', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
   var SOURCE_HEADERS = ['Level', 'FilePattern', 'LastFile', 'LastImported'];
 
@@ -429,6 +429,9 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     name: ['groupname', 'group', 'name'],
     subject: ['subject'],
     teacher: ['teacher', 'teachername', 'tutor'],
+    autoKey: ['autosubject'],
+    autoValue: ['autovalue'],
+    autoClasses: ['autoclasses'],
   };
   var MEMBERSHIP_FIELDS = {
     studentId: ['studentid', 'id', 'student'],
@@ -591,9 +594,9 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     X.utils.book_append_sheet(wb, ws, 'Students');
 
     ws = X.utils.aoa_to_sheet([GROUP_HEADERS].concat(model.groups.map(function (g) {
-      return [g.code, g.name, g.subject, g.teacher];
+      return [g.code, g.name, g.subject, g.teacher, g.autoKey, g.autoValue, g.autoClasses];
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 18 }, { wch: 24 }];
+    ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 18 }, { wch: 24 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];
     X.utils.book_append_sheet(wb, ws, 'Groups');
 
     ws = X.utils.aoa_to_sheet([MEMBERSHIP_HEADERS].concat(model.memberships.map(function (m) {
@@ -752,6 +755,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
 
     var matched = {};
     var updated = 0, added = 0;
+    var addedIds = [];
     imported.forEach(function (imp) {
       var nk = normKey(imp.name);
       var m = byNameClass[nk + '|' + imp.class] || byName[nk] || null;
@@ -769,10 +773,12 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         });
         updated++;
       } else {
+        var newId = freeId(imp.class);
         model.students.push({
-          id: freeId(imp.class), name: imp.name, class: imp.class,
+          id: newId, name: imp.name, class: imp.class,
           gender: imp.gender, pg: imp.pg, subjects: imp.subjects,
         });
+        addedIds.push(newId);
         added++;
       }
     });
@@ -788,9 +794,64 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       classes: Object.keys(classSet).sort(cmp),
       updated: updated,
       added: added,
+      addedIds: addedIds,
       missingIds: missing.map(function (s) { return s.id; }),
       missingLabels: missing.map(function (s) { return s.name + ' (' + s.class + ')'; }),
     };
+  }
+
+  /* ---- auto-allocation rules ------------------------------------------ */
+
+  /* A group's rule can name a subject column (with an optional band value)
+   * and/or a class filter — comma-separated class names or prefixes
+   * ("1R" matches 1R1…1R6). Both parts must hold when both are set. */
+  function groupHasRule(group) {
+    return !!(norm(group.autoKey) || norm(group.autoClasses));
+  }
+
+  function matchesRule(student, group) {
+    if (!groupHasRule(group)) return false;
+    var classes = norm(group.autoClasses);
+    if (classes) {
+      var sc = normKey(student.class);
+      var ok = classes.split(/[,;]+/).some(function (t) {
+        t = normKey(t);
+        return t && sc.indexOf(t) === 0;
+      });
+      if (!ok) return false;
+    }
+    var key = norm(group.autoKey);
+    if (key) {
+      var v = student.subjects ? norm(student.subjects[key]) : '';
+      if (!v) return false;
+      var want = norm(group.autoValue);
+      if (want && normKey(v) !== normKey(want)) return false;
+    }
+    return true;
+  }
+
+  /* Add every rule-matching student to the group. Never removes anyone, so
+   * manual changes survive. Pass onlyIds to restrict to specific students
+   * (e.g. the ones a level update just added). Returns how many were added. */
+  function autoFillGroup(model, group, onlyIds) {
+    if (!groupHasRule(group)) return 0;
+    var only = null;
+    if (onlyIds) {
+      only = {};
+      onlyIds.forEach(function (id) { only[id] = true; });
+    }
+    var existing = {};
+    model.memberships.forEach(function (m) {
+      if (m.groupCode === group.code) existing[m.studentId] = true;
+    });
+    var added = 0;
+    model.students.forEach(function (s) {
+      if (only && !only[s.id]) return;
+      if (existing[s.id] || !matchesRule(s, group)) return;
+      model.memberships.push({ studentId: s.id, groupCode: group.code });
+      added++;
+    });
+    return added;
   }
 
   /* Pick the most recently modified file whose name contains the pattern.
@@ -897,6 +958,9 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     studentSearchText: studentSearchText,
     applyLevelUpdate: applyLevelUpdate,
     findNewestMatch: findNewestMatch,
+    groupHasRule: groupHasRule,
+    matchesRule: matchesRule,
+    autoFillGroup: autoFillGroup,
   };
 })();
 

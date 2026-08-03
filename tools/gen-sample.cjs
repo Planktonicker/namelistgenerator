@@ -38,11 +38,20 @@ function buildSampleModel() {
   ];
 
   CLASSES.forEach((cls, c) => {
-    model.groups.push({ code: 'EL-' + cls, name: 'English ' + cls, subject: 'English Language', teacher: EL_TEACHERS[c] });
-    model.groups.push({ code: 'MA-' + cls, name: 'Mathematics ' + cls, subject: 'Mathematics', teacher: MA_TEACHERS[c] });
+    model.groups.push({
+      code: 'EL-' + cls, name: 'English ' + cls, subject: 'English Language', teacher: EL_TEACHERS[c],
+      autoKey: 'EL', autoValue: '', autoClasses: cls,
+    });
+    model.groups.push({
+      code: 'MA-' + cls, name: 'Mathematics ' + cls, subject: 'Mathematics', teacher: MA_TEACHERS[c],
+      autoKey: 'MA', autoValue: '', autoClasses: cls,
+    });
   });
   BAND_GROUPS.forEach((g) => {
-    model.groups.push({ code: g.code, name: g.name, subject: g.subject, teacher: g.teacher });
+    model.groups.push({
+      code: g.code, name: g.name, subject: g.subject, teacher: g.teacher,
+      autoKey: g.key, autoValue: g.value, autoClasses: '',
+    });
   });
 
   let n = 0;

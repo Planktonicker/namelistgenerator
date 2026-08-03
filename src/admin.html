@@ -127,7 +127,7 @@
       </div>
       <div class="card">
         <table class="list" id="groupsTable">
-          <thead><tr><th>Code</th><th>Group name</th><th>Subject</th><th>Teacher</th><th>Members</th><th></th></tr></thead>
+          <thead><tr><th>Code</th><th>Group name</th><th>Subject</th><th>Teacher</th><th>Auto-fill</th><th>Members</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
         <p class="empty" id="groupsEmpty" hidden>No teaching groups yet — use <strong>Add group</strong>.</p>
@@ -139,6 +139,7 @@
         <label for="memGroupSelect"><strong>Group:</strong></label>
         <select id="memGroupSelect" style="min-width:300px"></select>
         <span class="spacer"></span>
+        <button id="memFillBtn" hidden>Auto-fill from rule</button>
         <button id="memPrintBtn">Print this namelist</button>
       </div>
       <div class="mem-grid" id="memPanels" hidden>
@@ -230,10 +231,17 @@
   <dialog id="groupDialog">
     <h2 id="groupDialogTitle">Add group</h2>
     <form class="fields" id="groupForm">
-      <label for="gfCode">Group code *</label><input type="text" id="gfCode" required placeholder="e.g. EL-1R1">
-      <label for="gfName">Group name</label><input type="text" id="gfName" placeholder="e.g. English 1R1">
-      <label for="gfSubject">Subject</label><input type="text" id="gfSubject" list="subjectList">
-      <label for="gfTeacher">Teacher</label><input type="text" id="gfTeacher" list="teacherList">
+      <label for="gfTeacher">Teacher</label><input type="text" id="gfTeacher" list="teacherList" placeholder="e.g. Mrs Wong">
+      <label for="gfAutoKey">Subject taken</label><select id="gfAutoKey"></select>
+      <label for="gfAutoValue">Band / value</label><select id="gfAutoValue" disabled></select>
+      <label for="gfAutoClasses">Limit to classes</label><input type="text" id="gfAutoClasses" placeholder="e.g. 1R or 1R1, 1R3 (blank = all)">
+      <p class="hint" style="grid-column: 1 / -1; margin: 0">Matching students are allocated automatically
+        when the group is created, and new students join it after each school-file update. You can still
+        add or remove members by hand afterwards — manual removals are only revisited if you press
+        “Auto-fill” yourself.</p>
+      <label for="gfCode">Group code *</label><input type="text" id="gfCode" required placeholder="e.g. EL-G3">
+      <label for="gfName">Group name</label><input type="text" id="gfName" placeholder="e.g. English G3">
+      <label for="gfSubject">Subject label</label><input type="text" id="gfSubject" list="subjectList" placeholder="shown on the teacher page">
       <div class="actions">
         <button type="button" id="groupCancelBtn">Cancel</button>
         <button type="submit" class="primary">OK</button>
@@ -839,8 +847,10 @@
       alert('Student ID "' + id + '" is already used by ' + clash.name + '.');
       return;
     }
+    var autoN = 0;
     if (editingStudentId === null) {
       model.students.push(rec);
+      model.groups.forEach(function (g) { autoN += S.autoFillGroup(model, g, [rec.id]); });
     } else {
       var at = model.students.findIndex(function (s) { return s.id === editingStudentId; });
       model.students[at] = rec;
@@ -851,6 +861,7 @@
     }
     $('studentDialog').close();
     markDirty();
+    if (autoN) toast(rec.name + ' auto-allocated to ' + autoN + ' group' + (autoN === 1 ? '' : 's'));
   });
 
   /* ================= groups tab ================= */
@@ -863,6 +874,14 @@
 
   function groupOptionLabel(g) {
     return (g.name || g.code) + (g.subject ? ' — ' + g.subject : '') + (g.teacher ? ' (' + g.teacher + ')' : '');
+  }
+
+  function ruleSummary(g) {
+    if (!S.groupHasRule(g)) return '';
+    var parts = [];
+    if (g.autoKey) parts.push(g.autoValue || g.autoKey + ' (any)');
+    if (g.autoClasses) parts.push('classes ' + g.autoClasses);
+    return parts.join(' · ');
   }
 
   $('groupSearch').addEventListener('input', renderGroups);
@@ -878,7 +897,7 @@
       var n = (ix.membersByGroup.get(g.code) || []).length;
       return '<tr data-code="' + esc(g.code) + '">' +
         '<td>' + esc(g.code) + '</td><td>' + esc(g.name) + '</td><td>' + esc(g.subject) + '</td>' +
-        '<td>' + esc(g.teacher) + '</td><td>' + n + '</td>' +
+        '<td>' + esc(g.teacher) + '</td><td class="tags">' + esc(ruleSummary(g)) + '</td><td>' + n + '</td>' +
         '<td class="actions"><button class="linklike" data-act="edit">Edit</button>' +
         '<button class="linklike danger" data-act="del">Delete</button></td></tr>';
     }).join('');
@@ -903,6 +922,58 @@
 
   var editingGroupCode = null;
   var pendingBulkAdd = false;
+
+  function subjectValueOptions(key) {
+    var vals = new Set();
+    model.students.forEach(function (s) {
+      var v = s.subjects && S.norm(s.subjects[key]);
+      if (v) vals.add(v);
+    });
+    return Array.from(vals).sort(S.cmp);
+  }
+
+  function fillAutoValueSelect(key, current) {
+    var sel = $('gfAutoValue');
+    if (!key) {
+      sel.innerHTML = '<option value="">—</option>';
+      sel.disabled = true;
+      return;
+    }
+    sel.disabled = false;
+    sel.innerHTML = '<option value="">(any — everyone taking ' + esc(key) + ')</option>' +
+      subjectValueOptions(key).map(function (v) {
+        return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+      }).join('');
+    if (current) sel.value = current;
+  }
+
+  function suggestGroupIdentity() {
+    var key = $('gfAutoKey').value;
+    var val = $('gfAutoValue').value;
+    var cls = S.norm($('gfAutoClasses').value).split(/[,;]+/)[0] || '';
+    var base = val || key;
+    if (!base) return;
+    if (!$('gfCode').dataset.userEdited) {
+      $('gfCode').value = (base + (cls ? '-' + cls : '')).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    }
+    if (!$('gfName').dataset.userEdited) {
+      $('gfName').value = base + (cls ? ' ' + cls : '');
+    }
+    if (!$('gfSubject').dataset.userEdited && key) {
+      $('gfSubject').value = key;
+    }
+  }
+
+  $('gfAutoKey').addEventListener('change', function () {
+    fillAutoValueSelect($('gfAutoKey').value, '');
+    suggestGroupIdentity();
+  });
+  $('gfAutoValue').addEventListener('change', suggestGroupIdentity);
+  $('gfAutoClasses').addEventListener('input', suggestGroupIdentity);
+  ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
+    $(id).addEventListener('input', function () { $(id).dataset.userEdited = '1'; });
+  });
+
   function openGroupDialog(group) {
     editingGroupCode = group ? group.code : null;
     $('groupDialogTitle').textContent = group ? 'Edit group' :
@@ -911,21 +982,38 @@
     $('gfName').value = group ? group.name : '';
     $('gfSubject').value = group ? group.subject : '';
     $('gfTeacher').value = group ? group.teacher : '';
+    $('gfAutoKey').innerHTML = '<option value="">(none — members added by hand)</option>' +
+      (model.subjectKeys || []).map(function (k) {
+        return '<option value="' + esc(k) + '">' + esc(k) + '</option>';
+      }).join('');
+    $('gfAutoKey').value = group ? (group.autoKey || '') : '';
+    fillAutoValueSelect($('gfAutoKey').value, group ? group.autoValue : '');
+    $('gfAutoClasses').value = group ? (group.autoClasses || '') : '';
+    ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
+      if (group) $(id).dataset.userEdited = '1';       // never rewrite an existing group's identity
+      else delete $(id).dataset.userEdited;
+    });
     $('groupDialog').showModal();
-    $('gfCode').focus();
+    $('gfTeacher').focus();
   }
   $('groupCancelBtn').addEventListener('click', function () { pendingBulkAdd = false; $('groupDialog').close(); });
   $('groupForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     var code = S.norm($('gfCode').value);
-    var rec = { code: code, name: S.norm($('gfName').value), subject: S.norm($('gfSubject').value), teacher: S.norm($('gfTeacher').value) };
+    var rec = {
+      code: code, name: S.norm($('gfName').value), subject: S.norm($('gfSubject').value),
+      teacher: S.norm($('gfTeacher').value),
+      autoKey: $('gfAutoKey').value, autoValue: $('gfAutoValue').value,
+      autoClasses: S.norm($('gfAutoClasses').value),
+    };
     if (!code) return;
     var clash = ix.groupsByCode.get(code);
     if (clash && code !== editingGroupCode) {
       alert('Group code "' + code + '" is already used by "' + (clash.name || clash.code) + '".');
       return;
     }
-    if (editingGroupCode === null) {
+    var isNew = editingGroupCode === null;
+    if (isNew) {
       model.groups.push(rec);
     } else {
       var at = model.groups.findIndex(function (g) { return g.code === editingGroupCode; });
@@ -936,11 +1024,15 @@
     }
     $('groupDialog').close();
     ix = S.buildIndexes(model);
+    var autoAdded = isNew ? S.autoFillGroup(model, rec) : 0;
     if (pendingBulkAdd && selectedIds.size) {
       pendingBulkAdd = false;
       addStudentsToGroup(Array.from(selectedIds), code);
     } else {
       markDirty();
+    }
+    if (autoAdded) {
+      toast(autoAdded + ' student' + (autoAdded === 1 ? '' : 's') + ' auto-allocated to ' + (rec.name || rec.code));
     }
   });
 
@@ -961,6 +1053,18 @@
   $('memPrintBtn').addEventListener('click', function () {
     var group = ix.groupsByCode.get(selectedGroupCode());
     if (group) printGroupSheet(group);
+  });
+
+  $('memFillBtn').addEventListener('click', function () {
+    var group = ix.groupsByCode.get(selectedGroupCode());
+    if (!group || !S.groupHasRule(group)) return;
+    var added = S.autoFillGroup(model, group);
+    if (added) {
+      markDirty();
+      toast(added + ' student' + (added === 1 ? '' : 's') + ' added by rule (' + ruleSummary(group) + ')');
+    } else {
+      toast('Everyone matching the rule is already in this group');
+    }
   });
 
   function memCandidates() {
@@ -995,6 +1099,8 @@
     if (!groups.length) return;
 
     var code = selectedGroupCode();
+    var curGroup = ix.groupsByCode.get(code);
+    $('memFillBtn').hidden = !(curGroup && S.groupHasRule(curGroup));
     var members = ix.membersByGroup.get(code) || [];
     $('memCount').textContent = members.length;
     $('memTable').querySelector('tbody').innerHTML = members.map(function (s, i) {
@@ -1221,10 +1327,15 @@
     if (res.warnings.length) {
       loadWarnings = loadWarnings.concat(res.warnings.map(function (w) { return 'Update ' + src.level + ': ' + w; }));
     }
+    var autoPlacements = 0;
+    if (report.addedIds.length) {
+      model.groups.forEach(function (g) { autoPlacements += S.autoFillGroup(model, g, report.addedIds); });
+    }
     src.lastFile = file.name;
     src.lastImported = new Date().toISOString();
     markDirty();
     toast(src.level + ': ' + report.updated + ' updated, ' + report.added + ' added' +
+      (autoPlacements ? ' (' + autoPlacements + ' auto-allocation' + (autoPlacements === 1 ? '' : 's') + ')' : '') +
       (report.missingIds.length ? ', ' + report.missingIds.length + ' no longer in file' : '') +
       ' — press Save when done');
   }

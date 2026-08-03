@@ -1,19 +1,23 @@
-/* Shared look for the namelist pages. */
+/* Shared look for the namelist pages.
+ * Palette: navy blue, red, white. Typeface: Inter (embedded via fonts.css). */
 :root {
-  --bg: #f2f5f8;
+  --bg: #f4f6fa;
   --surface: #ffffff;
-  --ink: #17222c;
-  --muted: #5f7080;
-  --line: #e2e8ee;
-  --accent: #0f5fa8;
-  --accent-dark: #0b4a84;
+  --ink: #1a2233;
+  --muted: #5a6478;
+  --line: #e1e6ef;
+  --accent: #1e3a70;        /* navy */
+  --accent-dark: #14294f;
   --accent-ink: #ffffff;
-  --accent-soft: #e9f2fa;
-  --warn-bg: #fdf3d7;
-  --warn-ink: #7a5b00;
-  --danger: #b3261e;
+  --accent-soft: #e9eef8;
+  --red: #c8102e;
+  --red-dark: #9e0c24;
+  --red-soft: #fbe9ec;
+  --warn-bg: #fbe9ec;
+  --warn-ink: #7c1023;
+  --danger: #c8102e;
   --radius: 10px;
-  --shadow: 0 1px 2px rgba(23, 34, 44, 0.06), 0 1px 6px rgba(23, 34, 44, 0.05);
+  --shadow: 0 1px 2px rgba(20, 41, 79, 0.07), 0 1px 6px rgba(20, 41, 79, 0.05);
 }
 
 * { box-sizing: border-box; }
@@ -27,14 +31,15 @@ html, body {
   padding: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+  font-family: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
   font-size: 15px;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 .app-header {
-  background: linear-gradient(120deg, var(--accent-dark), var(--accent));
+  background: linear-gradient(120deg, #0f1f40, var(--accent));
   color: var(--accent-ink);
+  border-bottom: 3px solid var(--red);
   padding: 16px 24px;
   display: flex;
   align-items: baseline;
@@ -42,7 +47,7 @@ html, body {
   gap: 16px;
   flex-wrap: wrap;
 }
-.app-header h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 0.01em; }
+.app-header h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.01em; }
 .app-header .meta { font-size: 13px; opacity: 0.92; }
 
 main { max-width: 1160px; margin: 0 auto; padding: 22px 24px 90px; }
@@ -56,8 +61,8 @@ main { max-width: 1160px; margin: 0 auto; padding: 22px 24px 90px; }
   margin-bottom: 16px;
 }
 
-h2 { font-size: 17px; margin: 0 0 10px; }
-h3 { font-size: 15px; margin: 0 0 8px; }
+h2 { font-size: 17px; font-weight: 600; margin: 0 0 10px; }
+h3 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 
@@ -94,8 +99,8 @@ button.primary {
 }
 button.primary:hover { background: var(--accent-dark); }
 button.primary:disabled {
-  background: #9fb2c2;
-  border-color: #9fb2c2;
+  background: #9aa6bd;
+  border-color: #9aa6bd;
   cursor: default;
 }
 button.danger { color: var(--danger); }
@@ -114,6 +119,7 @@ table.list {
   width: 100%;
   border-collapse: collapse;
   background: var(--surface);
+  font-variant-numeric: tabular-nums;
 }
 table.list th, table.list td {
   text-align: left;
@@ -129,14 +135,14 @@ table.list th {
   border-bottom: 2px solid var(--line);
   white-space: nowrap;
 }
-table.list tbody tr:nth-child(even) td { background: #fafcfe; }
+table.list tbody tr:nth-child(even) td { background: #fafbfd; }
 table.list tbody tr:hover td { background: var(--accent-soft); }
-table.list tr.selected td { background: #dcebf8 !important; }
+table.list tr.selected td { background: #dde6f6 !important; }
 table.list th.sortable { cursor: pointer; user-select: none; }
 table.list th.sortable:hover { color: var(--accent); }
 table.list th.sortable::after { content: " ↕"; opacity: 0.4; }
-table.list th.sorted-asc::after { content: " ▲"; opacity: 1; color: var(--accent); }
-table.list th.sorted-desc::after { content: " ▼"; opacity: 1; color: var(--accent); }
+table.list th.sorted-asc::after { content: " ▲"; opacity: 1; color: var(--red); }
+table.list th.sorted-desc::after { content: " ▼"; opacity: 1; color: var(--red); }
 th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; padding-right: 2px; }
 
 .scrolly { max-height: 440px; overflow-y: auto; }
@@ -166,7 +172,7 @@ th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; p
 .warnings {
   background: var(--warn-bg);
   color: var(--warn-ink);
-  border: 1px solid #e8d48a;
+  border: 1px solid #f2c2cc;
   border-radius: var(--radius);
   padding: 10px 14px;
   margin-bottom: 16px;
@@ -200,7 +206,7 @@ th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; p
   background: var(--surface);
   color: var(--accent);
   font-weight: 600;
-  box-shadow: inset 0 -3px 0 var(--accent);
+  box-shadow: inset 0 -3px 0 var(--red);
 }
 
 /* Floating bar shown while students are selected */
@@ -209,10 +215,10 @@ th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; p
   left: 50%;
   bottom: 20px;
   transform: translateX(-50%);
-  background: var(--ink);
+  background: var(--accent-dark);
   color: #fff;
   border-radius: 999px;
-  box-shadow: 0 6px 24px rgba(23, 34, 44, 0.35);
+  box-shadow: 0 6px 24px rgba(15, 31, 64, 0.4);
   padding: 10px 18px;
   display: flex;
   align-items: center;
@@ -223,16 +229,16 @@ th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; p
 }
 .selbar .count { font-weight: 700; white-space: nowrap; }
 .selbar select {
-  background: #2a3947;
+  background: #22406f;
   color: #fff;
-  border-color: #46586a;
+  border-color: #3d5a8f;
   max-width: 300px;
 }
-.selbar button { border-color: #46586a; background: #2a3947; color: #fff; box-shadow: none; }
-.selbar button:hover { background: #37485a; }
-.selbar button.primary { background: var(--accent); border-color: var(--accent); }
-.selbar button.primary:hover { background: #1a70bd; }
-.selbar button.danger { color: #ff9d95; }
+.selbar button { border-color: #3d5a8f; background: #22406f; color: #fff; box-shadow: none; }
+.selbar button:hover { background: #2c4d84; }
+.selbar button.primary { background: var(--red); border-color: var(--red); }
+.selbar button.primary:hover { background: var(--red-dark); }
+.selbar button.danger { color: #ffb0a8; }
 
 dialog {
   border: 1px solid var(--line);

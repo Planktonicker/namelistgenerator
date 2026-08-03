@@ -42,22 +42,24 @@ test('data.js output evaluates and matches the model', () => {
   assert.deepStrictEqual(win.NAMELIST_DATA.memberships, model.memberships);
 });
 
-test('header aliases and messy input are tolerated', () => {
+test('header aliases, subject columns, and messy input are tolerated', () => {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-    ['Student ID', 'Full Name', 'Form Class', 'Sex', 'Posting Group', 'Combi'],
-    [' s001 ', '  Alice Tan ', '1R1', 'F', '3', 'EL G3 · MA G3'],
-    ['', '', '', '', '', ''],                     // blank row: skipped silently
-    ['s002', 'Bob Lim', '1R2', 'M', '2', ''],
-    ['', 'No Id Here', '1R3', 'M', '1', ''],      // missing ID: skipped with warning
-  ]), 'students');                                // lowercase sheet name still matches
+    ['Student ID', 'Full Name', 'Form Class', 'Sex', 'Posting Group', 'EL', 'MT'],
+    [' s001 ', '  Alice Tan ', '1R1', 'F', '3', 'EL G3', 'CL G2'],
+    ['', '', '', '', '', '', ''],                      // blank row: skipped silently
+    ['s002', 'Bob Lim', '1R2', 'M', '2', 'EL G2', ''], // empty subject cell: key omitted
+    ['', 'No Id Here', '1R3', 'M', '1', '', ''],       // missing ID: skipped with warning
+  ]), 'students');                                     // lowercase sheet name still matches
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['GroupCode', 'GroupName', 'Subject', 'Teacher']]), 'Groups');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['StudentID', 'GroupCode']]), 'Memberships');
 
   const { model, warnings } = S.workbookToModel(wb);
   assert.strictEqual(model.students.length, 2);
+  assert.deepStrictEqual(model.subjectKeys, ['EL', 'MT']);
   assert.deepStrictEqual(model.students[0],
-    { id: 's001', name: 'Alice Tan', class: '1R1', gender: 'F', pg: '3', tags: 'EL G3 · MA G3' });
+    { id: 's001', name: 'Alice Tan', class: '1R1', gender: 'F', pg: '3', subjects: { EL: 'EL G3', MT: 'CL G2' } });
+  assert.deepStrictEqual(model.students[1].subjects, { EL: 'EL G2' });
   assert.ok(warnings.some((w) => w.includes('row 5')), 'expected a skipped-row warning');
 });
 
@@ -72,7 +74,7 @@ test('detectHeaderRow skips titles and junk above the real header', () => {
   assert.strictEqual(S.detectHeaderRow([['Name', 'Class'], ['A', '1R1']]), 0);
 });
 
-test('importStudents: auto-IDs, tag prefixing, skipped rows', () => {
+test('importStudents: auto-IDs, subject columns, skipped rows', () => {
   const rows = [
     ['Some title', '', '', '', '', '', '', ''],
     ['No', 'Name', 'Class', 'Gender', 'PG', 'TG', 'EL', 'MT'],
@@ -84,15 +86,14 @@ test('importStudents: auto-IDs, tag prefixing, skipped rows', () => {
   const res = S.importStudents(rows, {
     headerRow: 1,
     cols: { id: null, name: 1, class: 2, gender: 3, pg: 4 },
-    tagCols: [{ index: 5, header: 'TG' }, { index: 6, header: 'EL' }, { index: 7, header: 'MT' }],
+    subjectCols: [{ index: 5, header: 'TG' }, { index: 6, header: 'EL' }, { index: 7, header: 'MT' }],
   });
   assert.strictEqual(res.students.length, 3);
   assert.deepStrictEqual(res.students.map((s) => s.id), ['1R1-01', '1R1-02', '1R2-01']);
-  // "TG1"/"EL G3" already start with their header; "CL G2" under MT gets prefixed
-  assert.strictEqual(res.students[0].tags, 'TG1 · EL G3 · MT CL G2');
-  assert.strictEqual(res.students[1].tags, 'TG2 · EL G2');
+  assert.deepStrictEqual(res.students[0].subjects, { TG: 'TG1', EL: 'EL G3', MT: 'CL G2' });
+  assert.deepStrictEqual(res.students[1].subjects, { TG: 'TG2', EL: 'EL G2' }); // empty cell omitted
   assert.deepStrictEqual(res.students[2],
-    { id: '1R2-01', name: 'Carol', class: '1R2', gender: 'F', pg: '1', tags: 'TG1 · EL G1 · MT ML G1' });
+    { id: '1R2-01', name: 'Carol', class: '1R2', gender: 'F', pg: '1', subjects: { TG: 'TG1', EL: 'EL G1', MT: 'ML G1' } });
   assert.strictEqual(res.warnings.length, 1);
   assert.ok(res.warnings[0].includes('no name'));
 });
@@ -104,16 +105,24 @@ test('importStudents: explicit ID column and duplicate IDs', () => {
     ['S1', 'Alice Again'],   // duplicate: skipped with warning
     ['S2', 'Bob'],
   ];
-  const res = S.importStudents(rows, { headerRow: 0, cols: { id: 0, name: 1 }, tagCols: [] });
+  const res = S.importStudents(rows, { headerRow: 0, cols: { id: 0, name: 1 }, subjectCols: [] });
   assert.deepStrictEqual(res.students.map((s) => s.id), ['S1', 'S2']);
   assert.ok(res.warnings[0].includes('duplicate ID'));
+});
+
+test('subjectSummary shows the key only when the value needs it', () => {
+  const student = { subjects: { EL: 'EL G3', MT: 'CL G2', HMT: 'CHINESE' } };
+  assert.strictEqual(S.subjectSummary(student, ['EL', 'MT', 'HMT']),
+    'EL G3 · MT CL G2 · HMT CHINESE');
+  assert.ok(S.studentSearchText({ name: 'A', class: '1R1', id: 'x', pg: '3', subjects: student.subjects },
+    ['EL', 'MT', 'HMT']).includes('mt cl g2'));
 });
 
 test('validation flags duplicates and dangling memberships', () => {
   const model = {
     students: [
-      { id: 'S1', name: 'A', class: '1R1', gender: 'F', pg: '3', tags: '' },
-      { id: 'S1', name: 'B', class: '1R2', gender: 'M', pg: '2', tags: '' },
+      { id: 'S1', name: 'A', class: '1R1', gender: 'F', pg: '3', subjects: {} },
+      { id: 'S1', name: 'B', class: '1R2', gender: 'M', pg: '2', subjects: {} },
     ],
     groups: [{ code: 'G1', name: 'G', subject: 'X', teacher: '' }],
     memberships: [

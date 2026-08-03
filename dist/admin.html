@@ -304,6 +304,8 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   .tagcols label { font-weight: 500; font-size: 13px; white-space: nowrap; cursor: pointer; }
   td.actions { white-space: nowrap; text-align: right; }
   td.tags { font-size: 13px; color: var(--muted); }
+  td.subj { font-size: 13px; white-space: nowrap; }
+  .tablewrap { overflow-x: auto; }
   table.list.selectable tbody { user-select: none; cursor: pointer; }
   .rowcheck { pointer-events: none; }
   .hint { font-size: 13px; color: var(--muted); margin: 4px 0 0; }
@@ -378,25 +380,19 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         <select id="studentClassFilter"><option value="">All classes</option></select>
         <select id="studentPgFilter"><option value="">All PG</option></select>
         <span class="spacer"></span>
+        <button id="addSubjectColBtn">Add subject column</button>
         <button class="primary" id="addStudentBtn">Add student</button>
       </div>
       <div class="card">
         <p class="hint no-print">Click rows to select students — hold <strong>Shift</strong> to select a range,
-          or use the header checkbox to select everything shown. Then assign them to a group from the bar below.</p>
-        <table class="list selectable" id="studentsTable">
-          <thead><tr>
-            <th class="checkcol"><input type="checkbox" id="studentsCheckAll" title="Select all shown"></th>
-            <th class="sortable" data-key="id">ID</th>
-            <th class="sortable" data-key="name">Name</th>
-            <th class="sortable" data-key="class">Class</th>
-            <th class="sortable" data-key="gender">Gender</th>
-            <th class="sortable" data-key="pg">PG</th>
-            <th>Tags</th>
-            <th>Groups</th>
-            <th></th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
+          or use the header checkbox to select everything shown. Click any column header (including a subject)
+          to sort; students not taking that subject sort last. Then assign the selection to a group from the bar below.</p>
+        <div class="tablewrap">
+          <table class="list selectable" id="studentsTable">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
         <p class="empty" id="studentsEmpty" hidden>No students yet — use <strong>Add student</strong> or <strong>Import…</strong></p>
         <p class="muted small" id="studentsMore" hidden></p>
       </div>
@@ -449,7 +445,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
           </div>
           <div class="scrolly">
             <table class="list selectable" id="memCandidates">
-              <thead><tr><th class="checkcol"></th><th>Name</th><th>Class</th><th>PG</th><th>Tags</th></tr></thead>
+              <thead><tr><th class="checkcol"></th><th>Name</th><th>Class</th><th>PG</th><th>Subjects</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -478,7 +474,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       <label for="sfClass">Class</label><input type="text" id="sfClass" list="classList">
       <label for="sfGender">Gender</label><input type="text" id="sfGender" list="genderList">
       <label for="sfPg">PG</label><input type="text" id="sfPg" list="pgList">
-      <label for="sfTags">Tags</label><input type="text" id="sfTags" placeholder="e.g. TG1 · EL G3 · MT CL G2">
+      <div id="sfSubjects" style="display:contents"></div>
       <div class="actions">
         <button type="button" id="studentCancelBtn">Cancel</button>
         <button type="submit" class="primary">OK</button>
@@ -522,7 +518,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       </div>
       <p class="hint" id="autoIdHint" hidden>No ID column: IDs will be generated from class + row order
         (1R1-01, 1R1-02, …), which keeps register order.</p>
-      <p style="margin-bottom:4px"><strong class="small">Keep these columns as searchable tags:</strong></p>
+      <p style="margin-bottom:4px"><strong class="small">Keep these columns as subject/band columns (sortable &amp; searchable):</strong></p>
       <div class="tagcols" id="tagCols"></div>
       <p id="importPreview" class="small muted"></p>
       <p>
@@ -575,13 +571,15 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
  *
  * Model shape used everywhere:
  *   {
- *     students:    [{ id, name, class, gender, pg, tags }],
+ *     students:    [{ id, name, class, gender, pg, subjects: { KEY: value } }],
  *     groups:      [{ code, name, subject, teacher }],
  *     memberships: [{ studentId, groupCode }],
+ *     subjectKeys: ['TG', 'EL', 'MT', ...],
  *   }
  *
- * `tags` is a free-text " · "-separated list of searchable attributes
- * (subject bands like "EL G3", teaching groups like "TG1", etc.).
+ * Each subject/band column from the school's worksheet (EL, MT, MA, …) is a
+ * key in `subjects`, holding that student's allocation ("EL G3", "CL G2", …).
+ * Only non-empty allocations are stored. `subjectKeys` preserves column order.
  *
  * Runs as a plain script in the browser and via require() in Node tests.
  * Workbook conversion needs SheetJS available as globalThis.XLSX; the
@@ -590,7 +588,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 (function () {
   'use strict';
 
-  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG', 'Tags'];
+  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teacher'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
 
@@ -600,7 +598,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     class: ['class', 'formclass', 'form'],
     gender: ['gender', 'sex'],
     pg: ['pg', 'postinggroup', 'stream'],
-    tags: ['tags', 'subjectcombination', 'combination', 'subjects', 'combi', 'subjectbands'],
   };
   var GROUP_FIELDS = {
     code: ['groupcode', 'code'],
@@ -627,7 +624,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   }
 
   function emptyModel() {
-    return { students: [], groups: [], memberships: [] };
+    return { students: [], groups: [], memberships: [], subjectKeys: [] };
   }
 
   /* Match a header row against field aliases; returns { field: columnIndex }. */
@@ -687,13 +684,56 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     return null;
   }
 
+  /* The Students sheet has the fixed columns plus one column per subject/band:
+   * every non-empty header that isn't a fixed field becomes a subject key. */
+  function readStudents(ws, warnings) {
+    var rows = sheetRows(ws);
+    if (!rows.length) return { students: [], subjectKeys: [] };
+    var headers = rows[0];
+    var idx = mapHeaders(headers, STUDENT_FIELDS);
+    ['id', 'name'].forEach(function (f) {
+      if (!(f in idx)) warnings.push('Sheet "Students": no column matched "' + f + '" — those values will be blank.');
+    });
+    var taken = {};
+    Object.keys(idx).forEach(function (f) { taken[idx[f]] = true; });
+    var subjectCols = [];
+    headers.forEach(function (h, i) {
+      var label = norm(h);
+      if (label && !taken[i]) subjectCols.push({ index: i, header: label });
+    });
+    var students = [];
+    for (var r = 1; r < rows.length; r++) {
+      var row = rows[r];
+      if (!row || isBlankRow(row)) continue;
+      var rec = { id: '', name: '', class: '', gender: '', pg: '', subjects: {} };
+      Object.keys(STUDENT_FIELDS).forEach(function (f) {
+        rec[f] = f in idx ? norm(row[idx[f]]) : '';
+      });
+      if (!rec.id || !rec.name) {
+        warnings.push('Sheet "Students" row ' + (r + 1) + ': missing ' +
+          (!rec.id ? 'id' : 'name') + ' — row skipped.');
+        continue;
+      }
+      subjectCols.forEach(function (sc) {
+        var v = norm(row[sc.index]);
+        if (v) rec.subjects[sc.header] = v;
+      });
+      students.push(rec);
+    }
+    return { students: students, subjectKeys: subjectCols.map(function (sc) { return sc.header; }) };
+  }
+
   function workbookToModel(wb) {
     var warnings = [];
     var model = emptyModel();
     var students = findSheet(wb, 'Students');
     var groups = findSheet(wb, 'Groups');
     var memberships = findSheet(wb, 'Memberships');
-    if (students) model.students = readTable(students, STUDENT_FIELDS, ['id', 'name'], 'Students', warnings);
+    if (students) {
+      var read = readStudents(students, warnings);
+      model.students = read.students;
+      model.subjectKeys = read.subjectKeys;
+    }
     else warnings.push('Sheet "Students" not found.');
     if (groups) model.groups = readTable(groups, GROUP_FIELDS, ['code'], 'Groups', warnings);
     else warnings.push('Sheet "Groups" not found.');
@@ -707,10 +747,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var wb = X.utils.book_new();
     var ws;
 
-    ws = X.utils.aoa_to_sheet([STUDENT_HEADERS].concat(model.students.map(function (s) {
-      return [s.id, s.name, s.class, s.gender, s.pg, s.tags];
+    var keys = model.subjectKeys || [];
+    ws = X.utils.aoa_to_sheet([STUDENT_HEADERS.concat(keys)].concat(model.students.map(function (s) {
+      return [s.id, s.name, s.class, s.gender, s.pg].concat(keys.map(function (k) {
+        return (s.subjects && s.subjects[k]) || '';
+      }));
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 8 }, { wch: 5 }, { wch: 60 }];
+    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 8 }, { wch: 5 }]
+      .concat(keys.map(function () { return { wch: 12 }; }));
     X.utils.book_append_sheet(wb, ws, 'Students');
 
     ws = X.utils.aoa_to_sheet([GROUP_HEADERS].concat(model.groups.map(function (g) {
@@ -734,6 +778,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       students: model.students,
       groups: model.groups,
       memberships: model.memberships,
+      subjectKeys: model.subjectKeys || [],
     };
     return '// Auto-generated by admin.html — do not edit by hand.\n' +
       'window.NAMELIST_DATA = ' + JSON.stringify(data, null, 1) + ';\n';
@@ -789,12 +834,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   /* Extract students from raw sheet rows.
    *   mapping: { headerRow, cols: {id?, name, class?, gender?, pg?},
-   *              tagCols: [{ index, header }] }
+   *              subjectCols: [{ index, header }] }
    * Rows without a name are skipped. Without an id column, IDs are
    * generated as "<class>-01", "<class>-02", … in row order, which keeps
-   * per-class register order sortable. Tag values that don't already start
-   * with their column header get it prefixed ("MT" + "CL G3" → "MT CL G3")
-   * so tags stay meaningful out of context. */
+   * per-class register order sortable. Each selected subject column becomes
+   * a key in the student's `subjects` map, holding the raw cell value. */
   function importStudents(rows, mapping) {
     var warnings = [];
     var students = [];
@@ -818,20 +862,38 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       }
       if (usedIds[id]) { warnings.push('Row ' + (r + 1) + ': duplicate ID "' + id + '" — skipped.'); continue; }
       usedIds[id] = true;
-      var tags = [];
-      (mapping.tagCols || []).forEach(function (tc) {
-        var v = norm(row[tc.index]);
-        if (!v) return;
-        var h = norm(tc.header);
-        tags.push(!h || normKey(v).indexOf(normKey(h)) === 0 ? v : h + ' ' + v);
+      var subjects = {};
+      (mapping.subjectCols || []).forEach(function (sc) {
+        var v = norm(row[sc.index]);
+        if (v) subjects[norm(sc.header)] = v;
       });
       students.push({
         id: id, name: name, class: cls,
         gender: cell(row, 'gender'), pg: cell(row, 'pg'),
-        tags: tags.join(' · '),
+        subjects: subjects,
       });
     }
     return { students: students, warnings: warnings };
+  }
+
+  /* "EL G3" already names its subject; "CHINESE" under HMT does not — show
+   * the key when the value doesn't already start with it. */
+  function displayPair(key, value) {
+    return normKey(value).indexOf(normKey(key)) === 0 ? value : key + ' ' + value;
+  }
+
+  function subjectSummary(student, keys) {
+    var out = [];
+    (keys || []).forEach(function (k) {
+      var v = student.subjects && student.subjects[k];
+      if (v) out.push(displayPair(k, v));
+    });
+    return out.join(' · ');
+  }
+
+  function studentSearchText(student, keys) {
+    return (student.name + ' ' + student.class + ' ' + student.id + ' ' +
+      student.pg + ' ' + subjectSummary(student, keys)).toLowerCase();
   }
 
   /* Lookup structures shared by both pages. `data` is a model or NAMELIST_DATA. */
@@ -899,6 +961,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     cmp: cmp,
     detectHeaderRow: detectHeaderRow,
     importStudents: importStudents,
+    displayPair: displayPair,
+    subjectSummary: subjectSummary,
+    studentSearchText: studentSearchText,
   };
 })();
 
@@ -1194,12 +1259,34 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   $('studentPgFilter').addEventListener('change', renderStudents);
   $('addStudentBtn').addEventListener('click', function () { openStudentDialog(null); });
 
-  document.querySelectorAll('#studentsTable th.sortable').forEach(function (th) {
-    th.addEventListener('click', function () {
-      if (sortKey === th.dataset.key) sortDir = -sortDir;
-      else { sortKey = th.dataset.key; sortDir = 1; }
-      renderStudents();
-    });
+  $('addSubjectColBtn').addEventListener('click', function () {
+    var name = prompt('Name of the new subject/band column (e.g. GEOG):');
+    name = name === null ? '' : S.norm(name);
+    if (!name) return;
+    if ((model.subjectKeys || []).some(function (k) { return S.normKey(k) === S.normKey(name); })) {
+      alert('Column "' + name + '" already exists.');
+      return;
+    }
+    model.subjectKeys.push(name);
+    markDirty();
+  });
+
+  /* The header row is rebuilt on every render (subject columns are dynamic),
+   * so header clicks are delegated. */
+  $('studentsTable').querySelector('thead').addEventListener('click', function (ev) {
+    if (ev.target.id === 'studentsCheckAll') return;
+    var th = ev.target.closest('th.sortable');
+    if (!th) return;
+    if (sortKey === th.dataset.key) sortDir = -sortDir;
+    else { sortKey = th.dataset.key; sortDir = 1; }
+    renderStudents();
+  });
+  $('studentsTable').querySelector('thead').addEventListener('change', function (ev) {
+    if (ev.target.id !== 'studentsCheckAll') return;
+    var rows = sortedFilteredStudents();
+    if (ev.target.checked) rows.forEach(function (s) { selectedIds.add(s.id); });
+    else rows.forEach(function (s) { selectedIds.delete(s.id); });
+    renderStudents();
   });
 
   function filteredStudents() {
@@ -1209,26 +1296,49 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     return model.students.filter(function (s) {
       if (cls && s.class !== cls) return false;
       if (pg && s.pg !== pg) return false;
-      if (q && (s.name + ' ' + s.class + ' ' + s.id + ' ' + s.pg + ' ' + (s.tags || '')).toLowerCase().indexOf(q) === -1) return false;
+      if (q && S.studentSearchText(s, model.subjectKeys).indexOf(q) === -1) return false;
       return true;
     });
+  }
+
+  function studentSortValue(s, key) {
+    if (key.indexOf('s:') === 0) return (s.subjects && s.subjects[key.slice(2)]) || '';
+    return s[key] || '';
   }
 
   function sortedFilteredStudents() {
     var rows = filteredStudents();
     rows.sort(function (a, b) {
-      return sortDir * S.cmp(a[sortKey], b[sortKey]) || S.byClassThenName(a, b);
+      var va = studentSortValue(a, sortKey);
+      var vb = studentSortValue(b, sortKey);
+      if (va === '' || vb === '') {
+        if (va === vb) return S.byClassThenName(a, b);
+        return va === '' ? 1 : -1;   // students without the subject always sort last
+      }
+      return sortDir * S.cmp(va, vb) || S.byClassThenName(a, b);
     });
     return rows;
   }
 
   function renderStudents() {
+    var keys = model.subjectKeys || [];
+    function sortCls(key) {
+      return 'sortable' + (sortKey === key ? (sortDir === 1 ? ' sorted-asc' : ' sorted-desc') : '');
+    }
+    $('studentsTable').querySelector('thead').innerHTML = '<tr>' +
+      '<th class="checkcol"><input type="checkbox" id="studentsCheckAll" title="Select all shown"></th>' +
+      '<th class="' + sortCls('id') + '" data-key="id">ID</th>' +
+      '<th class="' + sortCls('name') + '" data-key="name">Name</th>' +
+      '<th class="' + sortCls('class') + '" data-key="class">Class</th>' +
+      '<th class="' + sortCls('gender') + '" data-key="gender">Gender</th>' +
+      '<th class="' + sortCls('pg') + '" data-key="pg">PG</th>' +
+      keys.map(function (k) {
+        return '<th class="' + sortCls('s:' + k) + '" data-key="s:' + esc(k) + '">' + esc(k) + '</th>';
+      }).join('') +
+      '<th>Groups</th><th></th></tr>';
+
     var rows = sortedFilteredStudents();
     var shown = rows.slice(0, STUDENT_ROW_CAP);
-    document.querySelectorAll('#studentsTable th.sortable').forEach(function (th) {
-      th.classList.toggle('sorted-asc', th.dataset.key === sortKey && sortDir === 1);
-      th.classList.toggle('sorted-desc', th.dataset.key === sortKey && sortDir === -1);
-    });
     var tbody = $('studentsTable').querySelector('tbody');
     tbody.innerHTML = shown.map(function (s) {
       var g = (ix.groupsByStudent.get(s.id) || []).length;
@@ -1237,7 +1347,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         '<td class="checkcol"><input type="checkbox" class="rowcheck" tabindex="-1"' + (sel ? ' checked' : '') + '></td>' +
         '<td>' + esc(s.id) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td>' +
         '<td>' + esc(s.gender) + '</td><td>' + esc(s.pg) + '</td>' +
-        '<td class="tags">' + esc(s.tags) + '</td><td>' + g + '</td>' +
+        keys.map(function (k) {
+          return '<td class="subj">' + esc((s.subjects && s.subjects[k]) || '') + '</td>';
+        }).join('') +
+        '<td>' + g + '</td>' +
         '<td class="actions"><button class="linklike" data-act="edit">Edit</button>' +
         '<button class="linklike danger" data-act="del">Delete</button></td></tr>';
     }).join('');
@@ -1254,13 +1367,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   }
 
   wireRowSelection($('studentsTable').querySelector('tbody'), selectedIds, renderStudents);
-
-  $('studentsCheckAll').addEventListener('change', function () {
-    var rows = sortedFilteredStudents();
-    if ($('studentsCheckAll').checked) rows.forEach(function (s) { selectedIds.add(s.id); });
-    else rows.forEach(function (s) { selectedIds.delete(s.id); });
-    renderStudents();
-  });
 
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape' && selectedIds.size && !document.querySelector('dialog[open]')) {
@@ -1352,7 +1458,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     $('sfClass').value = student ? student.class : '';
     $('sfGender').value = student ? student.gender : '';
     $('sfPg').value = student ? student.pg : '';
-    $('sfTags').value = student ? student.tags : '';
+    $('sfSubjects').innerHTML = (model.subjectKeys || []).map(function (k, i) {
+      var v = (student && student.subjects && student.subjects[k]) || '';
+      return '<label for="sfSubj' + i + '">' + esc(k) + '</label>' +
+        '<input type="text" id="sfSubj' + i + '" data-subj="' + esc(k) + '" value="' + esc(v) + '">';
+    }).join('');
     $('studentDialog').showModal();
     $('sfId').focus();
   }
@@ -1360,9 +1470,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   $('studentForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     var id = S.norm($('sfId').value);
+    var subjects = {};
+    $('sfSubjects').querySelectorAll('input[data-subj]').forEach(function (inp) {
+      var v = S.norm(inp.value);
+      if (v) subjects[inp.dataset.subj] = v;
+    });
     var rec = {
       id: id, name: S.norm($('sfName').value), class: S.norm($('sfClass').value),
-      gender: S.norm($('sfGender').value), pg: S.norm($('sfPg').value), tags: S.norm($('sfTags').value),
+      gender: S.norm($('sfGender').value), pg: S.norm($('sfPg').value), subjects: subjects,
     };
     if (!id || !rec.name) return;
     var clash = ix.studentsById.get(id);
@@ -1506,7 +1621,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       if (inGroup[s.id]) return false;
       if (cls && s.class !== cls) return false;
       if (pg && s.pg !== pg) return false;
-      if (q && (s.name + ' ' + s.class + ' ' + s.id + ' ' + s.pg + ' ' + (s.tags || '')).toLowerCase().indexOf(q) === -1) return false;
+      if (q && S.studentSearchText(s, model.subjectKeys).indexOf(q) === -1) return false;
       return true;
     }).sort(S.byClassThenName);
   }
@@ -1544,7 +1659,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       return '<tr data-id="' + esc(s.id) + '"' + (isSel ? ' class="selected"' : '') + '>' +
         '<td class="checkcol"><input type="checkbox" class="rowcheck" tabindex="-1"' + (isSel ? ' checked' : '') + '></td>' +
         '<td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.pg) + '</td>' +
-        '<td class="tags">' + esc(s.tags) + '</td></tr>';
+        '<td class="tags">' + esc(S.subjectSummary(s, model.subjectKeys)) + '</td></tr>';
     }).join('');
     $('memCandMore').hidden = candidates.length <= MEM_CAND_CAP;
     if (candidates.length > MEM_CAND_CAP) {
@@ -1705,9 +1820,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       alert('Please choose the Name column.');
       return;
     }
-    var tagCols = [];
+    var subjectCols = [];
     $('tagCols').querySelectorAll('input:checked').forEach(function (cb) {
-      tagCols.push({ index: parseInt(cb.dataset.index, 10), header: cb.dataset.header });
+      subjectCols.push({ index: parseInt(cb.dataset.index, 10), header: cb.dataset.header });
     });
     var mapping = {
       headerRow: headerRowIndex(),
@@ -1718,7 +1833,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         gender: $('impGender').value === '' ? null : parseInt($('impGender').value, 10),
         pg: $('impPg').value === '' ? null : parseInt($('impPg').value, 10),
       },
-      tagCols: tagCols,
+      subjectCols: subjectCols,
     };
     var res = S.importStudents(importRows, mapping);
     if (!res.students.length) {
@@ -1726,14 +1841,22 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       return;
     }
     loadWarnings = loadWarnings.concat(res.warnings.map(function (w) { return 'Import: ' + w; }));
+    var importedKeys = subjectCols.map(function (sc) { return S.norm(sc.header); });
     var mode = document.querySelector('input[name="impMode"]:checked').value;
     var added = 0, updated = 0;
     if (mode === 'replace') {
       var keep = {};
       res.students.forEach(function (s) { keep[s.id] = true; });
       model.students = [];
+      model.subjectKeys = importedKeys;
       model.memberships = model.memberships.filter(function (m) { return keep[m.studentId]; });
       selectedIds.clear();
+    } else {
+      importedKeys.forEach(function (k) {
+        if (!model.subjectKeys.some(function (e) { return S.normKey(e) === S.normKey(k); })) {
+          model.subjectKeys.push(k);
+        }
+      });
     }
     var byId = {};
     model.students.forEach(function (s, i) { byId[s.id] = i; });
@@ -1751,6 +1874,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   /* Test hook: lets automated tests render the editor without folder access. */
   window.__loadModelForTest = function (m) {
     model = m;
+    model.subjectKeys = model.subjectKeys || [];
     loadWarnings = [];
     $('folderName').textContent = '(test)';
     setDirty(false);

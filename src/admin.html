@@ -21,6 +21,8 @@
   .tagcols label { font-weight: 500; font-size: 13px; white-space: nowrap; cursor: pointer; }
   td.actions { white-space: nowrap; text-align: right; }
   td.tags { font-size: 13px; color: var(--muted); }
+  td.subj { font-size: 13px; white-space: nowrap; }
+  .tablewrap { overflow-x: auto; }
   table.list.selectable tbody { user-select: none; cursor: pointer; }
   .rowcheck { pointer-events: none; }
   .hint { font-size: 13px; color: var(--muted); margin: 4px 0 0; }
@@ -95,25 +97,19 @@
         <select id="studentClassFilter"><option value="">All classes</option></select>
         <select id="studentPgFilter"><option value="">All PG</option></select>
         <span class="spacer"></span>
+        <button id="addSubjectColBtn">Add subject column</button>
         <button class="primary" id="addStudentBtn">Add student</button>
       </div>
       <div class="card">
         <p class="hint no-print">Click rows to select students — hold <strong>Shift</strong> to select a range,
-          or use the header checkbox to select everything shown. Then assign them to a group from the bar below.</p>
-        <table class="list selectable" id="studentsTable">
-          <thead><tr>
-            <th class="checkcol"><input type="checkbox" id="studentsCheckAll" title="Select all shown"></th>
-            <th class="sortable" data-key="id">ID</th>
-            <th class="sortable" data-key="name">Name</th>
-            <th class="sortable" data-key="class">Class</th>
-            <th class="sortable" data-key="gender">Gender</th>
-            <th class="sortable" data-key="pg">PG</th>
-            <th>Tags</th>
-            <th>Groups</th>
-            <th></th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
+          or use the header checkbox to select everything shown. Click any column header (including a subject)
+          to sort; students not taking that subject sort last. Then assign the selection to a group from the bar below.</p>
+        <div class="tablewrap">
+          <table class="list selectable" id="studentsTable">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
         <p class="empty" id="studentsEmpty" hidden>No students yet — use <strong>Add student</strong> or <strong>Import…</strong></p>
         <p class="muted small" id="studentsMore" hidden></p>
       </div>
@@ -166,7 +162,7 @@
           </div>
           <div class="scrolly">
             <table class="list selectable" id="memCandidates">
-              <thead><tr><th class="checkcol"></th><th>Name</th><th>Class</th><th>PG</th><th>Tags</th></tr></thead>
+              <thead><tr><th class="checkcol"></th><th>Name</th><th>Class</th><th>PG</th><th>Subjects</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -195,7 +191,7 @@
       <label for="sfClass">Class</label><input type="text" id="sfClass" list="classList">
       <label for="sfGender">Gender</label><input type="text" id="sfGender" list="genderList">
       <label for="sfPg">PG</label><input type="text" id="sfPg" list="pgList">
-      <label for="sfTags">Tags</label><input type="text" id="sfTags" placeholder="e.g. TG1 · EL G3 · MT CL G2">
+      <div id="sfSubjects" style="display:contents"></div>
       <div class="actions">
         <button type="button" id="studentCancelBtn">Cancel</button>
         <button type="submit" class="primary">OK</button>
@@ -239,7 +235,7 @@
       </div>
       <p class="hint" id="autoIdHint" hidden>No ID column: IDs will be generated from class + row order
         (1R1-01, 1R1-02, …), which keeps register order.</p>
-      <p style="margin-bottom:4px"><strong class="small">Keep these columns as searchable tags:</strong></p>
+      <p style="margin-bottom:4px"><strong class="small">Keep these columns as subject/band columns (sortable &amp; searchable):</strong></p>
       <div class="tagcols" id="tagCols"></div>
       <p id="importPreview" class="small muted"></p>
       <p>
@@ -555,12 +551,34 @@
   $('studentPgFilter').addEventListener('change', renderStudents);
   $('addStudentBtn').addEventListener('click', function () { openStudentDialog(null); });
 
-  document.querySelectorAll('#studentsTable th.sortable').forEach(function (th) {
-    th.addEventListener('click', function () {
-      if (sortKey === th.dataset.key) sortDir = -sortDir;
-      else { sortKey = th.dataset.key; sortDir = 1; }
-      renderStudents();
-    });
+  $('addSubjectColBtn').addEventListener('click', function () {
+    var name = prompt('Name of the new subject/band column (e.g. GEOG):');
+    name = name === null ? '' : S.norm(name);
+    if (!name) return;
+    if ((model.subjectKeys || []).some(function (k) { return S.normKey(k) === S.normKey(name); })) {
+      alert('Column "' + name + '" already exists.');
+      return;
+    }
+    model.subjectKeys.push(name);
+    markDirty();
+  });
+
+  /* The header row is rebuilt on every render (subject columns are dynamic),
+   * so header clicks are delegated. */
+  $('studentsTable').querySelector('thead').addEventListener('click', function (ev) {
+    if (ev.target.id === 'studentsCheckAll') return;
+    var th = ev.target.closest('th.sortable');
+    if (!th) return;
+    if (sortKey === th.dataset.key) sortDir = -sortDir;
+    else { sortKey = th.dataset.key; sortDir = 1; }
+    renderStudents();
+  });
+  $('studentsTable').querySelector('thead').addEventListener('change', function (ev) {
+    if (ev.target.id !== 'studentsCheckAll') return;
+    var rows = sortedFilteredStudents();
+    if (ev.target.checked) rows.forEach(function (s) { selectedIds.add(s.id); });
+    else rows.forEach(function (s) { selectedIds.delete(s.id); });
+    renderStudents();
   });
 
   function filteredStudents() {
@@ -570,26 +588,49 @@
     return model.students.filter(function (s) {
       if (cls && s.class !== cls) return false;
       if (pg && s.pg !== pg) return false;
-      if (q && (s.name + ' ' + s.class + ' ' + s.id + ' ' + s.pg + ' ' + (s.tags || '')).toLowerCase().indexOf(q) === -1) return false;
+      if (q && S.studentSearchText(s, model.subjectKeys).indexOf(q) === -1) return false;
       return true;
     });
+  }
+
+  function studentSortValue(s, key) {
+    if (key.indexOf('s:') === 0) return (s.subjects && s.subjects[key.slice(2)]) || '';
+    return s[key] || '';
   }
 
   function sortedFilteredStudents() {
     var rows = filteredStudents();
     rows.sort(function (a, b) {
-      return sortDir * S.cmp(a[sortKey], b[sortKey]) || S.byClassThenName(a, b);
+      var va = studentSortValue(a, sortKey);
+      var vb = studentSortValue(b, sortKey);
+      if (va === '' || vb === '') {
+        if (va === vb) return S.byClassThenName(a, b);
+        return va === '' ? 1 : -1;   // students without the subject always sort last
+      }
+      return sortDir * S.cmp(va, vb) || S.byClassThenName(a, b);
     });
     return rows;
   }
 
   function renderStudents() {
+    var keys = model.subjectKeys || [];
+    function sortCls(key) {
+      return 'sortable' + (sortKey === key ? (sortDir === 1 ? ' sorted-asc' : ' sorted-desc') : '');
+    }
+    $('studentsTable').querySelector('thead').innerHTML = '<tr>' +
+      '<th class="checkcol"><input type="checkbox" id="studentsCheckAll" title="Select all shown"></th>' +
+      '<th class="' + sortCls('id') + '" data-key="id">ID</th>' +
+      '<th class="' + sortCls('name') + '" data-key="name">Name</th>' +
+      '<th class="' + sortCls('class') + '" data-key="class">Class</th>' +
+      '<th class="' + sortCls('gender') + '" data-key="gender">Gender</th>' +
+      '<th class="' + sortCls('pg') + '" data-key="pg">PG</th>' +
+      keys.map(function (k) {
+        return '<th class="' + sortCls('s:' + k) + '" data-key="s:' + esc(k) + '">' + esc(k) + '</th>';
+      }).join('') +
+      '<th>Groups</th><th></th></tr>';
+
     var rows = sortedFilteredStudents();
     var shown = rows.slice(0, STUDENT_ROW_CAP);
-    document.querySelectorAll('#studentsTable th.sortable').forEach(function (th) {
-      th.classList.toggle('sorted-asc', th.dataset.key === sortKey && sortDir === 1);
-      th.classList.toggle('sorted-desc', th.dataset.key === sortKey && sortDir === -1);
-    });
     var tbody = $('studentsTable').querySelector('tbody');
     tbody.innerHTML = shown.map(function (s) {
       var g = (ix.groupsByStudent.get(s.id) || []).length;
@@ -598,7 +639,10 @@
         '<td class="checkcol"><input type="checkbox" class="rowcheck" tabindex="-1"' + (sel ? ' checked' : '') + '></td>' +
         '<td>' + esc(s.id) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td>' +
         '<td>' + esc(s.gender) + '</td><td>' + esc(s.pg) + '</td>' +
-        '<td class="tags">' + esc(s.tags) + '</td><td>' + g + '</td>' +
+        keys.map(function (k) {
+          return '<td class="subj">' + esc((s.subjects && s.subjects[k]) || '') + '</td>';
+        }).join('') +
+        '<td>' + g + '</td>' +
         '<td class="actions"><button class="linklike" data-act="edit">Edit</button>' +
         '<button class="linklike danger" data-act="del">Delete</button></td></tr>';
     }).join('');
@@ -615,13 +659,6 @@
   }
 
   wireRowSelection($('studentsTable').querySelector('tbody'), selectedIds, renderStudents);
-
-  $('studentsCheckAll').addEventListener('change', function () {
-    var rows = sortedFilteredStudents();
-    if ($('studentsCheckAll').checked) rows.forEach(function (s) { selectedIds.add(s.id); });
-    else rows.forEach(function (s) { selectedIds.delete(s.id); });
-    renderStudents();
-  });
 
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape' && selectedIds.size && !document.querySelector('dialog[open]')) {
@@ -713,7 +750,11 @@
     $('sfClass').value = student ? student.class : '';
     $('sfGender').value = student ? student.gender : '';
     $('sfPg').value = student ? student.pg : '';
-    $('sfTags').value = student ? student.tags : '';
+    $('sfSubjects').innerHTML = (model.subjectKeys || []).map(function (k, i) {
+      var v = (student && student.subjects && student.subjects[k]) || '';
+      return '<label for="sfSubj' + i + '">' + esc(k) + '</label>' +
+        '<input type="text" id="sfSubj' + i + '" data-subj="' + esc(k) + '" value="' + esc(v) + '">';
+    }).join('');
     $('studentDialog').showModal();
     $('sfId').focus();
   }
@@ -721,9 +762,14 @@
   $('studentForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     var id = S.norm($('sfId').value);
+    var subjects = {};
+    $('sfSubjects').querySelectorAll('input[data-subj]').forEach(function (inp) {
+      var v = S.norm(inp.value);
+      if (v) subjects[inp.dataset.subj] = v;
+    });
     var rec = {
       id: id, name: S.norm($('sfName').value), class: S.norm($('sfClass').value),
-      gender: S.norm($('sfGender').value), pg: S.norm($('sfPg').value), tags: S.norm($('sfTags').value),
+      gender: S.norm($('sfGender').value), pg: S.norm($('sfPg').value), subjects: subjects,
     };
     if (!id || !rec.name) return;
     var clash = ix.studentsById.get(id);
@@ -867,7 +913,7 @@
       if (inGroup[s.id]) return false;
       if (cls && s.class !== cls) return false;
       if (pg && s.pg !== pg) return false;
-      if (q && (s.name + ' ' + s.class + ' ' + s.id + ' ' + s.pg + ' ' + (s.tags || '')).toLowerCase().indexOf(q) === -1) return false;
+      if (q && S.studentSearchText(s, model.subjectKeys).indexOf(q) === -1) return false;
       return true;
     }).sort(S.byClassThenName);
   }
@@ -905,7 +951,7 @@
       return '<tr data-id="' + esc(s.id) + '"' + (isSel ? ' class="selected"' : '') + '>' +
         '<td class="checkcol"><input type="checkbox" class="rowcheck" tabindex="-1"' + (isSel ? ' checked' : '') + '></td>' +
         '<td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.pg) + '</td>' +
-        '<td class="tags">' + esc(s.tags) + '</td></tr>';
+        '<td class="tags">' + esc(S.subjectSummary(s, model.subjectKeys)) + '</td></tr>';
     }).join('');
     $('memCandMore').hidden = candidates.length <= MEM_CAND_CAP;
     if (candidates.length > MEM_CAND_CAP) {
@@ -1066,9 +1112,9 @@
       alert('Please choose the Name column.');
       return;
     }
-    var tagCols = [];
+    var subjectCols = [];
     $('tagCols').querySelectorAll('input:checked').forEach(function (cb) {
-      tagCols.push({ index: parseInt(cb.dataset.index, 10), header: cb.dataset.header });
+      subjectCols.push({ index: parseInt(cb.dataset.index, 10), header: cb.dataset.header });
     });
     var mapping = {
       headerRow: headerRowIndex(),
@@ -1079,7 +1125,7 @@
         gender: $('impGender').value === '' ? null : parseInt($('impGender').value, 10),
         pg: $('impPg').value === '' ? null : parseInt($('impPg').value, 10),
       },
-      tagCols: tagCols,
+      subjectCols: subjectCols,
     };
     var res = S.importStudents(importRows, mapping);
     if (!res.students.length) {
@@ -1087,14 +1133,22 @@
       return;
     }
     loadWarnings = loadWarnings.concat(res.warnings.map(function (w) { return 'Import: ' + w; }));
+    var importedKeys = subjectCols.map(function (sc) { return S.norm(sc.header); });
     var mode = document.querySelector('input[name="impMode"]:checked').value;
     var added = 0, updated = 0;
     if (mode === 'replace') {
       var keep = {};
       res.students.forEach(function (s) { keep[s.id] = true; });
       model.students = [];
+      model.subjectKeys = importedKeys;
       model.memberships = model.memberships.filter(function (m) { return keep[m.studentId]; });
       selectedIds.clear();
+    } else {
+      importedKeys.forEach(function (k) {
+        if (!model.subjectKeys.some(function (e) { return S.normKey(e) === S.normKey(k); })) {
+          model.subjectKeys.push(k);
+        }
+      });
     }
     var byId = {};
     model.students.forEach(function (s, i) { byId[s.id] = i; });
@@ -1112,6 +1166,7 @@
   /* Test hook: lets automated tests render the editor without folder access. */
   window.__loadModelForTest = function (m) {
     model = m;
+    model.subjectKeys = model.subjectKeys || [];
     loadWarnings = [];
     $('folderName').textContent = '(test)';
     setDirty(false);

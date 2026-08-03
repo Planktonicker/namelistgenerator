@@ -359,13 +359,15 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
  *
  * Model shape used everywhere:
  *   {
- *     students:    [{ id, name, class, gender, pg, tags }],
+ *     students:    [{ id, name, class, gender, pg, subjects: { KEY: value } }],
  *     groups:      [{ code, name, subject, teacher }],
  *     memberships: [{ studentId, groupCode }],
+ *     subjectKeys: ['TG', 'EL', 'MT', ...],
  *   }
  *
- * `tags` is a free-text " · "-separated list of searchable attributes
- * (subject bands like "EL G3", teaching groups like "TG1", etc.).
+ * Each subject/band column from the school's worksheet (EL, MT, MA, …) is a
+ * key in `subjects`, holding that student's allocation ("EL G3", "CL G2", …).
+ * Only non-empty allocations are stored. `subjectKeys` preserves column order.
  *
  * Runs as a plain script in the browser and via require() in Node tests.
  * Workbook conversion needs SheetJS available as globalThis.XLSX; the
@@ -374,7 +376,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
 (function () {
   'use strict';
 
-  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG', 'Tags'];
+  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teacher'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
 
@@ -384,7 +386,6 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     class: ['class', 'formclass', 'form'],
     gender: ['gender', 'sex'],
     pg: ['pg', 'postinggroup', 'stream'],
-    tags: ['tags', 'subjectcombination', 'combination', 'subjects', 'combi', 'subjectbands'],
   };
   var GROUP_FIELDS = {
     code: ['groupcode', 'code'],
@@ -411,7 +412,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   }
 
   function emptyModel() {
-    return { students: [], groups: [], memberships: [] };
+    return { students: [], groups: [], memberships: [], subjectKeys: [] };
   }
 
   /* Match a header row against field aliases; returns { field: columnIndex }. */
@@ -471,13 +472,56 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     return null;
   }
 
+  /* The Students sheet has the fixed columns plus one column per subject/band:
+   * every non-empty header that isn't a fixed field becomes a subject key. */
+  function readStudents(ws, warnings) {
+    var rows = sheetRows(ws);
+    if (!rows.length) return { students: [], subjectKeys: [] };
+    var headers = rows[0];
+    var idx = mapHeaders(headers, STUDENT_FIELDS);
+    ['id', 'name'].forEach(function (f) {
+      if (!(f in idx)) warnings.push('Sheet "Students": no column matched "' + f + '" — those values will be blank.');
+    });
+    var taken = {};
+    Object.keys(idx).forEach(function (f) { taken[idx[f]] = true; });
+    var subjectCols = [];
+    headers.forEach(function (h, i) {
+      var label = norm(h);
+      if (label && !taken[i]) subjectCols.push({ index: i, header: label });
+    });
+    var students = [];
+    for (var r = 1; r < rows.length; r++) {
+      var row = rows[r];
+      if (!row || isBlankRow(row)) continue;
+      var rec = { id: '', name: '', class: '', gender: '', pg: '', subjects: {} };
+      Object.keys(STUDENT_FIELDS).forEach(function (f) {
+        rec[f] = f in idx ? norm(row[idx[f]]) : '';
+      });
+      if (!rec.id || !rec.name) {
+        warnings.push('Sheet "Students" row ' + (r + 1) + ': missing ' +
+          (!rec.id ? 'id' : 'name') + ' — row skipped.');
+        continue;
+      }
+      subjectCols.forEach(function (sc) {
+        var v = norm(row[sc.index]);
+        if (v) rec.subjects[sc.header] = v;
+      });
+      students.push(rec);
+    }
+    return { students: students, subjectKeys: subjectCols.map(function (sc) { return sc.header; }) };
+  }
+
   function workbookToModel(wb) {
     var warnings = [];
     var model = emptyModel();
     var students = findSheet(wb, 'Students');
     var groups = findSheet(wb, 'Groups');
     var memberships = findSheet(wb, 'Memberships');
-    if (students) model.students = readTable(students, STUDENT_FIELDS, ['id', 'name'], 'Students', warnings);
+    if (students) {
+      var read = readStudents(students, warnings);
+      model.students = read.students;
+      model.subjectKeys = read.subjectKeys;
+    }
     else warnings.push('Sheet "Students" not found.');
     if (groups) model.groups = readTable(groups, GROUP_FIELDS, ['code'], 'Groups', warnings);
     else warnings.push('Sheet "Groups" not found.');
@@ -491,10 +535,14 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     var wb = X.utils.book_new();
     var ws;
 
-    ws = X.utils.aoa_to_sheet([STUDENT_HEADERS].concat(model.students.map(function (s) {
-      return [s.id, s.name, s.class, s.gender, s.pg, s.tags];
+    var keys = model.subjectKeys || [];
+    ws = X.utils.aoa_to_sheet([STUDENT_HEADERS.concat(keys)].concat(model.students.map(function (s) {
+      return [s.id, s.name, s.class, s.gender, s.pg].concat(keys.map(function (k) {
+        return (s.subjects && s.subjects[k]) || '';
+      }));
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 8 }, { wch: 5 }, { wch: 60 }];
+    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 8 }, { wch: 5 }]
+      .concat(keys.map(function () { return { wch: 12 }; }));
     X.utils.book_append_sheet(wb, ws, 'Students');
 
     ws = X.utils.aoa_to_sheet([GROUP_HEADERS].concat(model.groups.map(function (g) {
@@ -518,6 +566,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       students: model.students,
       groups: model.groups,
       memberships: model.memberships,
+      subjectKeys: model.subjectKeys || [],
     };
     return '// Auto-generated by admin.html — do not edit by hand.\n' +
       'window.NAMELIST_DATA = ' + JSON.stringify(data, null, 1) + ';\n';
@@ -573,12 +622,11 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
 
   /* Extract students from raw sheet rows.
    *   mapping: { headerRow, cols: {id?, name, class?, gender?, pg?},
-   *              tagCols: [{ index, header }] }
+   *              subjectCols: [{ index, header }] }
    * Rows without a name are skipped. Without an id column, IDs are
    * generated as "<class>-01", "<class>-02", … in row order, which keeps
-   * per-class register order sortable. Tag values that don't already start
-   * with their column header get it prefixed ("MT" + "CL G3" → "MT CL G3")
-   * so tags stay meaningful out of context. */
+   * per-class register order sortable. Each selected subject column becomes
+   * a key in the student's `subjects` map, holding the raw cell value. */
   function importStudents(rows, mapping) {
     var warnings = [];
     var students = [];
@@ -602,20 +650,38 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       }
       if (usedIds[id]) { warnings.push('Row ' + (r + 1) + ': duplicate ID "' + id + '" — skipped.'); continue; }
       usedIds[id] = true;
-      var tags = [];
-      (mapping.tagCols || []).forEach(function (tc) {
-        var v = norm(row[tc.index]);
-        if (!v) return;
-        var h = norm(tc.header);
-        tags.push(!h || normKey(v).indexOf(normKey(h)) === 0 ? v : h + ' ' + v);
+      var subjects = {};
+      (mapping.subjectCols || []).forEach(function (sc) {
+        var v = norm(row[sc.index]);
+        if (v) subjects[norm(sc.header)] = v;
       });
       students.push({
         id: id, name: name, class: cls,
         gender: cell(row, 'gender'), pg: cell(row, 'pg'),
-        tags: tags.join(' · '),
+        subjects: subjects,
       });
     }
     return { students: students, warnings: warnings };
+  }
+
+  /* "EL G3" already names its subject; "CHINESE" under HMT does not — show
+   * the key when the value doesn't already start with it. */
+  function displayPair(key, value) {
+    return normKey(value).indexOf(normKey(key)) === 0 ? value : key + ' ' + value;
+  }
+
+  function subjectSummary(student, keys) {
+    var out = [];
+    (keys || []).forEach(function (k) {
+      var v = student.subjects && student.subjects[k];
+      if (v) out.push(displayPair(k, v));
+    });
+    return out.join(' · ');
+  }
+
+  function studentSearchText(student, keys) {
+    return (student.name + ' ' + student.class + ' ' + student.id + ' ' +
+      student.pg + ' ' + subjectSummary(student, keys)).toLowerCase();
   }
 
   /* Lookup structures shared by both pages. `data` is a model or NAMELIST_DATA. */
@@ -683,6 +749,9 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     cmp: cmp,
     detectHeaderRow: detectHeaderRow,
     importStudents: importStudents,
+    displayPair: displayPair,
+    subjectSummary: subjectSummary,
+    studentSearchText: studentSearchText,
   };
 })();
 
@@ -867,7 +936,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     var out = $('studentResults');
     if (!q) { out.innerHTML = ''; return; }
     var matches = data.students.filter(function (s) {
-      return (s.name + ' ' + s.class + ' ' + s.id + ' ' + (s.tags || '')).toLowerCase().indexOf(q) !== -1;
+      return S.studentSearchText(s, data.subjectKeys || []).indexOf(q) !== -1;
     });
     if (!matches.length) {
       out.innerHTML = '<div class="card"><p class="empty">No student matches “' + esc($('studentBox').value.trim()) + '”.</p></div>';
@@ -880,7 +949,10 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         '<span class="badge plain">' + esc(s.class) + '</span>' +
         (s.pg ? '<span class="badge plain">PG' + esc(s.pg) + '</span>' : '') +
         '<span class="muted small">' + esc(s.id) + '</span></div></div>' +
-        (s.tags ? '<p class="tagline">' + esc(s.tags) + '</p>' : '');
+        (function () {
+          var summary = S.subjectSummary(s, data.subjectKeys || []);
+          return summary ? '<p class="tagline">' + esc(summary) + '</p>' : '';
+        })();
       if (groups.length) {
         html += '<table class="list"><thead><tr><th>Subject</th><th>Group</th><th>Teacher</th></tr></thead><tbody>';
         groups.forEach(function (g) {

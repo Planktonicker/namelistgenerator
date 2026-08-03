@@ -24,14 +24,15 @@ const MT_LANGS = ['CL', 'ML', 'TL'];
 const EL_TEACHERS = ['Mrs Lim Bee Leng', 'Mr Daniel Tan', 'Ms Nur Aisyah', 'Mrs Grace Chua', 'Mr Marcus Lee', 'Mdm Sarimah Bakar'];
 const MA_TEACHERS = ['Mr Rajesh Kumar', 'Mdm Halimah Yusof', 'Ms Serene Goh', 'Mr Alvin Ong', 'Mrs Doris Koh', 'Mr Wei Jie Chan'];
 const BAND_GROUPS = [
-  { code: 'SCI-G3', name: 'Science G3', subject: 'Science', teacher: 'Dr Sarah Loh', tag: 'SCI G3' },
-  { code: 'HIST-G3', name: 'History G3', subject: 'History', teacher: 'Ms Priyanka Nair', tag: 'HIST G3' },
-  { code: 'GEOG-G2', name: 'Geography G2', subject: 'Geography', teacher: 'Mr Kenneth Sim', tag: 'GEOG G2' },
-  { code: 'LIT-G3', name: 'Literature G3', subject: 'Literature', teacher: 'Mrs Evelyn Phua', tag: 'LIT G3' },
+  { code: 'SCI-G3', name: 'Science G3', subject: 'Science', teacher: 'Dr Sarah Loh', key: 'SCI', value: 'SCI G3' },
+  { code: 'HIST-G3', name: 'History G3', subject: 'History', teacher: 'Ms Priyanka Nair', key: 'HIST', value: 'HIST G3' },
+  { code: 'GEOG-G2', name: 'Geography G2', subject: 'Geography', teacher: 'Mr Kenneth Sim', key: 'GEOG', value: 'GEOG G2' },
+  { code: 'LIT-G3', name: 'Literature G3', subject: 'Literature', teacher: 'Mrs Evelyn Phua', key: 'LIT', value: 'LIT G3' },
 ];
 
 function buildSampleModel() {
   const model = S.emptyModel();
+  model.subjectKeys = ['TG', 'EL', 'MT', 'HMT', 'MA', 'SCI', 'HIST', 'GEOG', 'LIT'];
 
   CLASSES.forEach((cls, c) => {
     model.groups.push({ code: 'EL-' + cls, name: 'English ' + cls, subject: 'English Language', teacher: EL_TEACHERS[c] });
@@ -49,17 +50,24 @@ function buildSampleModel() {
       const gender = n % 2 ? 'M' : 'F';
       const pg = String([1, 2, 3, 3][n % 4]);
       const g = 'G' + pg;
-      const mt = MT_LANGS[n % 3] + ' ' + g;
-      const tags = ['TG' + ((n % 2) + 1), 'EL ' + g, 'MT ' + mt, 'MA ' + g, 'SCI ' + g,
-        'HIST ' + g, 'GEOG ' + g, 'LIT ' + g];
-      if (n % 7 === 0) tags.push('HMT ' + (n % 3 === 0 ? 'CHINESE' : 'MALAY'));
-      const student = { id, name, class: cls, gender, pg, tags: tags.join(' · ') };
+      const subjects = {
+        TG: 'TG' + ((n % 2) + 1),
+        EL: 'EL ' + g,
+        MT: MT_LANGS[n % 3] + ' ' + g,
+        MA: 'MA ' + g,
+        SCI: 'SCI ' + g,
+        HIST: 'HIST ' + g,
+        GEOG: 'GEOG ' + g,
+        LIT: 'LIT ' + g,
+      };
+      if (n % 7 === 0) subjects.HMT = n % 3 === 0 ? 'CHINESE' : 'MALAY';
+      const student = { id, name, class: cls, gender, pg, subjects };
       model.students.push(student);
 
       model.memberships.push({ studentId: id, groupCode: 'EL-' + cls });
       model.memberships.push({ studentId: id, groupCode: 'MA-' + cls });
       BAND_GROUPS.forEach((bg) => {
-        if (student.tags.indexOf(bg.tag) !== -1) {
+        if (subjects[bg.key] === bg.value) {
           model.memberships.push({ studentId: id, groupCode: bg.code });
         }
       });

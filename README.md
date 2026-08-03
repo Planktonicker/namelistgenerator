@@ -7,7 +7,9 @@ No server, no installation, no internet — just two HTML files next to an Excel
   all their teaching-group namelists instantly — zero clicks to load data — and can
   print any one namelist or all of them as clean class registers.
 - **Admins** open `admin.html` to import the raw student list, then build teaching
-  groups fast: sort by any column, filter by class/PG or any tag (e.g. "MA G3"),
+  groups fast: every subject/band column from the worksheet (EL, MT, MA, …) is its
+  own sortable column — click a subject header to sort by allocation (students not
+  taking it sort last), filter by class/PG or search any band (e.g. "MA G3"),
   click rows (Shift for ranges, or select-all-shown) and assign the whole selection
   to a group in one action. Saving updates the Excel master file, the teacher page's
   data, and a timestamped backup — all in one go.
@@ -46,8 +48,8 @@ edits go through `admin.html`, the two can never drift apart.
    - generates student IDs from class + row order (`1R1-01`, `1R1-02`, …) when the
      file has no unique ID column, keeping register order;
    - keeps the remaining columns (TG, EL, MT, HMT, MA, SCI, HIST, GEOG, LIT, …) as
-     **searchable tags** per student — untick any you don't want (PSLE/remark columns
-     are unticked by default).
+     **subject/band columns** — sortable and searchable per student; untick any you
+     don't want (PSLE/remark columns are unticked by default).
 4. Create teaching groups and fill them: in the **Students** tab, filter or search
    (e.g. class `1R1`, or tag `MA G3`), click rows / Shift-click a range / tick the
    header checkbox, then **Add to group** — straight into an existing group or a new
@@ -117,11 +119,12 @@ containing `sample/namelist.xlsx`.
 
 | Sheet | Columns |
 |---|---|
-| Students | StudentID, Name, Class, Gender, PG, Tags |
+| Students | StudentID, Name, Class, Gender, PG, then one column per subject/band (EL, MT, MA, …) |
 | Groups | GroupCode, GroupName, Subject, Teacher |
 | Memberships | StudentID, GroupCode |
 
-`Tags` is a " · "-separated list of searchable attributes per student (teaching
-group, subject bands, etc.), e.g. `TG1 · EL G3 · MT CL G2 · MA G3 · SCI G3`.
+On the Students sheet, any header that isn't one of the fixed five is treated as a
+subject/band column holding that student's allocation (e.g. `EL G3`, `CL G2`) —
+the same shape as the school's raw worksheet, so the saved file stays familiar.
 
 A teacher's namelists = the members of every group whose Teacher field is their name.

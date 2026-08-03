@@ -252,7 +252,7 @@
     var out = $('studentResults');
     if (!q) { out.innerHTML = ''; return; }
     var matches = data.students.filter(function (s) {
-      return (s.name + ' ' + s.class + ' ' + s.id + ' ' + (s.tags || '')).toLowerCase().indexOf(q) !== -1;
+      return S.studentSearchText(s, data.subjectKeys || []).indexOf(q) !== -1;
     });
     if (!matches.length) {
       out.innerHTML = '<div class="card"><p class="empty">No student matches “' + esc($('studentBox').value.trim()) + '”.</p></div>';
@@ -265,7 +265,10 @@
         '<span class="badge plain">' + esc(s.class) + '</span>' +
         (s.pg ? '<span class="badge plain">PG' + esc(s.pg) + '</span>' : '') +
         '<span class="muted small">' + esc(s.id) + '</span></div></div>' +
-        (s.tags ? '<p class="tagline">' + esc(s.tags) + '</p>' : '');
+        (function () {
+          var summary = S.subjectSummary(s, data.subjectKeys || []);
+          return summary ? '<p class="tagline">' + esc(summary) + '</p>' : '';
+        })();
       if (groups.length) {
         html += '<table class="list"><thead><tr><th>Subject</th><th>Group</th><th>Teacher</th></tr></thead><tbody>';
         groups.forEach(function (g) {

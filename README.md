@@ -77,6 +77,23 @@ In the **School files** tab:
 
 Running the same file twice is harmless — everyone matches, nothing changes.
 
+**The official files can never be modified by this app.** Three independent
+safeguards make this true:
+
+1. The "Choose school files folder" picker requests **read-only** permission
+   (`mode: 'read'`) — Chrome/Edge itself refuses any write into that folder,
+   no matter what the page's code does.
+2. Files picked by hand come through a plain file input, which browsers expose
+   read-only — there is no write path at all.
+3. The app only ever writes three names — `namelist.xlsx`, `data.js`,
+   `backups/…` — and only inside its own data folder chosen on the start
+   screen. If that folder pick ever lands on a folder full of other
+   spreadsheets, the app warns before proceeding.
+
+On top of that, since the official files live on a share you don't own, normal
+Windows permissions (read-only access for the admin account) remain the outer
+wall — the app works fine with read-only access to that folder.
+
 ### Daily use
 
 - **Teachers:** double-click the shortcut → type your name → your namelists appear.

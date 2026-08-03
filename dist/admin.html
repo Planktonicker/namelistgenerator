@@ -362,7 +362,9 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         Your browser will ask you to allow this page to <strong>edit files</strong> in that folder — choose Allow.</p>
       <p class="muted small">You will be asked once per session. Every Save writes three things:
         the Excel master file, the <code>data.js</code> snapshot the teacher page reads, and a timestamped
-        backup in <code>backups/</code>.</p>
+        backup in <code>backups/</code>. Use the app's own folder here — <strong>not</strong> the folder
+        holding the school's official files; those are only ever opened read-only, via the
+        School files tab.</p>
       <div class="unsupported" id="unsupportedNote" hidden>
         This browser does not support folder access. Please open this page in
         <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong>.
@@ -498,8 +500,10 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         <p class="hint">Register each level with a filename pattern (e.g. “Sec 1 Subject Allocation”).
           When the school saves a new version — even under a new dated name — choose the folder and the
           newest matching file is found automatically. Updates match students <strong>by name</strong>, so
-          their groups are kept, and only that level's classes are touched. The school's files themselves
-          are never modified.</p>
+          their groups are kept, and only that level's classes are touched.
+          <strong>The school's files are opened strictly read-only</strong> — the folder permission this
+          page requests is read-only, so the browser itself blocks any change to them. Nothing in this
+          app can ever modify the official files.</p>
         <div class="toolbar">
           <button class="primary" id="addSourceBtn">Add level</button>
           <button id="srcFolderBtn">Choose school files folder…</button>
@@ -1209,6 +1213,27 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       fileHandle = await dirHandle.getFileHandle('namelist.xlsx');
     } catch (e) {
       fileHandle = null;
+      // Guard against someone picking the school's official records folder as
+      // the app's data folder. Even then no existing file would ever be
+      // touched (the app only writes namelist.xlsx, data.js and backups/),
+      // but the app should live in its own folder.
+      var foreign = [];
+      try {
+        for await (var entry of dirHandle.values()) {
+          if (entry.kind === 'file' && /\.(xlsx|xls|xlsm|csv)$/i.test(entry.name) && !/^~\$/.test(entry.name)) {
+            foreign.push(entry.name);
+          }
+        }
+      } catch (scanErr) { /* folder scan is best-effort */ }
+      if (foreign.length) {
+        var ok = confirm('Careful — this folder has no namelist.xlsx yet, but contains ' + foreign.length +
+          ' other spreadsheet(s), e.g.:\n' + foreign.slice(0, 3).join('\n') +
+          '\n\nIf these are the school\'s official files, do NOT use this folder for the app.\n' +
+          'Official files should only be opened read-only via the School files tab, and the app should have its own folder.\n\n' +
+          'OK — use this folder anyway (existing files are never touched; only namelist.xlsx, data.js and backups/ are written)\n' +
+          'Cancel — choose a different folder');
+        if (!ok) { show('startScreen'); return; }
+      }
       show('setupScreen');
       return;
     }

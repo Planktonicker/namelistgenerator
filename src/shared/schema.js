@@ -2,7 +2,7 @@
  *
  * Model shape used everywhere:
  *   {
- *     students:    [{ id, name, class, gender, pg, subjects: { KEY: value } }],
+ *     students:    [{ id, name, class, gender, pg, origin, subjects: { KEY: value } }],
  *     groups:      [{ code, name, subject, teacher }],
  *     memberships: [{ studentId, groupCode }],
  *     subjectKeys: ['TG', 'EL', 'MT', ...],
@@ -12,6 +12,11 @@
  * key in `subjects`, holding that student's allocation ("EL G3", "CL G2", …).
  * Only non-empty allocations are stored. `subjectKeys` preserves column order.
  *
+ * `origin` records where a student came from: ORIGIN_FILE for students read
+ * from the school's official file, ORIGIN_ADDED for students entered in the
+ * app. Added students are never proposed for removal when a level is
+ * refreshed from the school file, since that file does not know about them.
+ *
  * Runs as a plain script in the browser and via require() in Node tests.
  * Workbook conversion needs SheetJS available as globalThis.XLSX; the
  * index/validation helpers work without it (the teacher page loads no XLSX).
@@ -19,7 +24,10 @@
 (function () {
   'use strict';
 
-  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG'];
+  var ORIGIN_FILE = 'file';
+  var ORIGIN_ADDED = 'added';
+
+  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG', 'Origin'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teacher', 'AutoSubject', 'AutoValue', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
   var SOURCE_HEADERS = ['Level', 'FilePattern', 'LastFile', 'LastImported'];
@@ -30,6 +38,7 @@
     class: ['class', 'formclass', 'form'],
     gender: ['gender', 'sex'],
     pg: ['pg', 'postinggroup', 'stream'],
+    origin: ['origin'],
   };
   var GROUP_FIELDS = {
     code: ['groupcode', 'code'],
@@ -146,10 +155,13 @@
     for (var r = 1; r < rows.length; r++) {
       var row = rows[r];
       if (!row || isBlankRow(row)) continue;
-      var rec = { id: '', name: '', class: '', gender: '', pg: '', subjects: {} };
+      var rec = { id: '', name: '', class: '', gender: '', pg: '', origin: '', subjects: {} };
       Object.keys(STUDENT_FIELDS).forEach(function (f) {
         rec[f] = f in idx ? norm(row[idx[f]]) : '';
       });
+      // Files written before the Origin column existed: assume the students
+      // came from the school file (the pre-existing behaviour).
+      if (rec.origin !== ORIGIN_ADDED) rec.origin = ORIGIN_FILE;
       if (!rec.id || !rec.name) {
         warnings.push('Sheet "Students" row ' + (r + 1) + ': missing ' +
           (!rec.id ? 'id' : 'name') + ' — row skipped.');
@@ -192,11 +204,11 @@
 
     var keys = model.subjectKeys || [];
     ws = X.utils.aoa_to_sheet([STUDENT_HEADERS.concat(keys)].concat(model.students.map(function (s) {
-      return [s.id, s.name, s.class, s.gender, s.pg].concat(keys.map(function (k) {
+      return [s.id, s.name, s.class, s.gender, s.pg, s.origin || ORIGIN_FILE].concat(keys.map(function (k) {
         return (s.subjects && s.subjects[k]) || '';
       }));
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 8 }, { wch: 5 }]
+    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 8 }, { wch: 5 }, { wch: 8 }]
       .concat(keys.map(function () { return { wch: 12 }; }));
     X.utils.book_append_sheet(wb, ws, 'Students');
 
@@ -319,7 +331,7 @@
       students.push({
         id: id, name: name, class: cls,
         gender: cell(row, 'gender'), pg: cell(row, 'pg'),
-        subjects: subjects,
+        origin: ORIGIN_FILE, subjects: subjects,
       });
     }
     return { students: students, warnings: warnings };
@@ -331,8 +343,13 @@
    * matched students only the subject columns in `importedKeys` are
    * overwritten (a file without a GEOG column never clears GEOG).
    * Nothing is removed here — students missing from the file are reported
-   * in the result so the caller can decide.
-   * Returns { classes, updated, added, missingIds, missingLabels }. */
+   * in the result so the caller can decide. Students added inside the app
+   * (ORIGIN_ADDED) are never reported as missing: the school's file does not
+   * know about them, so their absence from it means nothing. A matched
+   * added-student is adopted (origin becomes ORIGIN_FILE) rather than
+   * duplicated, for when the office finally lists them.
+   * Returns { classes, updated, added, addedIds, keptAddedIds,
+   *           missingIds, missingLabels }. */
   function applyLevelUpdate(model, imported, importedKeys) {
     importedKeys = importedKeys || [];
     var classSet = {};
@@ -370,6 +387,7 @@
       if (m) {
         matched[m.id] = true;
         m.name = imp.name;
+        m.origin = ORIGIN_FILE;   // adopted: the school's file now lists them
         if (imp.class) m.class = imp.class;
         if (imp.gender) m.gender = imp.gender;
         if (imp.pg) m.pg = imp.pg;
@@ -383,7 +401,7 @@
         var newId = freeId(imp.class);
         model.students.push({
           id: newId, name: imp.name, class: imp.class,
-          gender: imp.gender, pg: imp.pg, subjects: imp.subjects,
+          gender: imp.gender, pg: imp.pg, origin: ORIGIN_FILE, subjects: imp.subjects,
         });
         addedIds.push(newId);
         added++;
@@ -396,15 +414,34 @@
       }
     });
 
-    var missing = pool.filter(function (s) { return !matched[s.id]; });
+    var unmatched = pool.filter(function (s) { return !matched[s.id]; });
+    // Students entered in the app are kept without question — the school's
+    // file has no opinion about them.
+    var missing = unmatched.filter(function (s) { return s.origin !== ORIGIN_ADDED; });
+    var keptAdded = unmatched.filter(function (s) { return s.origin === ORIGIN_ADDED; });
     return {
       classes: Object.keys(classSet).sort(cmp),
       updated: updated,
       added: added,
       addedIds: addedIds,
+      keptAddedIds: keptAdded.map(function (s) { return s.id; }),
       missingIds: missing.map(function (s) { return s.id; }),
       missingLabels: missing.map(function (s) { return s.name + ' (' + s.class + ')'; }),
     };
+  }
+
+  /* Next unused "<class>-NN" id, so a student added by hand slots into the
+   * class register without clashing with imported ids. */
+  function nextFreeId(model, cls) {
+    var used = {};
+    model.students.forEach(function (s) { used[s.id] = true; });
+    var base = norm(cls) || 'S';
+    var i = 1, id;
+    do {
+      id = base + '-' + (i < 10 ? '0' : '') + i;
+      i++;
+    } while (used[id]);
+    return id;
   }
 
   /* ---- auto-allocation rules ------------------------------------------ */
@@ -540,6 +577,9 @@
   }
 
   globalThis.NamelistSchema = {
+    ORIGIN_FILE: ORIGIN_FILE,
+    ORIGIN_ADDED: ORIGIN_ADDED,
+    nextFreeId: nextFreeId,
     STUDENT_HEADERS: STUDENT_HEADERS,
     GROUP_HEADERS: GROUP_HEADERS,
     MEMBERSHIP_HEADERS: MEMBERSHIP_HEADERS,

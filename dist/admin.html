@@ -201,6 +201,7 @@ th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; p
   white-space: nowrap;
 }
 .badge.plain { background: #eef2f5; color: var(--muted); font-weight: 500; }
+.badge.added { background: var(--red-soft); color: var(--red-dark); font-size: 11px; padding: 0 8px; }
 
 .warnings {
   background: var(--warn-bg);
@@ -369,7 +370,10 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         This browser does not support folder access. Please open this page in
         <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong>.
       </div>
-      <p><button class="primary bigbtn" id="openFolderBtn">Open data folder…</button></p>
+      <p>
+        <button class="primary bigbtn" id="reconnectBtn" hidden></button>
+        <button class="primary bigbtn" id="openFolderBtn">Open data folder…</button>
+      </p>
     </div>
   </section>
 
@@ -418,6 +422,11 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         <input type="search" id="studentSearch" placeholder="Search name, class, ID or tag (e.g. MA G3)" style="min-width:260px">
         <select id="studentClassFilter"><option value="">All classes</option></select>
         <select id="studentPgFilter"><option value="">All PG</option></select>
+        <select id="studentOriginFilter">
+          <option value="">All students</option>
+          <option value="added">Added here only</option>
+          <option value="file">From school file only</option>
+        </select>
         <span class="spacer"></span>
         <button id="addSubjectColBtn">Add subject column</button>
         <button class="primary" id="addStudentBtn">Add student</button>
@@ -538,6 +547,10 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       <label for="sfClass">Class</label><input type="text" id="sfClass" list="classList">
       <label for="sfGender">Gender</label><input type="text" id="sfGender" list="genderList">
       <label for="sfPg">PG</label><input type="text" id="sfPg" list="pgList">
+      <p class="hint" id="sfAddedNote" style="grid-column: 1 / -1; margin: 0" hidden>
+        This student is stored in the app's own file only — the school's official file is never written to.
+        They are kept when a level is refreshed, and adopted automatically if the school later lists them.
+      </p>
       <div id="sfSubjects" style="display:contents"></div>
       <div class="actions">
         <button type="button" id="studentCancelBtn">Cancel</button>
@@ -654,7 +667,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
  *
  * Model shape used everywhere:
  *   {
- *     students:    [{ id, name, class, gender, pg, subjects: { KEY: value } }],
+ *     students:    [{ id, name, class, gender, pg, origin, subjects: { KEY: value } }],
  *     groups:      [{ code, name, subject, teacher }],
  *     memberships: [{ studentId, groupCode }],
  *     subjectKeys: ['TG', 'EL', 'MT', ...],
@@ -664,6 +677,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
  * key in `subjects`, holding that student's allocation ("EL G3", "CL G2", …).
  * Only non-empty allocations are stored. `subjectKeys` preserves column order.
  *
+ * `origin` records where a student came from: ORIGIN_FILE for students read
+ * from the school's official file, ORIGIN_ADDED for students entered in the
+ * app. Added students are never proposed for removal when a level is
+ * refreshed from the school file, since that file does not know about them.
+ *
  * Runs as a plain script in the browser and via require() in Node tests.
  * Workbook conversion needs SheetJS available as globalThis.XLSX; the
  * index/validation helpers work without it (the teacher page loads no XLSX).
@@ -671,7 +689,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 (function () {
   'use strict';
 
-  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG'];
+  var ORIGIN_FILE = 'file';
+  var ORIGIN_ADDED = 'added';
+
+  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG', 'Origin'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teacher', 'AutoSubject', 'AutoValue', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
   var SOURCE_HEADERS = ['Level', 'FilePattern', 'LastFile', 'LastImported'];
@@ -682,6 +703,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     class: ['class', 'formclass', 'form'],
     gender: ['gender', 'sex'],
     pg: ['pg', 'postinggroup', 'stream'],
+    origin: ['origin'],
   };
   var GROUP_FIELDS = {
     code: ['groupcode', 'code'],
@@ -798,10 +820,13 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     for (var r = 1; r < rows.length; r++) {
       var row = rows[r];
       if (!row || isBlankRow(row)) continue;
-      var rec = { id: '', name: '', class: '', gender: '', pg: '', subjects: {} };
+      var rec = { id: '', name: '', class: '', gender: '', pg: '', origin: '', subjects: {} };
       Object.keys(STUDENT_FIELDS).forEach(function (f) {
         rec[f] = f in idx ? norm(row[idx[f]]) : '';
       });
+      // Files written before the Origin column existed: assume the students
+      // came from the school file (the pre-existing behaviour).
+      if (rec.origin !== ORIGIN_ADDED) rec.origin = ORIGIN_FILE;
       if (!rec.id || !rec.name) {
         warnings.push('Sheet "Students" row ' + (r + 1) + ': missing ' +
           (!rec.id ? 'id' : 'name') + ' — row skipped.');
@@ -844,11 +869,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
     var keys = model.subjectKeys || [];
     ws = X.utils.aoa_to_sheet([STUDENT_HEADERS.concat(keys)].concat(model.students.map(function (s) {
-      return [s.id, s.name, s.class, s.gender, s.pg].concat(keys.map(function (k) {
+      return [s.id, s.name, s.class, s.gender, s.pg, s.origin || ORIGIN_FILE].concat(keys.map(function (k) {
         return (s.subjects && s.subjects[k]) || '';
       }));
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 8 }, { wch: 5 }]
+    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 8 }, { wch: 5 }, { wch: 8 }]
       .concat(keys.map(function () { return { wch: 12 }; }));
     X.utils.book_append_sheet(wb, ws, 'Students');
 
@@ -971,7 +996,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       students.push({
         id: id, name: name, class: cls,
         gender: cell(row, 'gender'), pg: cell(row, 'pg'),
-        subjects: subjects,
+        origin: ORIGIN_FILE, subjects: subjects,
       });
     }
     return { students: students, warnings: warnings };
@@ -983,8 +1008,13 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
    * matched students only the subject columns in `importedKeys` are
    * overwritten (a file without a GEOG column never clears GEOG).
    * Nothing is removed here — students missing from the file are reported
-   * in the result so the caller can decide.
-   * Returns { classes, updated, added, missingIds, missingLabels }. */
+   * in the result so the caller can decide. Students added inside the app
+   * (ORIGIN_ADDED) are never reported as missing: the school's file does not
+   * know about them, so their absence from it means nothing. A matched
+   * added-student is adopted (origin becomes ORIGIN_FILE) rather than
+   * duplicated, for when the office finally lists them.
+   * Returns { classes, updated, added, addedIds, keptAddedIds,
+   *           missingIds, missingLabels }. */
   function applyLevelUpdate(model, imported, importedKeys) {
     importedKeys = importedKeys || [];
     var classSet = {};
@@ -1022,6 +1052,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       if (m) {
         matched[m.id] = true;
         m.name = imp.name;
+        m.origin = ORIGIN_FILE;   // adopted: the school's file now lists them
         if (imp.class) m.class = imp.class;
         if (imp.gender) m.gender = imp.gender;
         if (imp.pg) m.pg = imp.pg;
@@ -1035,7 +1066,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         var newId = freeId(imp.class);
         model.students.push({
           id: newId, name: imp.name, class: imp.class,
-          gender: imp.gender, pg: imp.pg, subjects: imp.subjects,
+          gender: imp.gender, pg: imp.pg, origin: ORIGIN_FILE, subjects: imp.subjects,
         });
         addedIds.push(newId);
         added++;
@@ -1048,15 +1079,34 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       }
     });
 
-    var missing = pool.filter(function (s) { return !matched[s.id]; });
+    var unmatched = pool.filter(function (s) { return !matched[s.id]; });
+    // Students entered in the app are kept without question — the school's
+    // file has no opinion about them.
+    var missing = unmatched.filter(function (s) { return s.origin !== ORIGIN_ADDED; });
+    var keptAdded = unmatched.filter(function (s) { return s.origin === ORIGIN_ADDED; });
     return {
       classes: Object.keys(classSet).sort(cmp),
       updated: updated,
       added: added,
       addedIds: addedIds,
+      keptAddedIds: keptAdded.map(function (s) { return s.id; }),
       missingIds: missing.map(function (s) { return s.id; }),
       missingLabels: missing.map(function (s) { return s.name + ' (' + s.class + ')'; }),
     };
+  }
+
+  /* Next unused "<class>-NN" id, so a student added by hand slots into the
+   * class register without clashing with imported ids. */
+  function nextFreeId(model, cls) {
+    var used = {};
+    model.students.forEach(function (s) { used[s.id] = true; });
+    var base = norm(cls) || 'S';
+    var i = 1, id;
+    do {
+      id = base + '-' + (i < 10 ? '0' : '') + i;
+      i++;
+    } while (used[id]);
+    return id;
   }
 
   /* ---- auto-allocation rules ------------------------------------------ */
@@ -1192,6 +1242,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   }
 
   globalThis.NamelistSchema = {
+    ORIGIN_FILE: ORIGIN_FILE,
+    ORIGIN_ADDED: ORIGIN_ADDED,
+    nextFreeId: nextFreeId,
     STUDENT_HEADERS: STUDENT_HEADERS,
     GROUP_HEADERS: GROUP_HEADERS,
     MEMBERSHIP_HEADERS: MEMBERSHIP_HEADERS,
@@ -1229,6 +1282,57 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   'use strict';
   var S = window.NamelistSchema;
   var $ = function (id) { return document.getElementById(id); };
+
+  /* ---- remembered folder handles -------------------------------------
+   * Chrome/Edge can store File System Access handles in IndexedDB, so the
+   * admin picks each folder once ever and later only confirms a permission
+   * prompt instead of navigating the shared drive again. */
+  var IDB_NAME = 'namelist-admin';
+  var IDB_STORE = 'handles';
+
+  function idb() {
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore(IDB_STORE); };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+  function idbTx(mode, fn) {
+    return idb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(IDB_STORE, mode);
+        var req = fn(tx.objectStore(IDB_STORE));
+        tx.oncomplete = function () { resolve(req && req.result); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+  function rememberHandle(key, handle) {
+    return idbTx('readwrite', function (store) { return store.put(handle, key); })
+      .catch(function () { /* private mode or IDB unavailable — not fatal */ });
+  }
+  function recallHandle(key) {
+    return idbTx('readonly', function (store) { return store.get(key); })
+      .catch(function () { return undefined; });
+  }
+  function forgetHandle(key) {
+    return idbTx('readwrite', function (store) { return store.delete(key); })
+      .catch(function () { /* ignore */ });
+  }
+  function isUsableHandle(h) {
+    return !!(h && typeof h.queryPermission === 'function' && typeof h.values === 'function');
+  }
+  /* Re-granting needs a user gesture, hence the explicit Reconnect button. */
+  async function ensurePermission(handle, mode) {
+    var opts = { mode: mode };
+    try {
+      if ((await handle.queryPermission(opts)) === 'granted') return true;
+      return (await handle.requestPermission(opts)) === 'granted';
+    } catch (e) {
+      return false;   // handle no longer valid (drive disconnected, folder gone)
+    }
+  }
 
   var dirHandle = null;
   var fileHandle = null;
@@ -1273,12 +1377,45 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     } catch (e) {
       return; // user cancelled the picker
     }
+    await useDataFolder(handle);
+    rememberHandle('dataDir', handle);
+  });
+
+  async function useDataFolder(handle) {
     dirHandle = handle;
     $('folderMeta').textContent = 'Folder: ' + dirHandle.name;
     $('folderName').textContent = dirHandle.name;
     $('setupFolderName').textContent = dirHandle.name;
     await loadFromFolder();
-  });
+  }
+
+  /* Offer a one-click reconnect when this machine has used the app before. */
+  (async function restoreHandles() {
+    if (!window.showDirectoryPicker) return;
+    var saved = await recallHandle('dataDir');
+    if (!isUsableHandle(saved)) {
+      if (saved) forgetHandle('dataDir');
+      return;
+    }
+    var btn = $('reconnectBtn');
+    btn.textContent = 'Reconnect to “' + saved.name + '”';
+    btn.hidden = false;
+    $('openFolderBtn').classList.remove('primary');
+    $('openFolderBtn').textContent = 'Choose a different folder…';
+    btn.addEventListener('click', async function () {
+      if (!(await ensurePermission(saved, 'readwrite'))) {
+        alert('Permission was not granted. Use “Choose a different folder…” instead.');
+        return;
+      }
+      await useDataFolder(saved);
+    });
+    var savedSrc = await recallHandle('sourceDir');
+    if (!isUsableHandle(savedSrc)) forgetHandle('sourceDir');
+    else {
+      srcDirPending = savedSrc;
+      $('srcFolderBtn').textContent = 'Reconnect to “' + savedSrc.name + '” (read-only)';
+    }
+  })();
 
   async function loadFromFolder() {
     try {
@@ -1535,6 +1672,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   $('studentSearch').addEventListener('input', renderStudents);
   $('studentClassFilter').addEventListener('change', renderStudents);
   $('studentPgFilter').addEventListener('change', renderStudents);
+  $('studentOriginFilter').addEventListener('change', renderStudents);
   $('addStudentBtn').addEventListener('click', function () { openStudentDialog(null); });
 
   $('addSubjectColBtn').addEventListener('click', function () {
@@ -1571,9 +1709,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var q = $('studentSearch').value.trim().toLowerCase();
     var cls = $('studentClassFilter').value;
     var pg = $('studentPgFilter').value;
+    var origin = $('studentOriginFilter').value;
     return model.students.filter(function (s) {
       if (cls && s.class !== cls) return false;
       if (pg && s.pg !== pg) return false;
+      if (origin === 'added' && s.origin !== S.ORIGIN_ADDED) return false;
+      if (origin === 'file' && s.origin === S.ORIGIN_ADDED) return false;
       if (q && S.studentSearchText(s, model.subjectKeys).indexOf(q) === -1) return false;
       return true;
     });
@@ -1623,7 +1764,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       var sel = selectedIds.has(s.id);
       return '<tr data-id="' + esc(s.id) + '"' + (sel ? ' class="selected"' : '') + '>' +
         '<td class="checkcol"><input type="checkbox" class="rowcheck" tabindex="-1"' + (sel ? ' checked' : '') + '></td>' +
-        '<td>' + esc(s.id) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td>' +
+        '<td>' + esc(s.id) + '</td><td>' + esc(s.name) +
+        (s.origin === S.ORIGIN_ADDED ? ' <span class="badge added" title="Added in this app — not in the school\'s file">added</span>' : '') +
+        '</td><td>' + esc(s.class) + '</td>' +
         '<td>' + esc(s.gender) + '</td><td>' + esc(s.pg) + '</td>' +
         keys.map(function (k) {
           return '<td class="subj">' + esc((s.subjects && s.subjects[k]) || '') + '</td>';
@@ -1731,6 +1874,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   function openStudentDialog(student) {
     editingStudentId = student ? student.id : null;
     $('studentDialogTitle').textContent = student ? 'Edit student' : 'Add student';
+    $('sfAddedNote').hidden = !!(student && student.origin !== S.ORIGIN_ADDED);
+    if (student) $('sfId').dataset.userEdited = '1';
+    else delete $('sfId').dataset.userEdited;
     $('sfId').value = student ? student.id : '';
     $('sfName').value = student ? student.name : '';
     $('sfClass').value = student ? student.class : '';
@@ -1742,8 +1888,19 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         '<input type="text" id="sfSubj' + i + '" data-subj="' + esc(k) + '" value="' + esc(v) + '">';
     }).join('');
     $('studentDialog').showModal();
-    $('sfId').focus();
+    if (student) $('sfId').focus();
+    else $('sfName').focus();   // adding: the id fills itself in from the class
   }
+
+  /* Adding a student: once a class is typed, suggest the next free register
+   * id for it, unless the admin has typed an id themselves. */
+  $('sfId').addEventListener('input', function () { $('sfId').dataset.userEdited = '1'; });
+  $('sfClass').addEventListener('input', function () {
+    if (editingStudentId !== null || $('sfId').dataset.userEdited) return;
+    var cls = S.norm($('sfClass').value);
+    $('sfId').value = cls ? S.nextFreeId(model, cls) : '';
+  });
+
   $('studentCancelBtn').addEventListener('click', function () { $('studentDialog').close(); });
   $('studentForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
@@ -1753,9 +1910,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       var v = S.norm(inp.value);
       if (v) subjects[inp.dataset.subj] = v;
     });
+    var existing = editingStudentId === null ? null : ix.studentsById.get(editingStudentId);
     var rec = {
       id: id, name: S.norm($('sfName').value), class: S.norm($('sfClass').value),
-      gender: S.norm($('sfGender').value), pg: S.norm($('sfPg').value), subjects: subjects,
+      gender: S.norm($('sfGender').value), pg: S.norm($('sfPg').value),
+      origin: existing ? existing.origin : S.ORIGIN_ADDED,
+      subjects: subjects,
     };
     if (!id || !rec.name) return;
     var clash = ix.studentsById.get(id);
@@ -2076,6 +2236,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   /* ================= school-file sources ================= */
 
   var srcDirHandle = null;
+  var srcDirPending = null; // remembered handle awaiting a permission click
   var srcFiles = [];        // [{ name, lastModified, handle }]
   var editingSourceIndex = null;
   var pendingUpdateIndex = null;
@@ -2109,10 +2270,24 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     markDirty();
   });
 
+  /* Always requested read-only: the browser itself then refuses any write
+   * into the school's folder, whatever this page's code does. */
   $('srcFolderBtn').addEventListener('click', async function () {
-    var handle;
-    try { handle = await window.showDirectoryPicker({ mode: 'read' }); }
-    catch (e) { return; } // user cancelled
+    var handle = srcDirPending;
+    if (handle) {
+      // Remembered folder: a permission prompt is all that is needed.
+      if (!(await ensurePermission(handle, 'read'))) handle = null;
+      srcDirPending = null;
+    }
+    if (!handle) {
+      try { handle = await window.showDirectoryPicker({ mode: 'read' }); }
+      catch (e) { return; } // user cancelled
+      rememberHandle('sourceDir', handle);
+    }
+    await scanSourceFolder(handle);
+  });
+
+  async function scanSourceFolder(handle) {
     srcDirHandle = handle;
     srcFiles = [];
     for await (var entry of srcDirHandle.values()) {
@@ -2120,10 +2295,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       var f = await entry.getFile();
       srcFiles.push({ name: entry.name, lastModified: f.lastModified, handle: entry });
     }
-    $('srcFolderName').textContent = srcDirHandle.name + ' — ' + srcFiles.length + ' spreadsheet(s) found';
+    $('srcFolderName').textContent = srcDirHandle.name + ' — ' + srcFiles.length +
+      ' spreadsheet(s), read-only';
     $('srcFolderName').hidden = false;
     renderSources();
-  });
+  }
 
   function renderSources() {
     var tbody = $('sourcesTable').querySelector('tbody');
@@ -2230,7 +2406,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var classes = Array.from(new Set(res.students.map(function (s) { return s.class; }).filter(Boolean))).sort(S.cmp);
     if (!confirm('Update level "' + src.level + '" from:\n' + file.name + ' (sheet "' + bestSheet + '")\n\n' +
       res.students.length + ' students in classes ' + classes.join(', ') + '.\n' +
-      'Students are matched by name, so their groups are kept. Only these classes are touched.\n\nProceed?')) return;
+      'Students are matched by name, so their groups are kept. Only these classes are touched.\n' +
+      'Students you added in this app are kept regardless. This file is only read, never changed.\n\nProceed?')) return;
 
     var report = S.applyLevelUpdate(model, res.students, importedKeys);
     if (report.missingIds.length) {
@@ -2252,6 +2429,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     markDirty();
     toast(src.level + ': ' + report.updated + ' updated, ' + report.added + ' added' +
       (autoPlacements ? ' (' + autoPlacements + ' auto-allocation' + (autoPlacements === 1 ? '' : 's') + ')' : '') +
+      (report.keptAddedIds.length ? ', ' + report.keptAddedIds.length + ' added-here kept' : '') +
       (report.missingIds.length ? ', ' + report.missingIds.length + ' no longer in file' : '') +
       ' — press Save when done');
   }

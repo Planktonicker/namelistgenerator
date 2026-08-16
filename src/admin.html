@@ -51,7 +51,10 @@
         This browser does not support folder access. Please open this page in
         <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong>.
       </div>
-      <p><button class="primary bigbtn" id="openFolderBtn">Open data folder…</button></p>
+      <p>
+        <button class="primary bigbtn" id="reconnectBtn" hidden></button>
+        <button class="primary bigbtn" id="openFolderBtn">Open data folder…</button>
+      </p>
     </div>
   </section>
 
@@ -100,6 +103,11 @@
         <input type="search" id="studentSearch" placeholder="Search name, class, ID or tag (e.g. MA G3)" style="min-width:260px">
         <select id="studentClassFilter"><option value="">All classes</option></select>
         <select id="studentPgFilter"><option value="">All PG</option></select>
+        <select id="studentOriginFilter">
+          <option value="">All students</option>
+          <option value="added">Added here only</option>
+          <option value="file">From school file only</option>
+        </select>
         <span class="spacer"></span>
         <button id="addSubjectColBtn">Add subject column</button>
         <button class="primary" id="addStudentBtn">Add student</button>
@@ -220,6 +228,10 @@
       <label for="sfClass">Class</label><input type="text" id="sfClass" list="classList">
       <label for="sfGender">Gender</label><input type="text" id="sfGender" list="genderList">
       <label for="sfPg">PG</label><input type="text" id="sfPg" list="pgList">
+      <p class="hint" id="sfAddedNote" style="grid-column: 1 / -1; margin: 0" hidden>
+        This student is stored in the app's own file only — the school's official file is never written to.
+        They are kept when a level is refreshed, and adopted automatically if the school later lists them.
+      </p>
       <div id="sfSubjects" style="display:contents"></div>
       <div class="actions">
         <button type="button" id="studentCancelBtn">Cancel</button>
@@ -314,6 +326,57 @@
   var S = window.NamelistSchema;
   var $ = function (id) { return document.getElementById(id); };
 
+  /* ---- remembered folder handles -------------------------------------
+   * Chrome/Edge can store File System Access handles in IndexedDB, so the
+   * admin picks each folder once ever and later only confirms a permission
+   * prompt instead of navigating the shared drive again. */
+  var IDB_NAME = 'namelist-admin';
+  var IDB_STORE = 'handles';
+
+  function idb() {
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore(IDB_STORE); };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+  function idbTx(mode, fn) {
+    return idb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(IDB_STORE, mode);
+        var req = fn(tx.objectStore(IDB_STORE));
+        tx.oncomplete = function () { resolve(req && req.result); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+  function rememberHandle(key, handle) {
+    return idbTx('readwrite', function (store) { return store.put(handle, key); })
+      .catch(function () { /* private mode or IDB unavailable — not fatal */ });
+  }
+  function recallHandle(key) {
+    return idbTx('readonly', function (store) { return store.get(key); })
+      .catch(function () { return undefined; });
+  }
+  function forgetHandle(key) {
+    return idbTx('readwrite', function (store) { return store.delete(key); })
+      .catch(function () { /* ignore */ });
+  }
+  function isUsableHandle(h) {
+    return !!(h && typeof h.queryPermission === 'function' && typeof h.values === 'function');
+  }
+  /* Re-granting needs a user gesture, hence the explicit Reconnect button. */
+  async function ensurePermission(handle, mode) {
+    var opts = { mode: mode };
+    try {
+      if ((await handle.queryPermission(opts)) === 'granted') return true;
+      return (await handle.requestPermission(opts)) === 'granted';
+    } catch (e) {
+      return false;   // handle no longer valid (drive disconnected, folder gone)
+    }
+  }
+
   var dirHandle = null;
   var fileHandle = null;
   var model = S.emptyModel();
@@ -357,12 +420,45 @@
     } catch (e) {
       return; // user cancelled the picker
     }
+    await useDataFolder(handle);
+    rememberHandle('dataDir', handle);
+  });
+
+  async function useDataFolder(handle) {
     dirHandle = handle;
     $('folderMeta').textContent = 'Folder: ' + dirHandle.name;
     $('folderName').textContent = dirHandle.name;
     $('setupFolderName').textContent = dirHandle.name;
     await loadFromFolder();
-  });
+  }
+
+  /* Offer a one-click reconnect when this machine has used the app before. */
+  (async function restoreHandles() {
+    if (!window.showDirectoryPicker) return;
+    var saved = await recallHandle('dataDir');
+    if (!isUsableHandle(saved)) {
+      if (saved) forgetHandle('dataDir');
+      return;
+    }
+    var btn = $('reconnectBtn');
+    btn.textContent = 'Reconnect to “' + saved.name + '”';
+    btn.hidden = false;
+    $('openFolderBtn').classList.remove('primary');
+    $('openFolderBtn').textContent = 'Choose a different folder…';
+    btn.addEventListener('click', async function () {
+      if (!(await ensurePermission(saved, 'readwrite'))) {
+        alert('Permission was not granted. Use “Choose a different folder…” instead.');
+        return;
+      }
+      await useDataFolder(saved);
+    });
+    var savedSrc = await recallHandle('sourceDir');
+    if (!isUsableHandle(savedSrc)) forgetHandle('sourceDir');
+    else {
+      srcDirPending = savedSrc;
+      $('srcFolderBtn').textContent = 'Reconnect to “' + savedSrc.name + '” (read-only)';
+    }
+  })();
 
   async function loadFromFolder() {
     try {
@@ -619,6 +715,7 @@
   $('studentSearch').addEventListener('input', renderStudents);
   $('studentClassFilter').addEventListener('change', renderStudents);
   $('studentPgFilter').addEventListener('change', renderStudents);
+  $('studentOriginFilter').addEventListener('change', renderStudents);
   $('addStudentBtn').addEventListener('click', function () { openStudentDialog(null); });
 
   $('addSubjectColBtn').addEventListener('click', function () {
@@ -655,9 +752,12 @@
     var q = $('studentSearch').value.trim().toLowerCase();
     var cls = $('studentClassFilter').value;
     var pg = $('studentPgFilter').value;
+    var origin = $('studentOriginFilter').value;
     return model.students.filter(function (s) {
       if (cls && s.class !== cls) return false;
       if (pg && s.pg !== pg) return false;
+      if (origin === 'added' && s.origin !== S.ORIGIN_ADDED) return false;
+      if (origin === 'file' && s.origin === S.ORIGIN_ADDED) return false;
       if (q && S.studentSearchText(s, model.subjectKeys).indexOf(q) === -1) return false;
       return true;
     });
@@ -707,7 +807,9 @@
       var sel = selectedIds.has(s.id);
       return '<tr data-id="' + esc(s.id) + '"' + (sel ? ' class="selected"' : '') + '>' +
         '<td class="checkcol"><input type="checkbox" class="rowcheck" tabindex="-1"' + (sel ? ' checked' : '') + '></td>' +
-        '<td>' + esc(s.id) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td>' +
+        '<td>' + esc(s.id) + '</td><td>' + esc(s.name) +
+        (s.origin === S.ORIGIN_ADDED ? ' <span class="badge added" title="Added in this app — not in the school\'s file">added</span>' : '') +
+        '</td><td>' + esc(s.class) + '</td>' +
         '<td>' + esc(s.gender) + '</td><td>' + esc(s.pg) + '</td>' +
         keys.map(function (k) {
           return '<td class="subj">' + esc((s.subjects && s.subjects[k]) || '') + '</td>';
@@ -815,6 +917,9 @@
   function openStudentDialog(student) {
     editingStudentId = student ? student.id : null;
     $('studentDialogTitle').textContent = student ? 'Edit student' : 'Add student';
+    $('sfAddedNote').hidden = !!(student && student.origin !== S.ORIGIN_ADDED);
+    if (student) $('sfId').dataset.userEdited = '1';
+    else delete $('sfId').dataset.userEdited;
     $('sfId').value = student ? student.id : '';
     $('sfName').value = student ? student.name : '';
     $('sfClass').value = student ? student.class : '';
@@ -826,8 +931,19 @@
         '<input type="text" id="sfSubj' + i + '" data-subj="' + esc(k) + '" value="' + esc(v) + '">';
     }).join('');
     $('studentDialog').showModal();
-    $('sfId').focus();
+    if (student) $('sfId').focus();
+    else $('sfName').focus();   // adding: the id fills itself in from the class
   }
+
+  /* Adding a student: once a class is typed, suggest the next free register
+   * id for it, unless the admin has typed an id themselves. */
+  $('sfId').addEventListener('input', function () { $('sfId').dataset.userEdited = '1'; });
+  $('sfClass').addEventListener('input', function () {
+    if (editingStudentId !== null || $('sfId').dataset.userEdited) return;
+    var cls = S.norm($('sfClass').value);
+    $('sfId').value = cls ? S.nextFreeId(model, cls) : '';
+  });
+
   $('studentCancelBtn').addEventListener('click', function () { $('studentDialog').close(); });
   $('studentForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
@@ -837,9 +953,12 @@
       var v = S.norm(inp.value);
       if (v) subjects[inp.dataset.subj] = v;
     });
+    var existing = editingStudentId === null ? null : ix.studentsById.get(editingStudentId);
     var rec = {
       id: id, name: S.norm($('sfName').value), class: S.norm($('sfClass').value),
-      gender: S.norm($('sfGender').value), pg: S.norm($('sfPg').value), subjects: subjects,
+      gender: S.norm($('sfGender').value), pg: S.norm($('sfPg').value),
+      origin: existing ? existing.origin : S.ORIGIN_ADDED,
+      subjects: subjects,
     };
     if (!id || !rec.name) return;
     var clash = ix.studentsById.get(id);
@@ -1160,6 +1279,7 @@
   /* ================= school-file sources ================= */
 
   var srcDirHandle = null;
+  var srcDirPending = null; // remembered handle awaiting a permission click
   var srcFiles = [];        // [{ name, lastModified, handle }]
   var editingSourceIndex = null;
   var pendingUpdateIndex = null;
@@ -1193,10 +1313,24 @@
     markDirty();
   });
 
+  /* Always requested read-only: the browser itself then refuses any write
+   * into the school's folder, whatever this page's code does. */
   $('srcFolderBtn').addEventListener('click', async function () {
-    var handle;
-    try { handle = await window.showDirectoryPicker({ mode: 'read' }); }
-    catch (e) { return; } // user cancelled
+    var handle = srcDirPending;
+    if (handle) {
+      // Remembered folder: a permission prompt is all that is needed.
+      if (!(await ensurePermission(handle, 'read'))) handle = null;
+      srcDirPending = null;
+    }
+    if (!handle) {
+      try { handle = await window.showDirectoryPicker({ mode: 'read' }); }
+      catch (e) { return; } // user cancelled
+      rememberHandle('sourceDir', handle);
+    }
+    await scanSourceFolder(handle);
+  });
+
+  async function scanSourceFolder(handle) {
     srcDirHandle = handle;
     srcFiles = [];
     for await (var entry of srcDirHandle.values()) {
@@ -1204,10 +1338,11 @@
       var f = await entry.getFile();
       srcFiles.push({ name: entry.name, lastModified: f.lastModified, handle: entry });
     }
-    $('srcFolderName').textContent = srcDirHandle.name + ' — ' + srcFiles.length + ' spreadsheet(s) found';
+    $('srcFolderName').textContent = srcDirHandle.name + ' — ' + srcFiles.length +
+      ' spreadsheet(s), read-only';
     $('srcFolderName').hidden = false;
     renderSources();
-  });
+  }
 
   function renderSources() {
     var tbody = $('sourcesTable').querySelector('tbody');
@@ -1314,7 +1449,8 @@
     var classes = Array.from(new Set(res.students.map(function (s) { return s.class; }).filter(Boolean))).sort(S.cmp);
     if (!confirm('Update level "' + src.level + '" from:\n' + file.name + ' (sheet "' + bestSheet + '")\n\n' +
       res.students.length + ' students in classes ' + classes.join(', ') + '.\n' +
-      'Students are matched by name, so their groups are kept. Only these classes are touched.\n\nProceed?')) return;
+      'Students are matched by name, so their groups are kept. Only these classes are touched.\n' +
+      'Students you added in this app are kept regardless. This file is only read, never changed.\n\nProceed?')) return;
 
     var report = S.applyLevelUpdate(model, res.students, importedKeys);
     if (report.missingIds.length) {
@@ -1336,6 +1472,7 @@
     markDirty();
     toast(src.level + ': ' + report.updated + ' updated, ' + report.added + ' added' +
       (autoPlacements ? ' (' + autoPlacements + ' auto-allocation' + (autoPlacements === 1 ? '' : 's') + ')' : '') +
+      (report.keptAddedIds.length ? ', ' + report.keptAddedIds.length + ' added-here kept' : '') +
       (report.missingIds.length ? ', ' + report.missingIds.length + ' no longer in file' : '') +
       ' — press Save when done');
   }

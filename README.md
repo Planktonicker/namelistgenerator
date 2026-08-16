@@ -81,6 +81,27 @@ In the **School files** tab:
 
 Running the same file twice is harmless — everyone matches, nothing changes.
 
+**Reconnecting.** Chrome/Edge remember both folders between sessions, so after
+the first time the start screen offers **Reconnect to “…”** — a single
+permission click instead of navigating the shared drive again. The School files
+button does the same for the sources folder. "Choose a different folder…" is
+always available if anything moves.
+
+**Adding a student the school's file doesn't have yet.** Use **Add student** in
+the Students tab (a late transfer, a new enrolment). Fill in the details —
+class, gender, PG and each subject band; the student ID is suggested
+automatically as the next free slot in that class register (`1R1-27`). Such
+students are:
+
+- stored **only in the app's own `namelist.xlsx`** — the school's official file
+  is never written to;
+- marked with an **added** badge, and findable via the "Added here only" filter;
+- **kept when a level is refreshed** — the school's file has no opinion about
+  them, so they are never proposed for removal;
+- **adopted automatically** if the office later lists them: the name match
+  updates them in place, keeps their ID and group memberships, and flips them
+  to file-sourced — no duplicate is created.
+
 **The official files can never be modified by this app.** Three independent
 safeguards make this true:
 

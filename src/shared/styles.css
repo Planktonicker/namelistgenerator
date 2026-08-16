@@ -168,6 +168,7 @@ th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; p
   white-space: nowrap;
 }
 .badge.plain { background: #eef2f5; color: var(--muted); font-weight: 500; }
+.badge.added { background: var(--red-soft); color: var(--red-dark); font-size: 11px; padding: 0 8px; }
 
 .warnings {
   background: var(--warn-bg);

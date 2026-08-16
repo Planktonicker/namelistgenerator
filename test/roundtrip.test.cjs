@@ -58,7 +58,7 @@ test('header aliases, subject columns, and messy input are tolerated', () => {
   assert.strictEqual(model.students.length, 2);
   assert.deepStrictEqual(model.subjectKeys, ['EL', 'MT']);
   assert.deepStrictEqual(model.students[0],
-    { id: 's001', name: 'Alice Tan', class: '1R1', gender: 'F', pg: '3', subjects: { EL: 'EL G3', MT: 'CL G2' } });
+    { id: 's001', name: 'Alice Tan', class: '1R1', gender: 'F', pg: '3', origin: 'file', subjects: { EL: 'EL G3', MT: 'CL G2' } });
   assert.deepStrictEqual(model.students[1].subjects, { EL: 'EL G2' });
   assert.ok(warnings.some((w) => w.includes('row 5')), 'expected a skipped-row warning');
 });
@@ -93,7 +93,7 @@ test('importStudents: auto-IDs, subject columns, skipped rows', () => {
   assert.deepStrictEqual(res.students[0].subjects, { TG: 'TG1', EL: 'EL G3', MT: 'CL G2' });
   assert.deepStrictEqual(res.students[1].subjects, { TG: 'TG2', EL: 'EL G2' }); // empty cell omitted
   assert.deepStrictEqual(res.students[2],
-    { id: '1R2-01', name: 'Carol', class: '1R2', gender: 'F', pg: '1', subjects: { TG: 'TG1', EL: 'EL G1', MT: 'ML G1' } });
+    { id: '1R2-01', name: 'Carol', class: '1R2', gender: 'F', pg: '1', origin: 'file', subjects: { TG: 'TG1', EL: 'EL G1', MT: 'ML G1' } });
   assert.strictEqual(res.warnings.length, 1);
   assert.ok(res.warnings[0].includes('no name'));
 });
@@ -155,6 +155,51 @@ test('applyLevelUpdate matches by name, keeps IDs and memberships, scopes column
   assert.ok(model.students.some((s) => s.id === '2R1-01'));
   assert.strictEqual(model.memberships.length, 2);
   assert.deepStrictEqual(model.subjectKeys, ['EL', 'MT', 'GEOG']);
+});
+
+test('students added in the app survive level updates and are adopted on match', () => {
+  const model = {
+    students: [
+      { id: '1R1-01', name: 'From File', class: '1R1', gender: 'F', pg: '3', origin: 'file', subjects: { EL: 'EL G3' } },
+      { id: '1R1-27', name: 'Late Transfer', class: '1R1', gender: 'M', pg: '2', origin: 'added', subjects: { EL: 'EL G2' } },
+      { id: '1R1-28', name: 'Also Added', class: '1R1', gender: 'F', pg: '1', origin: 'added', subjects: { EL: 'EL G1' } },
+    ],
+    groups: [{ code: 'G1', name: 'G', subject: 'X', teacher: 'T' }],
+    memberships: [{ studentId: '1R1-27', groupCode: 'G1' }],
+    subjectKeys: ['EL'],
+    sources: [],
+  };
+  // The school's file lists only the original student, plus (finally) one of
+  // the added ones. Neither added student may be proposed for removal.
+  const imported = [
+    { id: 'x', name: 'From File', class: '1R1', gender: 'F', pg: '3', origin: 'file', subjects: { EL: 'EL G3' } },
+    { id: 'y', name: 'Late Transfer', class: '1R1', gender: 'M', pg: '2', origin: 'file', subjects: { EL: 'EL G1' } },
+  ];
+  const report = S.applyLevelUpdate(model, imported, ['EL']);
+  assert.strictEqual(report.updated, 2);
+  assert.strictEqual(report.added, 0);
+  assert.deepStrictEqual(report.missingIds, []);            // nothing offered for deletion
+  assert.deepStrictEqual(report.keptAddedIds, ['1R1-28']);  // still app-owned, untouched
+
+  const adopted = model.students.find((s) => s.name === 'Late Transfer');
+  assert.strictEqual(adopted.id, '1R1-27');                 // same id, so...
+  assert.strictEqual(model.memberships.length, 1);          // ...group membership kept
+  assert.strictEqual(adopted.origin, 'file');               // adopted by the school's file
+  assert.strictEqual(adopted.subjects.EL, 'EL G1');         // and refreshed from it
+  assert.strictEqual(model.students.length, 3);             // no duplicate created
+  assert.strictEqual(model.students.find((s) => s.name === 'Also Added').origin, 'added');
+});
+
+test('nextFreeId continues a class register without clashing', () => {
+  const model = {
+    students: [
+      { id: '1R1-01', name: 'A', class: '1R1' },
+      { id: '1R1-02', name: 'B', class: '1R1' },
+    ],
+  };
+  assert.strictEqual(S.nextFreeId(model, '1R1'), '1R1-03');
+  assert.strictEqual(S.nextFreeId(model, '1R2'), '1R2-01');
+  assert.strictEqual(S.nextFreeId(model, ''), 'S-01');
 });
 
 test('findNewestMatch picks the latest matching file and skips lock files', () => {

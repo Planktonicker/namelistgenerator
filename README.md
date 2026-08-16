@@ -162,6 +162,7 @@ vendor/xlsx.full.min.js  SheetJS 0.18.5 (committed for offline builds)
 build.mjs                inlines vendor/shared assets → self-contained dist/ pages
 tools/gen-sample.cjs     deterministic sample data → sample/
 test/roundtrip.test.cjs  schema round-trip + validation tests
+test/conflict.browser.mjs  save/conflict/backup path against a fake filesystem
 ```
 
 Requires only Node (no npm packages):
@@ -171,6 +172,27 @@ node test/roundtrip.test.cjs   # data-layer tests
 node tools/gen-sample.cjs      # regenerate sample/namelist.xlsx + sample/data.js
 node build.mjs                 # rebuild dist/
 ```
+
+The save path (folder handles, conflict detection, backups) additionally has a
+browser test that needs Playwright installed:
+
+```
+PLAYWRIGHT_CHROMIUM=/path/to/chromium node test/conflict.browser.mjs
+```
+
+### Two people editing at once
+
+`namelist.xlsx` is the app's own file and is meant to be written **only** by
+`admin.html`. If it changes on disk between an admin loading it and pressing
+Save, the app says so and offers to overwrite or to cancel; either way the
+version currently on disk is copied into `backups/` first, so nothing is lost.
+Whoever saves last wins the live file — there is no merge.
+
+Editing `namelist.xlsx` by hand in Excel is therefore discouraged: besides the
+conflict risk, the app regenerates `data.js` only when *it* saves, so a manual
+Excel edit leaves the teacher page showing the older data until an admin opens
+`admin.html` and presses Save. View or print the workbook freely; make changes
+through the app.
 
 To try the teacher page locally: copy `sample/data.js` next to `dist/namelist.html`
 and open it in a browser. The admin page can be exercised against a local folder

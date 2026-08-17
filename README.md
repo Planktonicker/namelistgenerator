@@ -398,12 +398,19 @@ on down the branches, each one drawn only from what the answers above leave
 possible, with a count on every option and a running total underneath. Nothing
 you don't need is on screen:
 
+It is drawn as a diagram rather than asked as a form: each answer is a node you
+click, and lines run from it to the branch it opens — the path you have taken in
+navy, the branches not taken faint.
+
 ```
-LEVEL     ( ) Every level  (•) Sec 4  ( ) Sec 1
-             └ SUBJECT  ( ) Any subject  (•) POA  ( ) DT  ( ) Sci PC …
-                  └ GROUP    [x] POA G2   [ ] POA
-                       └ TG / SG  [ ] SG1  [x] SG2  [ ] SG3 …
-                            └ More filters…      (form class, PG)
+LEVEL     [ Every level ]  [ Sec 1 159 ]  [ Sec 4 203 ]
+                                              ╲
+SUBJECT   [ Any subject ] [ EL 203 ] [ MA 203 ] [ POA 83 ] [ DT 57 ] …
+                                                    │
+GROUP     [ POA 57 ]  [ POA G2 26 ]
+                            │
+TG / SG   [ SG1 37 ] [ SG2 28 ] [ SG3 28 ] [ SG4 34 ] …
+                            More filters…      (form class, PG)
 ```
 
 

@@ -40,38 +40,38 @@
   }
   .chips .chip button:hover { color: var(--red); background: none; }
   /* Tick lists: pick several at once without an Add button. */
-  .ticks {
-    display: flex; flex-wrap: wrap; gap: 6px;
-    max-height: 148px; overflow-y: auto; margin-top: 6px;
-  }
+  /* Nodes in a diagram, not boxes in a form: the input stays for keyboard use
+   * and screen readers, but what you see and click is the node. */
+  .ticks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0; }
   .ticks:empty::after { content: 'nothing to choose from yet'; color: var(--muted); font-size: 13px; }
+  .ticks input { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
   .ticks label {
-    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-    border: 1px solid var(--line); border-radius: 999px;
-    padding: 4px 12px 4px 9px; font-size: 13px; font-weight: 600; background: #fff;
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    border: 1.5px solid var(--line); border-radius: 10px; background: #fff;
+    padding: 7px 13px; font-size: 13px; font-weight: 600;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .05);
+    transition: border-color .12s ease, background .12s ease, color .12s ease, transform .12s ease;
   }
-  .ticks label:hover { border-color: var(--accent); }
-  .ticks label.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
-  .ticks input { margin: 0; accent-color: var(--accent); }
-  .ticks .muted { font-weight: 400; }
-  /* The rule reads as a little tree: each answer opens the next branch. */
-  #gfGraphLabel { align-self: start; padding-top: 12px; }
-  .graph { display: flex; flex-direction: column; gap: 2px; }
-  .graph-row {
-    display: flex; align-items: flex-start; gap: 10px;
-    position: relative; padding: 7px 0 7px 22px;
+  .ticks label:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .ticks label.on {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+    box-shadow: 0 2px 8px rgba(30, 58, 112, .28);
   }
-  .graph-row + .graph-row::before {
-    content: ''; position: absolute; left: 7px; top: -6px; height: 26px; width: 11px;
-    border-left: 2px solid var(--line); border-bottom: 2px solid var(--line);
-    border-bottom-left-radius: 9px;
-  }
-  .graph-row + .graph-row.linked::before { border-color: var(--accent); }
+  .ticks label .muted { font-weight: 400; font-size: 12px; }
+  .ticks label.on .muted { color: rgba(255, 255, 255, .8); }
+
+  #gfGraphLabel { align-self: start; padding-top: 14px; }
+  .graph { position: relative; display: flex; flex-direction: column; }
+  .graph-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .graph-row { position: relative; z-index: 1;
+    display: flex; align-items: flex-start; gap: 12px; padding: 13px 0; }
+  .graph-row.just-open { animation: branch .2s ease-out; }
+  @keyframes branch { from { opacity: 0; transform: translateY(-6px); } }
   .graph-key {
-    flex: 0 0 78px; font-size: 12px; font-weight: 700; letter-spacing: .02em;
-    text-transform: uppercase; color: var(--muted); padding-top: 6px;
+    flex: 0 0 74px; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--muted); padding-top: 10px; text-align: right;
   }
-  .graph-row .ticks { flex: 1; margin-top: 0; }
+  .graph-row .ticks { flex: 1; }
   #gfMembers td:first-child { width: 28px; }
   #gfMembers tr.out td:not(:first-child) { text-decoration: line-through; color: var(--muted); }
   .warn-row { display: flex; align-items: baseline; gap: 8px; }
@@ -357,6 +357,7 @@
       </div>
       <label id="gfGraphLabel">Who is in it</label>
       <div class="graph" id="gfGraph">
+        <svg class="graph-edges" id="gfEdges" aria-hidden="true"></svg>
         <div class="graph-row" id="gfLevelRow">
           <span class="graph-key">Level</span>
           <div class="ticks" id="gfLevelTicks"></div>
@@ -1905,10 +1906,56 @@
       gfMoreRow: picked && upper && !extras,
     };
     Object.keys(rows).forEach(function (id) {
-      $(id).hidden = !rows[id];
-      $(id).classList.toggle('linked', !!rows[id]);
+      var el = $(id);
+      var opening = rows[id] && el.hidden;      // only the new branch animates
+      el.hidden = !rows[id];
+      el.classList.toggle('just-open', opening);
     });
+    drawEdges();
   }
+
+  /* The lines of the diagram: from the node you chose on one row to every node
+   * it opened on the next, the chosen ones drawn solid in the accent colour.
+   * Measured from the laid-out nodes, so wrapping and long labels look right. */
+  var EDGE_ROWS = ['gfLevelRow', 'gfSubjectRow', 'gfValueRow', 'gfTgRow', 'gfClassRow', 'gfPgRow'];
+
+  function drawEdges() {
+    var svg = $('gfEdges');
+    var host = $('gfGraph');
+    if (!svg || !host.offsetParent && !$('groupDialog').open) { return; }
+    var hb = host.getBoundingClientRect();
+    if (!hb.width) return;
+    svg.setAttribute('viewBox', '0 0 ' + hb.width + ' ' + hb.height);
+    var visible = EDGE_ROWS.filter(function (id) { return !$(id).hidden; });
+    var parts = [];
+    function centre(el, atTop) {
+      var b = el.getBoundingClientRect();
+      return { x: b.left - hb.left + b.width / 2, y: (atTop ? b.top : b.bottom) - hb.top };
+    }
+    for (var i = 0; i < visible.length - 1; i++) {
+      var parentRow = $(visible[i]);
+      var childRow = $(visible[i + 1]);
+      var anchorEl = parentRow.querySelector('label.on') || parentRow.querySelector('label');
+      if (!anchorEl) continue;
+      var from = centre(anchorEl, false);
+      Array.prototype.forEach.call(childRow.querySelectorAll('label'), function (child) {
+        var to = centre(child, true);
+        var mid = (from.y + to.y) / 2;
+        var on = child.classList.contains('on');
+        parts.push('<path d="M' + from.x + ' ' + from.y +
+          ' C' + from.x + ' ' + mid + ' ' + to.x + ' ' + mid + ' ' + to.x + ' ' + to.y +
+          '" fill="none" stroke="' + (on ? 'var(--accent)' : 'var(--line)') +
+          '" stroke-width="' + (on ? 2 : 1) + '" opacity="' + (on ? 1 : 0.4) + '"/>');
+      });
+      parts.push('<circle cx="' + from.x + '" cy="' + from.y +
+        '" r="3.5" fill="var(--accent)"/>');
+    }
+    svg.innerHTML = parts.join('');
+  }
+
+  window.addEventListener('resize', function () {
+    if ($('groupDialog').open) drawEdges();
+  });
 
   var moreShown = false;
 
@@ -1922,6 +1969,7 @@
     renderCriteria();
     updateGraph();
     updateMatchCount();
+    requestAnimationFrame(drawEdges);
   }
 
   /* One tick list. `options` are [{ value, label, n }]; `chosen` is the list of
@@ -1953,6 +2001,7 @@
         l.classList.toggle('on', input.checked);
       });
       onChange();
+      requestAnimationFrame(drawEdges);
     };
   }
 
@@ -2256,6 +2305,7 @@
     if (prefilled) suggestGroupIdentity();
     updateMatchCount();
     $('groupDialog').showModal();
+    requestAnimationFrame(drawEdges);
     $('gfTeacher').focus();
   }
   $('groupCancelBtn').addEventListener('click', function () { pendingBulkAdd = false; $('groupDialog').close(); });

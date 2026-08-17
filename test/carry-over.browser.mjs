@@ -99,7 +99,7 @@ check('the old folder\'s data is carried over (' + carried + ')', +carried === 1
 check('and it is unsaved, because this folder has nothing yet',
   (await page.locator('#dirtyNote').innerText()).includes('Unsaved'));
 await page.click('#saveBtn');
-await page.waitForFunction(() => document.getElementById('dirtyNote').textContent === '');
+await page.waitForFunction(() => !/Unsaved/.test(document.getElementById('dirtyNote').textContent));
 check('Save writes both files into THIS folder', await page.evaluate(() =>
   !!window.__fs.get('new/namelist.xlsx') && !!window.__fs.get('new/data.js')));
 
@@ -166,7 +166,7 @@ check('rebuilding from data.js brings the students and classes back',
 check('and warns that the school-file settings did not survive',
   (await page2.locator('#warningsList').innerText()).includes('point each level'));
 await page2.click('#saveBtn');
-await page2.waitForFunction(() => document.getElementById('dirtyNote').textContent === '');
+await page2.waitForFunction(() => !/Unsaved/.test(document.getElementById('dirtyNote').textContent));
 check('Save then writes the workbook it was missing',
   await page2.evaluate(() => !!window.__fs.get('half/namelist.xlsx')));
 

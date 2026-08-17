@@ -63,7 +63,7 @@ await page.waitForTimeout(600);
 await page.evaluate(() => { const d = document.getElementById('pickFileDialog'); if (d.open) d.close(); });
 await page.waitForTimeout(200);
 await page.click('#saveBtn');
-await page.waitForFunction(() => document.getElementById('dirtyNote').textContent === '');
+await page.waitForFunction(() => !/Unsaved/.test(document.getElementById('dirtyNote').textContent));
 const total = await page.locator('#countStudents').innerText();
 check('first run imported and saved', +total > 0, total);
 check('auto-check ran on open, with no prompting',
@@ -88,7 +88,7 @@ check('the bar reports what changed',
 check('student count unchanged (matched, not duplicated)',
   (await page.locator('#countStudents').innerText()) === total);
 check('it saved by itself — nothing left unsaved',
-  (await page.locator('#dirtyNote').innerText()) === '');
+  !(await page.locator('#dirtyNote').innerText()).includes('Unsaved'));
 const jsAfter = await page.evaluate(() =>
   new TextDecoder().decode(window.__fs.get('data/data.js').bytes));
 check('data.js was republished for teachers',

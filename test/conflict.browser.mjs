@@ -121,7 +121,7 @@ await page.click('#studentForm button[type="submit"]');
 let sawDialog = null;
 page.on('dialog', async (d) => { sawDialog = d.message(); await d.accept(); });
 await page.click('#saveBtn');
-await page.waitForFunction(() => document.getElementById('dirtyNote').textContent === '');
+await page.waitForFunction(() => !/Unsaved/.test(document.getElementById('dirtyNote').textContent));
 check('clean save writes namelist.xlsx + data.js', await page.evaluate(
   () => !!window.__fs.get('data/namelist.xlsx') && !!window.__fs.get('data/data.js')));
 check('clean save shows no conflict warning', sawDialog === null, String(sawDialog));
@@ -161,7 +161,7 @@ check('conflict is detected on save', !!sawDialog && sawDialog.includes('changed
 check('Cancel leaves the file on disk untouched', await page.evaluate(
   (lm) => window.__fs.get('data/namelist.xlsx').lastModified === lm, beforeCancel));
 check('Cancel keeps the admin\'s unsaved changes in the page',
-  (await page.locator('#dirtyNote').innerText()) === 'Unsaved changes' &&
+  (await page.locator('#dirtyNote').innerText()).includes('Unsaved') &&
   (await page.locator('#countStudents').innerText()) === '158');
 
 // ---- conflict: OK (overwrite) path ----
@@ -170,7 +170,7 @@ sawDialog = null;
 page.removeAllListeners('dialog');
 page.on('dialog', async (d) => { sawDialog = d.message(); await d.accept(); });
 await page.click('#saveBtn');
-await page.waitForFunction(() => document.getElementById('dirtyNote').textContent === '');
+await page.waitForFunction(() => !/Unsaved/.test(document.getElementById('dirtyNote').textContent));
 const after = await page.evaluate(() => {
   const backups = window.__fs.list().filter((p) => p.startsWith('data/backups/'));
   const live = XLSX.read(window.__fs.get('data/namelist.xlsx').bytes, { type: 'array' });
@@ -207,6 +207,63 @@ const drift = await page.evaluate(() => {
   };
 });
 check('DRIFT: a direct Excel edit is NOT reflected in data.js', drift.dataJsHas === false);
+
+/* ---- autosave ----
+ * On by default: a change is written a few seconds later, it never clobbers
+ * another admin's save, and it does not take a backup every time. */
+// the file on disk was edited behind the app's back earlier in this test, so
+// start from a clean slate before watching autosave
+await page.click('#reloadBtn');
+await page.waitForTimeout(400);
+await page.evaluate(() => { document.getElementById('autosaveBox').checked = true;
+  document.getElementById('autosaveBox').dispatchEvent(new Event('change')); });
+const backupsAtAutosave = await page.evaluate(() =>
+  window.__fs.list().filter((p) => p.startsWith('data/backups/')).length);
+await page.click('#addStudentBtn');
+await page.fill('#sfName', 'Gamma Admin');
+await page.selectOption('#sfClass', '1R1');
+await page.click('#studentForm button[type="submit"]');
+check('an edit says it is about to save itself',
+  (await page.locator('#dirtyNote').innerText()).includes('saving shortly'),
+  await page.locator('#dirtyNote').innerText());
+await page.waitForFunction(() => /^Saved /.test(document.getElementById('dirtyNote').textContent),
+  null, { timeout: 15000 });
+check('it saves by itself, with the time it happened',
+  /^Saved \d/.test(await page.locator('#dirtyNote').innerText()),
+  await page.locator('#dirtyNote').innerText());
+check('and the file on disk has the new student', await page.evaluate(async () => {
+  const bytes = window.__fs.get('data/namelist.xlsx').bytes;
+  const wb = XLSX.read(bytes, { type: 'array' });
+  return window.NamelistSchema.workbookToModel(wb).model.students.some((s) => s.name === 'GAMMA ADMIN');
+}));
+check('an autosave does not take another backup so soon', await page.evaluate((n) =>
+  window.__fs.list().filter((p) => p.startsWith('data/backups/')).length === n, backupsAtAutosave));
+
+// someone else saves; autosave must back off rather than overwrite them
+await page.evaluate(() => {
+  const cur = window.__fs.get('data/namelist.xlsx');
+  window.__fs.put('data/namelist.xlsx', cur.bytes, Date.now() + 60000);
+});
+await page.click('#addStudentBtn');
+await page.fill('#sfName', 'Delta Admin');
+await page.selectOption('#sfClass', '1R1');
+await page.click('#studentForm button[type="submit"]');
+await page.waitForFunction(() => /Not saved/.test(document.getElementById('dirtyNote').textContent),
+  null, { timeout: 15000 });
+check('autosave stops when someone else has saved, and says so',
+  (await page.locator('#dirtyNote').innerText()).includes('someone else saved'),
+  await page.locator('#dirtyNote').innerText());
+check('the other admin\'s file is left alone', await page.evaluate(async () => {
+  const wb = XLSX.read(window.__fs.get('data/namelist.xlsx').bytes, { type: 'array' });
+  return !window.NamelistSchema.workbookToModel(wb).model.students.some((s) => s.name === 'DELTA ADMIN');
+}));
+// switching autosave off leaves the Save button in charge
+await page.evaluate(() => { document.getElementById('autosaveBox').checked = false;
+  document.getElementById('autosaveBox').dispatchEvent(new Event('change')); });
+check('with autosave off the note goes back to a plain warning',
+  (await page.locator('#dirtyNote').innerText()).includes('Unsaved') ||
+  (await page.locator('#dirtyNote').innerText()).includes('Not saved'),
+  await page.locator('#dirtyNote').innerText());
 
 /* ---- a second copy of the app, in another folder ----
  * The browser keeps folder handles for the whole file:// origin, so a copy of

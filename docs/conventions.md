@@ -114,8 +114,8 @@ stop it and ask for the admin:
 1. **A column appeared, vanished or was renamed.** That is a decision, not a
    refresh, so the level is skipped and flagged. Tell the admin when a file's
    shape changes.
-2. **The folder permission has lapsed** (a new browser session on some
-   machines). One click reconnects it.
+2. **The folder permission has lapsed** — which it does every time the browser
+   is restarted. Press Enter on the start screen and it is back.
 
 Office lock files (`~$…`) are ignored, so a file open in Excel is not mistaken
 for a namelist.
@@ -141,7 +141,15 @@ for a namelist.
 - **Read *What changed…*** after an update — moved class, changed band, new
   student, gone from the file — and copy the list into an email if teachers need
   to know.
-- **Save.** Teachers see the update the next time they open the page.
+- **Opening the app is two keys.** The start screen asks to reconnect to the
+  folder every time the browser is restarted — a browser rule for a page opened
+  from a drive, not a setting. The button is already focused, so **Enter** (or a
+  click anywhere) is enough.
+- **Autosave is on**, four seconds after you stop typing. The topbar says
+  *Saved 09:51 AM*. If it turns red — *someone else saved namelist.xlsx* —
+  another admin has the folder open; reload, or press **Save** to overwrite them.
+- **Save.** Teachers see the update the next time they open the page. Pressing
+  Save yourself also takes a backup, which an autosave only does once an hour.
 - **Added students** are for genuine late arrivals. They are kept when a level
   refreshes and adopted automatically once the office lists them.
 

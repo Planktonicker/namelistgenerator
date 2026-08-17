@@ -103,6 +103,12 @@
     padding-bottom: 3px; border-bottom: 1px solid var(--line);
   }
   .tc-body .hint { margin: 0; }
+  .autosave {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer;
+  }
+  .autosave input { accent-color: var(--accent); }
+  #dirtyNote.warn { color: var(--red); font-weight: 600; }
   #gfMembers td:first-child { width: 28px; }
   #gfMembers tr.out td:not(:first-child) { text-decoration: line-through; color: var(--muted); }
   .warn-row { display: flex; align-items: baseline; gap: 8px; }
@@ -136,6 +142,9 @@
         <button class="primary bigbtn" id="openFolderBtn">Open data folder…</button>
       </p>
       <p class="hint" id="folderHint" hidden></p>
+      <p class="hint" id="reconnectHint" hidden>Press <strong>Enter</strong> or click anywhere to
+        reconnect. Browsers will not keep a folder permission for a page opened from a drive, so
+        this one click is unavoidable — it is the only one.</p>
     </div>
   </section>
 
@@ -175,6 +184,9 @@
       <span class="spacer"></span>
       <button id="importBtn">Import…</button>
       <button id="reloadBtn">Reload from file</button>
+      <label class="autosave" title="Save a few seconds after each change">
+        <input type="checkbox" id="autosaveBox" checked> Autosave
+      </label>
       <button class="primary" id="saveBtn" disabled>Save</button>
     </div>
 
@@ -798,13 +810,38 @@
     }
     $('openFolderBtn').classList.remove('primary');
     $('openFolderBtn').textContent = 'Choose a different folder…';
-    btn.addEventListener('click', async function () {
+    /* The browser will not carry a file:// folder permission across sessions,
+     * so a gesture is unavoidable — but it can be ANY gesture. The button is
+     * focused, so Enter or Space works the moment the page opens, and a click
+     * anywhere on the empty start screen counts too. */
+    btn.focus();
+    $('reconnectHint').hidden = false;
+    async function reconnect() {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('click', onClick, true);
       if (!(await ensurePermission(saved, 'readwrite'))) {
         alert('Permission was not granted. Use “Choose a different folder…” instead.');
+        btn.focus();
         return;
       }
       await useDataFolder(saved);
-    });
+    }
+    function onKey(ev) {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      if (ev.target.closest && ev.target.closest('button, a, input, select, textarea') &&
+        ev.target !== btn) return;
+      ev.preventDefault();
+      reconnect();
+    }
+    function onClick(ev) {
+      // Any click that is not another control on the start screen.
+      if (ev.target.closest('button, a, input, select, textarea, details')) return;
+      if ($('startScreen').hidden) return;
+      reconnect();
+    }
+    btn.addEventListener('click', reconnect);
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('click', onClick, true);
     var savedSrc = await recallHandle('sourceDir');
     if (!isUsableHandle(savedSrc)) forgetHandle('sourceDir');
     else {
@@ -1168,7 +1205,9 @@
   $('saveBtn').addEventListener('click', function () { save(); });
   async function save(opts) {
     var silent = opts && opts.silent;
+    var auto = opts && opts.auto;
     if (!dirHandle) return;
+    clearTimeout(autosaveTimer);
     $('saveBtn').disabled = true;
     try {
       if (fileHandle) {
@@ -1178,10 +1217,21 @@
             'Warning: namelist.xlsx was changed by someone else after you loaded it.\n\n' +
             'OK — save your version anyway (their version is kept as a backup)\n' +
             'Cancel — do not save (you can Reload to see their changes)');
-          // An automatic refresh never overwrites someone else's work silently.
-          if (!ok) { $('saveBtn').disabled = !dirty; return; }
+          // An automatic save never overwrites someone else's work silently: it
+          // stops, says so, and leaves the decision to the admin.
+          if (!ok) {
+            if (auto) {
+              saveBlocked = 'Not saved — someone else saved namelist.xlsx. Reload, or press Save to overwrite.';
+              renderDirtyNote();
+            }
+            $('saveBtn').disabled = !dirty;
+            return;
+          }
         }
-        await writeBackup(current);
+        if (!auto || Date.now() - lastBackupAt > AUTOSAVE_BACKUP_GAP) {
+          await writeBackup(current);
+          lastBackupAt = Date.now();
+        }
       } else {
         fileHandle = await dirHandle.getFileHandle('namelist.xlsx', { create: true });
       }
@@ -1191,19 +1241,87 @@
       var dj = await dirHandle.getFileHandle('data.js', { create: true });
       await writeFile(dj, S.modelToDataJs(model, new Date().toISOString()));
       loadedLastModified = (await fileHandle.getFile()).lastModified;
+      saveBlocked = '';
+      savedAt = new Date();
       setDirty(false);
       if (!silent) toast('Saved — Excel and teacher page are up to date');
     } catch (err) {
-      if (silent) loadWarnings = loadWarnings.concat(['Automatic save failed: ' + err.message]);
-      else alert('Save failed: ' + err.message);
+      if (auto) {
+        saveBlocked = 'Autosave failed: ' + err.message + ' — press Save to try again.';
+        renderDirtyNote();
+      } else if (silent) {
+        loadWarnings = loadWarnings.concat(['Automatic save failed: ' + err.message]);
+      } else {
+        alert('Save failed: ' + err.message);
+      }
     }
     $('saveBtn').disabled = !dirty;
+  }
+
+  /* ---- autosave ----------------------------------------------------
+   * On by default: a change is written a few seconds later, so the teacher
+   * page is never behind and nobody has to remember the Save button. Three
+   * things keep it safe on a shared drive:
+   *   - it never overwrites another admin's save (the conflict check stands,
+   *     and an autosave backs off and says so rather than clobbering);
+   *   - it does not flood backups/ — an automatic save reuses the last backup
+   *     if one was taken within the hour, while a manual Save always takes one;
+   *   - it is a switch, remembered per copy of the app.
+   */
+  var AUTOSAVE_DELAY = 4000;      // quiet time after the last change
+  var AUTOSAVE_MAX_WAIT = 30000;  // …but never sit on a change longer than this
+  var AUTOSAVE_BACKUP_GAP = 60 * 60 * 1000;
+  var autosaveOn = true;
+  var autosaveTimer = null;
+  var dirtySince = 0;
+  var lastBackupAt = 0;
+  var savedAt = null;
+  var saveBlocked = '';
+
+  try {
+    autosaveOn = localStorage.getItem('namelist.autosave@' + pageFolderUrl()) !== 'off';
+  } catch (e) { /* private mode */ }
+  $('autosaveBox').checked = autosaveOn;
+  $('autosaveBox').addEventListener('change', function () {
+    autosaveOn = $('autosaveBox').checked;
+    try {
+      localStorage.setItem('namelist.autosave@' + pageFolderUrl(), autosaveOn ? 'on' : 'off');
+    } catch (e) { /* private mode */ }
+    if (autosaveOn && dirty) scheduleAutosave();
+    else clearTimeout(autosaveTimer);
+    renderDirtyNote();
+  });
+
+  function renderDirtyNote() {
+    var note = '';
+    if (saveBlocked) note = saveBlocked;
+    else if (dirty) note = autosaveOn ? 'Unsaved — saving shortly' : 'Unsaved changes';
+    else if (savedAt) note = 'Saved ' + savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    $('dirtyNote').textContent = note;
+    $('dirtyNote').classList.toggle('warn', !!saveBlocked);
+  }
+
+  function scheduleAutosave() {
+    if (!autosaveOn || !dirHandle) return;
+    clearTimeout(autosaveTimer);
+    var waited = dirtySince ? Date.now() - dirtySince : 0;
+    var delay = Math.max(500, Math.min(AUTOSAVE_DELAY, AUTOSAVE_MAX_WAIT - waited));
+    autosaveTimer = setTimeout(function () {
+      if (dirty && autosaveOn) save({ silent: true, auto: true });
+    }, delay);
   }
 
   function setDirty(v) {
     dirty = v;
     $('saveBtn').disabled = !v;
-    $('dirtyNote').textContent = v ? 'Unsaved changes' : '';
+    if (v) {
+      if (!dirtySince) dirtySince = Date.now();
+      scheduleAutosave();
+    } else {
+      dirtySince = 0;
+      clearTimeout(autosaveTimer);
+    }
+    renderDirtyNote();
     document.title = (v ? '● ' : '') + 'Namelist Admin';
   }
 
@@ -1212,8 +1330,13 @@
     refresh();
   }
 
+  /* Closing the tab with something unsaved: try once more on the way out. */
+  window.addEventListener('pagehide', function () {
+    if (dirty && autosaveOn && dirHandle) save({ silent: true, auto: true });
+  });
+
   window.addEventListener('beforeunload', function (e) {
-    if (dirty) { e.preventDefault(); e.returnValue = ''; }
+    if (dirty && !autosaveOn) { e.preventDefault(); e.returnValue = ''; }
   });
 
   /* ================= printing ================= */

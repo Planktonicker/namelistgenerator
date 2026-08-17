@@ -123,9 +123,41 @@ instead — that click is the only manual step, and everything after it is
 automatic. The teacher page, for its part, says how old its data is if the last
 publish was more than a fortnight ago.
 
-**Reconnecting.** Chrome/Edge remember both folders between sessions, so after
-the first time the start screen offers **Reconnect to “…”** — a single
-permission click instead of navigating the shared drive again.
+**Reconnecting — one gesture per browser session.** Chrome/Edge remember both
+folders between sessions, so after the first time the start screen offers
+**Reconnect to “…”** rather than making you navigate the shared drive again.
+The *handle* is remembered; the *permission* cannot be, because a page opened
+from a drive (`file://`) is not a site the browser can attach a standing grant
+to. Chrome's “Allow on every visit” is offered only to `http(s)` pages. So one
+gesture per browser session is a browser rule, not a setting this app can
+change.
+
+It is made as small as possible: the Reconnect button is focused when the page
+opens, and **Enter, the space bar, or a click anywhere on the start screen**
+reconnects. Opening the app is therefore: shortcut → Enter. Reopening a tab in
+the same browser session does not ask again.
+
+The only way to remove the prompt entirely is to stop using `file://` — serve
+the folder over `http(s)` from the school's own server or IIS, at which point
+Chrome treats it as a site and offers to remember the permission for good.
+
+**Autosave.** On by default. Every change schedules a save four seconds later
+(and no more than thirty seconds after the first unsaved change), so leaving the
+page or losing the machine does not lose work. The topbar says which state you
+are in — *Unsaved — saving shortly*, then *Saved 09:51 AM* — and closing the tab
+flushes anything still pending.
+
+Three things keep it safe on a shared drive:
+
+- **It never overwrites another admin.** If `namelist.xlsx` changed on disk since
+  you loaded it, autosave stops and says so in red: *Not saved — someone else
+  saved namelist.xlsx. Reload, or press Save to overwrite.* Nothing is written
+  until you choose.
+- **It does not flood `backups/`.** An automatic save takes a backup at most once
+  an hour. Pressing **Save** yourself always takes one.
+- **It can be turned off** with the *Autosave* box in the topbar, per copy of the
+  app. With it off, the browser warns before you close with unsaved changes, as
+  before.
 
 **A folder with the pages but no data.** Opening a folder that has no
 `namelist.xlsx` is the setup screen, which says plainly that saving will create

@@ -213,6 +213,7 @@ test/conflict.browser.mjs  save/conflict/backup path against a fake filesystem
 test/allocation-format.browser.mjs  ministry-format import -> discover -> teach
 test/setup-flow.browser.mjs  first run asks which file is each level
 test/auto-update.browser.mjs  opening the editor refreshes levels by itself
+test/class-dialog.browser.mjs  teacher roster + building a class from criteria
 ```
 
 Requires only Node (no npm packages):
@@ -304,21 +305,30 @@ notes admins leave in spare slot columns.
 
 ### Teachers and classes
 
-A class can be taught by **several teachers** — add them as chips in the class
-dialog; each of them sees the class under their own name. A class also has:
+Teacher names live in the **Teachers** tab, so they are picked from a list when
+you build a class rather than retyped — no more two spellings of one person.
+The tab shows what each teacher currently has, lets you add someone before they
+have any classes, and **renaming one updates every class it is tagged to**.
+A class can be taught by several teachers; each of them sees it under their own
+name, with the others noted as co-teachers.
 
-- a **Level label**, which is only how the teacher page groups the class
-  ("Sec 3"); and
-- rule fields — **Only this level**, **PG**, **classes**, and any number of
-  **must be taking** criteria — which decide who is allocated to it.
+Everything else about a class is chosen from what is actually in the data:
 
-Keeping those separate matters: a class discovered from a file gets a level
-label but no level *filter*, so a student whose Level cell the office left
-blank still lands in their classes instead of vanishing from every namelist.
-The warnings panel lists any student who ends up in no class at all.
+| Field | What it does |
+|---|---|
+| **Level** | groups the class under that heading on the teacher page, *and* keeps it to that level's students |
+| **Must be taking** | one criterion per column, repeatable — `HIST = HIST G3` plus `TG = TG2` gives the History G3 students in tutorial group 2 |
+| **PG** | narrows to a posting group |
+| **Limit to classes** | form classes, picked and shown as chips |
 
-Several criteria can apply at once, which is what reproduces a query like
-"Level 3, PG3, SG = 3 A, Subject = SS/Geo" from a setup grid.
+Blanks mean "any", and a student whose Level cell the office left blank is
+never excluded by the level — being unknown must not mean disappearing from
+every namelist. The warnings panel lists anyone who ends up in no class at all.
+
+Because the criteria stack, a class is usually created already full of the
+right students, and you then edit the exceptions out by hand in the Group
+members tab. That also reproduces a namelist query like "Level 3, PG3,
+SG = 3 A, Subject = SS/Geo" from a setup grid.
 
 ### Two people editing at once
 
@@ -345,7 +355,8 @@ containing `sample/namelist.xlsx`.
 | Sheet | Columns |
 |---|---|
 | Students | StudentID, Name, Class, Level, Gender, PG, Origin, then one column per subject |
-| Groups | GroupCode, GroupName, Subject, Teachers, Level, AutoMatch, AutoLevel, AutoPG, AutoClasses |
+| Groups | GroupCode, GroupName, Subject, Teachers, Level, AutoMatch, AutoPG, AutoClasses |
+| Teachers | Name |
 | Memberships | StudentID, GroupCode |
 | Sources | Level, SourceFile, FilePattern, LastFile, LastImported |
 

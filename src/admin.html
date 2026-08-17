@@ -118,6 +118,7 @@
       <button data-tab="students" class="active">Students <span class="badge" id="countStudents">0</span></button>
       <button data-tab="groups">Teaching groups <span class="badge" id="countGroups">0</span></button>
       <button data-tab="memberships">Group members</button>
+      <button data-tab="teachers">Teachers <span class="badge" id="countTeachers">0</span></button>
       <button data-tab="sources">School files</button>
     </div>
 
@@ -210,6 +211,23 @@
       <p class="empty" id="memNoGroups" hidden>Create a teaching group first (in the <strong>Teaching groups</strong> tab).</p>
     </section>
 
+    <section id="tab-teachers" hidden>
+      <div class="toolbar">
+        <input type="search" id="teacherSearch" placeholder="Search teachers" style="min-width:220px">
+        <span class="spacer"></span>
+        <button class="primary" id="addTeacherBtn">Add teacher</button>
+      </div>
+      <div class="card">
+        <p class="hint">Names live here so they are picked from a list when you create a class, never
+          retyped. Renaming one updates every class it is tagged to.</p>
+        <table class="list" id="teachersTable">
+          <thead><tr><th>Teacher</th><th>Classes</th><th>Students</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p class="empty" id="teachersEmpty" hidden>No teachers yet — use <strong>Add teacher</strong>.</p>
+      </div>
+    </section>
+
     <section id="tab-sources" hidden>
       <div class="card">
         <h3>Update levels from the school's files</h3>
@@ -281,12 +299,17 @@
       <div>
         <div class="chips" id="gfTeacherChips"></div>
         <div style="display:flex; gap:8px">
-          <input type="text" id="gfTeacher" list="teacherList" placeholder="Type a name and press Enter" style="flex:1">
+          <select id="gfTeacher" style="flex:1"></select>
           <button type="button" id="gfTeacherAdd">Add</button>
+          <button type="button" id="gfTeacherNew" title="Add a teacher to the list">New…</button>
         </div>
       </div>
-      <label for="gfLevel">Level (label)</label><input type="text" id="gfLevel" list="levelList" placeholder="groups this class on the teacher page">
-      <label for="gfAutoLevel">Only this level</label><input type="text" id="gfAutoLevel" list="levelList" placeholder="blank = any level">
+      <label for="gfLevel">Level</label>
+      <div>
+        <select id="gfLevel"></select>
+        <p class="hint" style="margin:4px 0 0">Groups the class under this heading on the teacher page,
+          and keeps it to that level's students.</p>
+      </div>
       <label>Must be taking</label>
       <div>
         <div id="gfCriteria"></div>
@@ -295,14 +318,23 @@
           <select id="gfAutoValue" style="flex:1" disabled></select>
           <button type="button" id="gfCritAdd">Add</button>
         </div>
+        <p class="hint" style="margin:4px 0 0">Add one per column — e.g. <code>HIST = HIST G3</code>
+          plus <code>TG = TG2</code> to get the History G3 students in tutorial group 2.</p>
       </div>
-      <label for="gfAutoPg">PG</label><input type="text" id="gfAutoPg" list="pgList" placeholder="e.g. PG3 (blank = any)">
-      <label for="gfAutoClasses">Limit to classes</label><input type="text" id="gfAutoClasses" placeholder="e.g. 3S or 3S1, 3S3 (blank = all)">
-      <p class="hint" style="grid-column: 1 / -1; margin: 0">Level, column value, PG and classes work together
-        like the setup grid in your workbook — every box you fill in narrows the class, blanks mean “any”.
-        Matching students are allocated automatically when the class is created, and new students join it
-        after each school-file update. You can still add or remove members by hand afterwards — manual
-        removals are only revisited if you press “Auto-fill” yourself.</p>
+      <label for="gfAutoPg">PG</label><select id="gfAutoPg"></select>
+      <label>Limit to classes</label>
+      <div>
+        <div class="chips" id="gfClassChips"></div>
+        <div style="display:flex; gap:8px">
+          <select id="gfAutoClasses" style="flex:1"></select>
+          <button type="button" id="gfClassAdd">Add</button>
+        </div>
+        <p class="hint" style="margin:4px 0 0">Form classes only. Leave empty for the whole level.</p>
+      </div>
+      <p class="hint" style="grid-column: 1 / -1; margin: 0">Every box you fill in narrows the class;
+        blanks mean “any”. Matching students are allocated automatically when the class is created, and new
+        students join it after each school-file update. You can still add or remove members by hand
+        afterwards — manual removals are only revisited if you press “Auto-fill” yourself.</p>
       <label for="gfCode">Group code *</label><input type="text" id="gfCode" required placeholder="e.g. EL-G3">
       <label for="gfName">Group name</label><input type="text" id="gfName" placeholder="e.g. English G3">
       <label for="gfSubject">Subject label</label><input type="text" id="gfSubject" list="subjectList" placeholder="shown on the teacher page">
@@ -843,6 +875,8 @@
     ix = S.buildIndexes(model);
     $('countStudents').textContent = model.students.length;
     $('countGroups').textContent = model.groups.length;
+    $('countTeachers').textContent = allTeachers().length;
+    model.teachers = model.teachers || [];
 
     selectedIds.forEach(function (id) { if (!ix.studentsById.has(id)) selectedIds.delete(id); });
     candSelected.forEach(function (id) { if (!ix.studentsById.has(id)) candSelected.delete(id); });
@@ -864,6 +898,7 @@
     if (currentTab === 'students') renderStudents();
     if (currentTab === 'groups') renderGroups();
     if (currentTab === 'memberships') renderMemberships();
+    if (currentTab === 'teachers') renderTeachers();
     if (currentTab === 'sources') renderSources();
   }
 
@@ -895,7 +930,7 @@
     document.querySelectorAll('.tabs button').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tab === name);
     });
-    ['students', 'groups', 'memberships', 'sources'].forEach(function (t) {
+    ['students', 'groups', 'memberships', 'teachers', 'sources'].forEach(function (t) {
       $('tab-' + t).hidden = t !== name;
     });
     refresh();
@@ -1258,7 +1293,6 @@
   function ruleSummary(g) {
     if (!S.groupHasRule(g)) return '';
     var parts = S.matchers(g).map(function (m) { return m.value || m.key + ' (any)'; });
-    if (g.autoLevel) parts.push('level ' + g.autoLevel);
     if (g.autoPg) parts.push(g.autoPg);
     if (g.autoClasses) parts.push('classes ' + g.autoClasses);
     return parts.join(' · ');
@@ -1368,7 +1402,7 @@
     var val = first.value;
     var lvl = S.norm($('gfLevel').value);
     var pg = S.norm($('gfAutoPg').value);
-    var cls = S.norm($('gfAutoClasses').value).split(/[,;]+/)[0] || '';
+    var cls = dialogClasses[0] || '';
     var base = val || key;
     if (!base) return;
     var qualifier = cls || pg || '';
@@ -1383,9 +1417,8 @@
   $('gfAutoKey').addEventListener('change', function () {
     fillAutoValueSelect($('gfAutoKey').value, '');
   });
-  $('gfAutoClasses').addEventListener('input', suggestGroupIdentity);
-  $('gfLevel').addEventListener('input', suggestGroupIdentity);
-  $('gfAutoPg').addEventListener('input', suggestGroupIdentity);
+  $('gfLevel').addEventListener('change', suggestGroupIdentity);
+  $('gfAutoPg').addEventListener('change', suggestGroupIdentity);
   ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
     $(id).addEventListener('input', function () { $(id).dataset.userEdited = '1'; });
   });
@@ -1431,6 +1464,7 @@
     if (!btn) return;
     dialogTeachers.splice(parseInt(btn.dataset.i, 10), 1);
     renderTeacherChips();
+    fillTeacherSelect();
   });
   function addDialogTeacher() {
     var name = S.norm($('gfTeacher').value);
@@ -1438,13 +1472,67 @@
     if (!dialogTeachers.some(function (t) { return S.normKey(t) === S.normKey(name); })) {
       dialogTeachers.push(name);
     }
-    $('gfTeacher').value = '';
     renderTeacherChips();
+    fillTeacherSelect();
     $('gfTeacher').focus();
   }
   $('gfTeacherAdd').addEventListener('click', addDialogTeacher);
-  $('gfTeacher').addEventListener('keydown', function (ev) {
-    if (ev.key === 'Enter' || ev.key === ',') { ev.preventDefault(); addDialogTeacher(); }
+  $('gfTeacherNew').addEventListener('click', function () {
+    var name = prompt('Teacher\u2019s name:');
+    name = name === null ? '' : S.norm(name);
+    if (!name) return;
+    if (!model.teachers.some(function (t) { return S.normKey(t) === S.normKey(name); })) {
+      model.teachers.push(name);
+    }
+    fillTeacherSelect(name);
+    addDialogTeacher();
+  });
+
+  function fillTeacherSelect(selected) {
+    var avail = allTeachers().filter(function (t) {
+      return !dialogTeachers.some(function (d) { return S.normKey(d) === S.normKey(t); });
+    });
+    $('gfTeacher').innerHTML = avail.length
+      ? avail.map(function (t) {
+          return '<option value="' + esc(t) + '"' +
+            (S.normKey(t) === S.normKey(selected || '') ? ' selected' : '') + '>' + esc(t) + '</option>';
+        }).join('')
+      : '<option value="">— everyone in the list is already added —</option>';
+    $('gfTeacherAdd').disabled = !avail.length;
+  }
+
+  function fillClassSelect() {
+    var avail = uniqueValues('class').filter(function (c) {
+      return dialogClasses.indexOf(c) === -1;
+    });
+    $('gfAutoClasses').innerHTML = avail.length
+      ? avail.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('')
+      : '<option value="">— no other classes —</option>';
+    $('gfClassAdd').disabled = !avail.length;
+  }
+
+  var dialogClasses = [];
+
+  function renderClassChips() {
+    $('gfClassChips').innerHTML = dialogClasses.map(function (c, i) {
+      return '<span class="chip">' + esc(c) + '<button type="button" data-i="' + i + '">\u00d7</button></span>';
+    }).join('');
+  }
+  $('gfClassChips').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-i]');
+    if (!b) return;
+    dialogClasses.splice(parseInt(b.dataset.i, 10), 1);
+    renderClassChips();
+    fillClassSelect();
+    suggestGroupIdentity();
+  });
+  $('gfClassAdd').addEventListener('click', function () {
+    var c = $('gfAutoClasses').value;
+    if (!c || dialogClasses.indexOf(c) !== -1) return;
+    dialogClasses.push(c);
+    renderClassChips();
+    fillClassSelect();
+    suggestGroupIdentity();
   });
 
   function openGroupDialog(group) {
@@ -1455,9 +1543,17 @@
     $('gfName').value = group ? group.name : '';
     $('gfSubject').value = group ? group.subject : '';
     dialogTeachers = group ? S.teacherNames(group).slice() : [];
-    $('gfTeacher').value = '';
     renderTeacherChips();
-    $('gfLevel').value = group ? (group.level || '') : '';
+    fillTeacherSelect();
+    var levels = uniqueValues('level');
+    $('gfLevel').innerHTML = '<option value="">— any level —</option>' + levels.map(function (l) {
+      return '<option value="' + esc(l) + '">' + esc(l) + '</option>';
+    }).join('');
+    $('gfLevel').value = group ? (group.level || '') : (levels.length === 1 ? levels[0] : '');
+    var pgs = uniqueValues('pg');
+    $('gfAutoPg').innerHTML = '<option value="">— any PG —</option>' + pgs.map(function (v) {
+      return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+    }).join('');
     $('gfAutoKey').innerHTML = '<option value="">(none — members added by hand)</option>' +
       (model.subjectKeys || []).map(function (k) {
         return '<option value="' + esc(k) + '">' + esc(k) + '</option>';
@@ -1466,9 +1562,12 @@
     renderCriteria();
     $('gfAutoKey').value = '';
     fillAutoValueSelect('', '');
-    $('gfAutoLevel').value = group ? (group.autoLevel || '') : '';
     $('gfAutoPg').value = group ? (group.autoPg || '') : '';
-    $('gfAutoClasses').value = group ? (group.autoClasses || '') : '';
+    dialogClasses = group && group.autoClasses
+      ? group.autoClasses.split(/[,;]+/).map(function (c) { return S.norm(c); }).filter(Boolean)
+      : [];
+    renderClassChips();
+    fillClassSelect();
     ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
       if (group) $(id).dataset.userEdited = '1';       // never rewrite an existing group's identity
       else delete $(id).dataset.userEdited;
@@ -1480,14 +1579,12 @@
   $('groupForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     var code = S.norm($('gfCode').value);
-    addDialogTeacher();   // pick up a name typed but not yet added
     var rec = {
       code: code, name: S.norm($('gfName').value), subject: S.norm($('gfSubject').value),
       teachers: dialogTeachers.slice(), level: S.norm($('gfLevel').value),
       autoMatch: S.matchersToString(dialogCriteria),
-      autoLevel: S.norm($('gfAutoLevel').value),
       autoPg: S.norm($('gfAutoPg').value),
-      autoClasses: S.norm($('gfAutoClasses').value),
+      autoClasses: dialogClasses.join(', '),
     };
     if (!code) return;
     var clash = ix.groupsByCode.get(code);
@@ -1638,6 +1735,78 @@
     if (!confirm('Add all ' + candidates.length + ' matching students to this group?')) return;
     addStudentsToGroup(candidates.map(function (s) { return s.id; }), code);
     candSelected.clear();
+  });
+
+  /* ================= teachers ================= */
+
+  function allTeachers() {
+    var seen = {};
+    var out = [];
+    (model.teachers || []).concat(ix.teachers || []).forEach(function (t) {
+      var k = S.normKey(t);
+      if (!t || seen[k]) return;
+      seen[k] = true;
+      out.push(t);
+    });
+    return out.sort(S.cmp);
+  }
+
+  $('teacherSearch').addEventListener('input', renderTeachers);
+  $('addTeacherBtn').addEventListener('click', function () {
+    var name = prompt('Teacher\u2019s name:');
+    name = name === null ? '' : S.norm(name);
+    if (!name) return;
+    if (allTeachers().some(function (t) { return S.normKey(t) === S.normKey(name); })) {
+      alert('"' + name + '" is already in the list.');
+      return;
+    }
+    model.teachers.push(name);
+    markDirty();
+    toast(name + ' added — they can now be picked when you create a class');
+  });
+
+  function renderTeachers() {
+    var q = $('teacherSearch').value.trim().toLowerCase();
+    var list = allTeachers().filter(function (t) { return !q || t.toLowerCase().indexOf(q) !== -1; });
+    $('countTeachers').textContent = allTeachers().length;
+    $('teachersTable').querySelector('tbody').innerHTML = list.map(function (t) {
+      var groups = ix.groupsByTeacher.get(t) || [];
+      var students = groups.reduce(function (n, g) {
+        return n + (ix.membersByGroup.get(g.code) || []).length;
+      }, 0);
+      return '<tr data-name="' + esc(t) + '"><td>' + esc(t) + '</td>' +
+        '<td class="tags">' + (groups.length
+          ? esc(groups.map(function (g) { return g.name || g.code; }).join(', '))
+          : '<span class="muted">no classes yet</span>') + '</td>' +
+        '<td>' + (students || '') + '</td>' +
+        '<td class="actions"><button class="linklike" data-act="rename">Rename</button>' +
+        '<button class="linklike danger" data-act="del">Remove</button></td></tr>';
+    }).join('');
+    $('teachersEmpty').hidden = list.length > 0;
+  }
+
+  $('teachersTable').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-act]');
+    if (!btn) return;
+    var name = btn.closest('tr').dataset.name;
+    if (btn.dataset.act === 'rename') {
+      var next = prompt('New name for "' + name + '":', name);
+      next = next === null ? '' : S.norm(next);
+      if (!next || next === name) return;
+      var touched = S.renameTeacher(model, name, next);
+      markDirty();
+      toast('Renamed to ' + next + (touched ? ' on ' + touched + ' class(es)' : ''));
+    }
+    if (btn.dataset.act === 'del') {
+      var groups = ix.groupsByTeacher.get(name) || [];
+      if (groups.length && !confirm('"' + name + '" is tagged to ' + groups.length +
+        ' class(es). Remove the name from those classes too?')) return;
+      model.groups.forEach(function (g) {
+        g.teachers = S.teacherNames(g).filter(function (t) { return S.normKey(t) !== S.normKey(name); });
+      });
+      model.teachers = (model.teachers || []).filter(function (t) { return S.normKey(t) !== S.normKey(name); });
+      markDirty();
+    }
   });
 
   /* ================= school-file sources ================= */

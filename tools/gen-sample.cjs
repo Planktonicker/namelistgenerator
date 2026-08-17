@@ -33,6 +33,7 @@ const BAND_GROUPS = [
 function buildSampleModel() {
   const model = S.emptyModel();
   model.subjectKeys = ['TG', 'EL', 'MT', 'HMT', 'MA', 'SCI', 'HIST', 'GEOG', 'LIT'];
+  model.teachers = [...new Set([...EL_TEACHERS, ...MA_TEACHERS, ...BAND_GROUPS.flatMap((g) => g.teachers)])].sort();
   model.sources = [
     {
       level: 'Sec 1', file: 'Sec 1 Subject Allocation_14 Jan.xlsx',
@@ -44,19 +45,19 @@ function buildSampleModel() {
     model.groups.push({
       code: 'EL-' + cls, name: 'English ' + cls, subject: 'English Language',
       teachers: [EL_TEACHERS[c]], level: '1',
-      autoMatch: 'EL=', autoLevel: '1', autoPg: '', autoClasses: cls,
+      autoMatch: 'EL=', autoPg: '', autoClasses: cls,
     });
     model.groups.push({
       code: 'MA-' + cls, name: 'Mathematics ' + cls, subject: 'Mathematics',
       teachers: [MA_TEACHERS[c]], level: '1',
-      autoMatch: 'MA=', autoLevel: '1', autoPg: '', autoClasses: cls,
+      autoMatch: 'MA=', autoPg: '', autoClasses: cls,
     });
   });
   BAND_GROUPS.forEach((g) => {
     model.groups.push({
       code: g.code, name: g.name, subject: g.subject,
       teachers: g.teachers, level: '1',
-      autoMatch: g.key + '=' + g.value, autoLevel: '1', autoPg: '', autoClasses: '',
+      autoMatch: g.key + '=' + g.value, autoPg: '', autoClasses: '',
     });
   });
 

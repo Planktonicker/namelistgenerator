@@ -29,8 +29,9 @@
 
   var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'Origin'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teachers', 'Level',
-    'AutoMatch', 'AutoLevel', 'AutoPG', 'AutoClasses'];
+    'AutoMatch', 'AutoPG', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
+  var TEACHER_HEADERS = ['Name'];
   var SOURCE_HEADERS = ['Level', 'SourceFile', 'FilePattern', 'LastFile', 'LastImported', 'Mapping'];
 
   var STUDENT_FIELDS = {
@@ -56,7 +57,7 @@
     teachers: ['teachers', 'teacher', 'teachername', 'tutor'],
     level: ['level'],
     autoMatch: ['automatch'],
-    autoLevel: ['autolevel'],
+    autoLevel: ['autolevel'],   // folded into level on read
     autoKey: ['autosubject'],      // pre-multi-criteria files
     autoValue: ['autovalue'],
     autoPg: ['autopg'],
@@ -109,7 +110,7 @@
   }
 
   function emptyModel() {
-    return { students: [], groups: [], memberships: [], subjectKeys: [], sources: [] };
+    return { students: [], groups: [], memberships: [], subjectKeys: [], sources: [], teachers: [] };
   }
 
   /* Match a header row against field aliases; returns { field: columnIndex }.
@@ -247,14 +248,28 @@
         // Fold a pre-multi-criteria rule into the criteria list and drop the
         // old columns, so the in-memory shape has exactly one representation.
         g.autoMatch = matchersToString(matchers(g));
+        if (!norm(g.level) && norm(g.autoLevel)) g.level = g.autoLevel;
         delete g.autoKey;
         delete g.autoValue;
+        delete g.autoLevel;
       });
     } else warnings.push('Sheet "Groups" not found.');
     if (memberships) model.memberships = readTable(memberships, MEMBERSHIP_FIELDS, ['studentId', 'groupCode'], 'Memberships', warnings);
     else warnings.push('Sheet "Memberships" not found.');
     var sources = findSheet(wb, 'Sources');   // optional sheet — older files lack it
     if (sources) model.sources = readTable(sources, SOURCE_FIELDS, ['level'], 'Sources', warnings);
+    var staff = findSheet(wb, 'Teachers');
+    if (staff) {
+      model.teachers = readTable(staff, { name: ['name', 'teacher'] }, ['name'], 'Teachers', [])
+        .map(function (r) { return r.name; });
+    }
+    // Any name already used on a class belongs in the roster too.
+    model.groups.forEach(function (g) {
+      teacherNames(g).forEach(function (t) {
+        if (!model.teachers.some(function (e) { return normKey(e) === normKey(t); })) model.teachers.push(t);
+      });
+    });
+    model.teachers.sort(cmp);
     return { model: model, warnings: warnings.concat(validateModel(model)) };
   }
 
@@ -274,10 +289,10 @@
 
     ws = X.utils.aoa_to_sheet([GROUP_HEADERS].concat(model.groups.map(function (g) {
       return [g.code, g.name, g.subject, teacherLabel(g), g.level,
-        matchersToString(matchers(g)), g.autoLevel, g.autoPg, g.autoClasses];
+        matchersToString(matchers(g)), g.autoPg, g.autoClasses];
     })));
     ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 18 }, { wch: 34 }, { wch: 14 },
-      { wch: 40 }, { wch: 14 }, { wch: 8 }, { wch: 14 }];
+      { wch: 40 }, { wch: 8 }, { wch: 14 }];
     X.utils.book_append_sheet(wb, ws, 'Groups');
 
     ws = X.utils.aoa_to_sheet([MEMBERSHIP_HEADERS].concat(model.memberships.map(function (m) {
@@ -285,6 +300,12 @@
     })));
     ws['!cols'] = [{ wch: 12 }, { wch: 12 }];
     X.utils.book_append_sheet(wb, ws, 'Memberships');
+
+    ws = X.utils.aoa_to_sheet([TEACHER_HEADERS].concat((model.teachers || []).map(function (t) {
+      return [t];
+    })));
+    ws['!cols'] = [{ wch: 34 }];
+    X.utils.book_append_sheet(wb, ws, 'Teachers');
 
     ws = X.utils.aoa_to_sheet([SOURCE_HEADERS].concat((model.sources || []).map(function (s) {
       return [s.level, s.file, s.pattern, s.lastFile, s.lastImported, s.mapping];
@@ -869,6 +890,31 @@
     };
   }
 
+  /* Rename a teacher everywhere at once — the roster and every class they
+   * are tagged to — so a corrected spelling never leaves orphaned classes. */
+  function renameTeacher(model, from, to) {
+    from = norm(from); to = norm(to);
+    if (!from || !to) return 0;
+    var touched = 0;
+    model.groups.forEach(function (g) {
+      var list = teacherNames(g);
+      var next = [];
+      var changed = false;
+      list.forEach(function (t) {
+        var v = normKey(t) === normKey(from) ? to : t;
+        if (v !== t) changed = true;
+        if (!next.some(function (e) { return normKey(e) === normKey(v); })) next.push(v);
+      });
+      if (changed) { g.teachers = next; touched++; }
+    });
+    model.teachers = (model.teachers || []).map(function (t) {
+      return normKey(t) === normKey(from) ? to : t;
+    }).filter(function (t, i, a) {
+      return a.findIndex(function (e) { return normKey(e) === normKey(t); }) === i;
+    }).sort(cmp);
+    return touched;
+  }
+
   /* Fold `loserId` into `keeperId`: memberships move across, blank fields on
    * the keeper are filled from the loser, and the loser is removed. Used when
    * the same person was entered twice under slightly different names. */
@@ -954,13 +1000,17 @@
 
   function groupHasRule(group) {
     return !!(matchers(group).length || norm(group.autoClasses) ||
-      norm(group.autoPg) || norm(group.autoLevel));
+      norm(group.autoPg) || norm(group.level));
   }
 
   function matchesRule(student, group) {
     if (!groupHasRule(group)) return false;
-    var level = norm(group.autoLevel);
-    if (level && normKey(student.level) !== normKey(level)) return false;
+    /* One Level on the class does both jobs: it labels the class on the
+     * teacher page and keeps the class to that level's students. A student
+     * whose Level cell the office left blank is NOT excluded — being unknown
+     * must not mean being dropped from every namelist. */
+    var level = norm(group.level);
+    if (level && norm(student.level) && normKey(student.level) !== normKey(level)) return false;
     var pg = norm(group.autoPg);
     if (pg && normKey(student.pg) !== normKey(pg)) return false;
     var classes = norm(group.autoClasses);
@@ -1140,6 +1190,8 @@
     ORIGIN_ADDED: ORIGIN_ADDED,
     nextFreeId: nextFreeId,
     mergeStudents: mergeStudents,
+    renameTeacher: renameTeacher,
+    TEACHER_HEADERS: TEACHER_HEADERS,
     STUDENT_HEADERS: STUDENT_HEADERS,
     GROUP_HEADERS: GROUP_HEADERS,
     MEMBERSHIP_HEADERS: MEMBERSHIP_HEADERS,

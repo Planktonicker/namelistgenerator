@@ -391,7 +391,7 @@ are not in the way.
 |---|---|
 | **Level** | groups the class under that heading on the teacher page, *and* keeps it to that level's students |
 | **Must be taking** | pick a column, tick its groups — several ticks in one column mean "either" (`HIST G3` or `HIST G2`), and a second column narrows further (`TG = TG2`). A column with nothing ticked means *anyone taking that subject*, and the count line says so |
-| **PG** | tick one or more posting groups (always 1, 2, 3 — a file that writes `PG2` is read as `2`) |
+| **PG** | tick one or more posting groups (always 1, 2, 3 — a file that writes `PG2` is read as `2`). Shown outright for Sec 1–2; from Sec 3 it sits behind **Additional options**, since upper-secondary subject groups already carry the posting group and ticking it there usually narrows a class by mistake |
 | **TG / SG** | tick tutorial / subject groups — the teaching group a student sits in, which need not follow the form class (SG3 can span 1R1–1R6). Hidden for schools whose files have no such column |
 | **Limit to classes** | tick the form classes |
 | **Members** | everyone currently on the namelist, each with a tick — untick anyone who should not be there |

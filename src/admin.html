@@ -347,10 +347,14 @@
           tick more than one to combine them (<code>HIST G3</code> and <code>HIST G2</code>). Choose
           another column to narrow further (<code>TG</code> = tutorial group).</p>
       </div>
-      <label>PG</label>
-      <div>
+      <label id="gfMoreLabel" hidden></label>
+      <div id="gfMoreRow" hidden>
+        <button type="button" class="linklike" id="gfMoreBtn">Additional options — posting group…</button>
+      </div>
+      <label id="gfPgLabel">PG</label>
+      <div id="gfPgRow">
         <div class="ticks" id="gfPgTicks"></div>
-        <p class="hint" style="margin:4px 0 0">Nothing ticked means any posting group.</p>
+        <p class="hint" style="margin:4px 0 0" id="gfPgHint">Nothing ticked means any posting group.</p>
       </div>
       <label id="gfTgLabel">TG / SG</label>
       <div id="gfTgRow">
@@ -1818,10 +1822,34 @@
     });
   }
 
+  /* Sec 3 upwards, the subject group already carries the posting group, so PG
+   * is a trap rather than a filter: it is tucked behind "Additional options"
+   * unless the class actually uses it. Sec 1-2 keep it in plain sight. */
+  function isUpperSecondary(level) {
+    var m = /(\d+)/.exec(S.norm(level));
+    return !!m && parseInt(m[1], 10) >= 3;
+  }
+
+  var pgShown = false;
+
   function renderPgTicks() {
     renderTicks($('gfPgTicks'), tickOptions(function (s) { return S.normPg(s.pg); }, dialogPgs),
       dialogPgs, function () { suggestGroupIdentity(); updateMatchCount(); });
+    var upper = isUpperSecondary($('gfLevel').value);
+    var show = !upper || pgShown || dialogPgs.length > 0;
+    $('gfPgLabel').hidden = !show;
+    $('gfPgRow').hidden = !show;
+    $('gfMoreLabel').hidden = show;
+    $('gfMoreRow').hidden = show;
+    $('gfPgHint').textContent = upper
+      ? 'Upper secondary subject groups already carry the posting group — leave this alone unless you mean it.'
+      : 'Nothing ticked means any posting group.';
   }
+
+  $('gfMoreBtn').addEventListener('click', function () {
+    pgShown = true;
+    renderPgTicks();
+  });
 
   function renderTgTicks() {
     var options = tickOptions(function (s) { return S.normTg(s.tg); }, dialogTgs);
@@ -2024,6 +2052,7 @@
     $('gfLevel').value = group ? (group.level || '') : (levels.length === 1 ? levels[0] : '');
     dialogCriteria = group ? S.matchers(group) : [];
     dialogPgs = group ? S.splitList(group.autoPg) : [];
+    pgShown = dialogPgs.length > 0;
     dialogTgs = group ? S.splitList(group.autoTg) : [];
     dialogClasses = group ? S.splitList(group.autoClasses) : [];
     dialogRemoved = new Set();

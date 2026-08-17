@@ -185,10 +185,18 @@ check('and the subject columns on offer',
   (await page.locator('#gfAutoKey option').allInnerTexts()).includes('POA') &&
   !(await page.locator('#gfAutoKey option').allInnerTexts()).includes('HIST'),
   (await page.locator('#gfAutoKey option').allInnerTexts()).join(','));
+check('upper secondary hides PG behind additional options',
+  (await page.locator('#gfPgRow').isHidden()) && !(await page.locator('#gfMoreRow').isHidden()));
+await page.click('#gfMoreBtn');
+check('but it is one click away when it is really meant',
+  !(await page.locator('#gfPgRow').isHidden()) &&
+  (await page.locator('#gfPgHint').innerText()).includes('already carry the posting group'));
 await page.selectOption('#gfLevel', '1');
 check('switching back restores the other level',
   (await page.locator('#gfClassTicks').innerText()).includes('1R1') &&
   (await page.locator('#gfAutoKey option').allInnerTexts()).includes('HIST'));
+check('lower secondary shows PG outright',
+  !(await page.locator('#gfPgRow').isHidden()) && (await page.locator('#gfMoreRow').isHidden()));
 await page.click('#groupCancelBtn');
 
 check('renaming a teacher updates their classes',

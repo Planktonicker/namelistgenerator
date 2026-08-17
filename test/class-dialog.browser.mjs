@@ -15,6 +15,12 @@ const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_C
 const page = await browser.newPage({ viewport: { width: 1300, height: 950 } });
 const errors = []; page.on('pageerror', (e) => errors.push(e.message));
 page.on('dialog', (d) => (d.type() === 'prompt' ? d.accept('Cheng Xin Ze') : d.accept()));
+const addTeacher = async (name) => {
+  await page.click('#addTeacherBtn');
+  await page.fill('#teachersTable input[data-edit]', name);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(200);
+};
 await page.goto('file://' + demo + '/admin.html');
 await page.evaluate(readFileSync(join(repo, 'sample/data.js'), 'utf8'));
 await page.evaluate(() => { const d = window.NAMELIST_DATA;
@@ -27,10 +33,25 @@ const roster = await page.locator('#teachersTable tbody tr').count();
 check('Teachers tab lists everyone already tagged (' + roster + ')', roster === 17);
 check('it shows which classes each one has',
   (await page.locator('#teachersTable').innerText()).includes('English 1R1'));
-await page.click('#addTeacherBtn');
-await page.waitForTimeout(200);
+await addTeacher('Cheng Xin Ze');
 check('a new teacher can be added to the roster',
   (await page.locator('#teachersTable tbody tr').count()) === 18);
+check('the name is typed into the list, not a pop-up',
+  (await page.locator('#teachersTable').innerText()).includes('Cheng Xin Ze'));
+
+// the name itself is the edit control, and saving asks first
+await page.locator('#teachersTable tbody tr', { hasText: 'Cheng Xin Ze' })
+  .locator('button[data-act="edit"]').click();
+await page.fill('#teachersTable input[data-edit]', 'Cheng Xin Ze (Ms)');
+await page.keyboard.press('Enter');
+await page.waitForTimeout(200);
+check('clicking a name edits it in place',
+  (await page.locator('#teachersTable').innerText()).includes('Cheng Xin Ze (Ms)'));
+await page.locator('#teachersTable tbody tr', { hasText: 'Cheng Xin Ze (Ms)' })
+  .locator('button[data-act="edit"]').click();
+await page.fill('#teachersTable input[data-edit]', 'Cheng Xin Ze');
+await page.keyboard.press('Enter');
+await page.waitForTimeout(200);
 
 // --- class dialog ---
 await page.locator('.tabs button[data-tab="groups"]').click();
@@ -43,10 +64,12 @@ check('there is only ONE level field now',
   (await page.locator('#gfAutoLevel').count()) === 0 && (await page.locator('#gfLevel').count()) === 1);
 check('level is a dropdown of levels in the data',
   (await page.locator('#gfLevel').evaluate((e) => e.tagName)) === 'SELECT');
-check('PG is a dropdown too', (await page.locator('#gfAutoPg').evaluate((e) => e.tagName)) === 'SELECT');
-check('classes are picked from real classes, not typed',
-  (await page.locator('#gfAutoClasses').evaluate((e) => e.tagName)) === 'SELECT' &&
-  (await page.locator('#gfAutoClasses option').allInnerTexts()).includes('1R1'));
+check('PG is a tick list, with no PG2-style labels',
+  (await page.locator('#gfPgTicks label').allInnerTexts()).every((t) => /^[123]\b/.test(t.trim())),
+  (await page.locator('#gfPgTicks').innerText()).replace(/\s+/g, ' '));
+check('classes are ticked, not typed',
+  (await page.locator('#gfClassTicks label').count()) > 0 &&
+  (await page.locator('#gfClassTicks').innerText()).includes('1R1'));
 check('TG is offered as a criterion column',
   (await page.locator('#gfAutoKey option').allInnerTexts()).includes('TG'));
 
@@ -54,17 +77,17 @@ check('TG is offered as a criterion column',
 await page.selectOption('#gfTeacher', 'Cheng Xin Ze');
 await page.click('#gfTeacherAdd');
 await page.selectOption('#gfAutoKey', 'HIST');
-await page.selectOption('#gfAutoValue', 'HIST G3');
-await page.click('#gfCritAdd');
+await page.locator('#gfValueTicks label', { hasText: 'HIST G3' }).first().click();
 await page.selectOption('#gfAutoKey', 'TG');
-await page.selectOption('#gfAutoValue', 'TG2');
-await page.click('#gfCritAdd');
+await page.locator('#gfValueTicks label', { hasText: 'TG2' }).first().click();
 check('two criteria can be combined',
-  (await page.locator('#gfCriteria .chip').count()) === 2,
+  (await page.locator('#gfCriteria .chip').count()) === 1 &&
+  (await page.locator('#gfCriteria').innerText()).includes('HIST G3'),
   (await page.locator('#gfCriteria').innerText()).replace(/\s+/g, ' '));
-await page.selectOption('#gfAutoClasses', '1R1');
-await page.click('#gfClassAdd');
-check('picked class shows as a chip', (await page.locator('#gfClassChips .chip').count()) === 1);
+await page.locator('#gfClassTicks label', { hasText: '1R1' }).first().click();
+check('the live count reflects every tick',
+  /\d+ students match this right now/.test(await page.locator('#gfMatchCount').innerText()),
+  await page.locator('#gfMatchCount').innerText());
 await page.click('#groupForm button[type="submit"]');
 await page.waitForTimeout(400);
 
@@ -83,12 +106,36 @@ check('a student can be removed by hand afterwards',
 
 // renaming a teacher follows them onto the class
 await page.locator('.tabs button[data-tab="teachers"]').click();
-page.removeAllListeners('dialog');
-page.on('dialog', (d) => (d.type() === 'prompt' ? d.accept('Mr Cheng Xin Ze') : d.accept()));
 await page.locator('#teachersTable tbody tr', { hasText: 'Cheng Xin Ze' })
-  .locator('button[data-act="rename"]').click();
+  .locator('button[data-act="edit"]').click();
+await page.fill('#teachersTable input[data-edit]', 'Mr Cheng Xin Ze');
+await page.keyboard.press('Enter');
 await page.waitForTimeout(300);
+
+// classes can be handed to a teacher from their own row, after the fact
+await addTeacher('Mdm Rahim');
+await page.locator('#teachersTable tbody tr', { hasText: 'Mdm Rahim' })
+  .locator('button[data-act="classes"]').click();
+await page.waitForSelector('#teacherClassesDialog[open]');
+check('a teacher can be given classes from their row',
+  (await page.locator('#tcTicks label').count()) > 0);
+await page.locator('#tcTicks label').first().click();
+await page.click('#teacherClassesForm button[type="submit"]');
+await page.waitForTimeout(300);
+check('the class now lists that teacher too',
+  (await page.locator('#teachersTable tbody tr', { hasText: 'Mdm Rahim' }).innerText())
+    .indexOf('no classes yet') === -1,
+  await page.locator('#teachersTable tbody tr', { hasText: 'Mdm Rahim' }).innerText());
 await page.locator('.tabs button[data-tab="groups"]').click();
+// several values in ONE column: HIST G3 or HIST G2
+await page.locator('#groupsTable tbody tr').first().locator('button[data-act="edit"]').click();
+await page.selectOption('#gfAutoKey', 'HIST');
+await page.locator('#gfValueTicks label', { hasText: 'HIST G2' }).first().click();
+const bothCount = await page.locator('#gfMatchCount').innerText();
+await page.click('#groupForm button[type="submit"]');
+await page.waitForTimeout(400);
+check('ticking a second group in the same column widens the class', /[1-9]/.test(bothCount), bothCount);
+
 check('renaming a teacher updates their classes',
   (await page.locator('#groupsTable').innerText()).includes('Mr Cheng Xin Ze'));
 check('no JS errors', errors.length === 0, errors.slice(0, 2).join('|'));

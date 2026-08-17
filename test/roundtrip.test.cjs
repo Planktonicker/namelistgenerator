@@ -489,4 +489,60 @@ test('missing sheets produce warnings, not crashes', () => {
   assert.strictEqual(warnings.filter((w) => w.includes('not found')).length, 3);
 });
 
+test('posting groups are always 1, 2, 3 — however the file writes them', () => {
+  assert.strictEqual(S.normPg('PG1'), '1');
+  assert.strictEqual(S.normPg('pg 2'), '2');
+  assert.strictEqual(S.normPg('P.G.3'), '3');
+  assert.strictEqual(S.normPg('3'), '3');
+  assert.strictEqual(S.normPg(''), '');
+  assert.strictEqual(S.normPg('N/A'), 'N/A');   // not a posting group: left alone
+
+  // a rule ticked as PG 3 still matches a student the file wrote as "PG3"
+  const group = { code: 'G', autoPg: '3' };
+  assert.ok(S.matchesRule({ pg: 'PG3', subjects: {} }, group));
+  assert.ok(!S.matchesRule({ pg: '2', subjects: {} }, group));
+
+  // and a workbook holding "PG2" reads back as "2"
+  const model = S.emptyModel();
+  model.students.push({ id: 'a', name: 'A', class: '1R1', level: '1', gender: 'F',
+    pg: 'PG2', origin: 'file', sourceName: 'A', subjects: {} });
+  model.groups.push({ code: 'G', name: 'G', subject: '', teachers: [], level: '',
+    autoMatch: '', autoPg: 'PG2', autoClasses: '' });
+  const back = S.workbookToModel(S.modelToWorkbook(model)).model;
+  assert.strictEqual(back.students[0].pg, '2');
+  assert.strictEqual(back.groups[0].autoPg, '2');
+});
+
+test('several groups ticked in one column mean either of them', () => {
+  const group = { code: 'G', autoMatch: 'HIST=HIST G3|HIST G2; TG=TG2' };
+  const ms = S.matchers(group);
+  assert.deepStrictEqual(ms[0].values, ['HIST G3', 'HIST G2']);
+  assert.strictEqual(S.matchersToString(ms), 'HIST=HIST G3|HIST G2; TG=TG2');
+  const take = (hist, tg) => S.matchesRule({ subjects: { HIST: hist, TG: tg } }, group);
+  assert.ok(take('HIST G3', 'TG2'));
+  assert.ok(take('HIST G2', 'TG2'));      // the second tick
+  assert.ok(!take('HIST G1', 'TG2'));     // not ticked
+  assert.ok(!take('HIST G3', 'TG1'));     // other column still ANDs
+  // a single-value rule written by an older build keeps working
+  assert.ok(S.matchesRule({ subjects: { EL: 'EL G2' } }, { code: 'G', autoMatch: 'EL=EL G2' }));
+});
+
+test('columns that are not allocations are flagged, not made into classes', () => {
+  const students = [
+    { id: '1', name: 'A', class: '1R1', subjects: { HIST: 'HIST G3', Year: '2026', DT: 'N/A' } },
+    { id: '2', name: 'B', class: '1R1', subjects: { HIST: 'HIST G3', Year: '2026' } },
+  ];
+  const found = S.discoverClasses(students, 'Sec 1');
+  const good = found.filter((g) => !g.suspect);
+  const bad = found.filter((g) => g.suspect);
+  assert.deepStrictEqual(good.map((g) => g.autoMatch), ['HIST=HIST G3']);
+  assert.strictEqual(bad.length, 2);
+  assert.ok(bad.some((g) => /not a subject column/.test(g.why)));
+  assert.ok(bad.some((g) => /placeholder/.test(g.why)));
+  // a codeless allocation still gets a readable code
+  const codeless = S.discoverClasses(
+    [{ id: '1', name: 'A', class: '1R1', subjects: { 'Humanities (SS, Literature in English)': 'G3' } }], '');
+  assert.strictEqual(codeless[0].code, 'HUMANITIES-G3');
+});
+
 console.log(passed + ' tests passed');

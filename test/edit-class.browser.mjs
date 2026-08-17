@@ -37,10 +37,12 @@ await page.locator('.tabs button[data-tab="groups"]').click();
 await page.fill('#groupSearch', 'S1-HIST-TEST');
 await page.locator('#groupsTable tbody tr').first().locator('button[data-act="edit"]').click();
 check('the dialog lists the current members up front',
-  (await page.locator('#gfMemberNote').innerText()).includes('156 students in this class'));
+  (await page.locator('#gfMemberNote').innerText()).includes('156 of 156 ticked'));
 await page.selectOption('#gfAutoKey', 'HIST');
-await page.selectOption('#gfAutoValue', 'HIST G3');
-await page.click('#gfCritAdd');
+await page.locator('#gfValueTicks label', { hasText: 'HIST G3' }).first().click();
+check('the live count says how many the rule takes',
+  /\d+ students match this right now/.test(await page.locator('#gfMatchCount').innerText()),
+  await page.locator('#gfMatchCount').innerText());
 await page.click('#groupForm button[type="submit"]');   // accepts the "no longer match" prompt
 await page.waitForTimeout(500);
 await page.locator('.tabs button[data-tab="memberships"]').click();
@@ -53,10 +55,11 @@ check('narrowing the rule on edit re-applies it (' + filled + ' of 156)',
 await page.locator('.tabs button[data-tab="groups"]').click();
 await page.locator('#groupsTable tbody tr').first().locator('button[data-act="edit"]').click();
 check('the dialog lists the members', (await page.locator('#gfMembers tr').count()) === filled);
-await page.locator('#gfMembers button').first().click();
-await page.locator('#gfMembers button').first().click();
-check('removals are staged and counted',
-  (await page.locator('#gfMemberNote').innerText()).includes('2 to be removed'));
+await page.locator('#gfMembers input[type=checkbox]').nth(0).uncheck();
+await page.locator('#gfMembers input[type=checkbox]').nth(1).uncheck();
+check('unticking stages the removals',
+  (await page.locator('#gfMemberNote').innerText()).includes('2 will be removed'),
+  await page.locator('#gfMemberNote').innerText());
 await page.click('#groupForm button[type="submit"]');
 await page.waitForTimeout(400);
 await page.locator('.tabs button[data-tab="memberships"]').click();

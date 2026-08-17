@@ -35,8 +35,7 @@ const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } })
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
-let promptAnswer = '';
-page.on('dialog', (d) => (d.type() === 'prompt' ? d.accept(promptAnswer) : d.accept()));
+page.on('dialog', (d) => d.accept());
 await page.goto('file://' + demo + '/admin.html');
 
 // start from an empty folder-less model, then import the real file by hand
@@ -96,9 +95,10 @@ await page.fill('#studentSearch', '');
 // teachers go on the roster once, then get picked from a list
 await page.locator('.tabs button[data-tab="teachers"]').click();
 for (const name of ['Mrs Wong', 'Mr Tan']) {
-  promptAnswer = name;
   await page.click('#addTeacherBtn');
-  await page.waitForTimeout(150);
+  await page.fill('#teachersTable input[data-edit]', name);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(200);
 }
 check('both teachers are on the roster',
   (await page.locator('#teachersTable tbody tr').count()) === 2);
@@ -113,8 +113,13 @@ await page.selectOption('#gfTeacher', 'Mr Tan');
 await page.click('#gfTeacherAdd');
 check('two teachers can be tagged to one class',
   (await page.locator('#gfTeacherChips .chip').count()) === 2);
-check('the class rule is shown as a criterion chip',
-  (await page.locator('#gfCriteria .chip').innerText()).includes('English Language'));
+check('the class rule opens on its own column, already ticked',
+  (await page.locator('#gfAutoKey').inputValue()).includes('English Language') &&
+  (await page.locator('#gfValueTicks label.on').count()) === 1,
+  await page.locator('#gfAutoKey').inputValue());
+check('the mislabelled "Year" column was held back as an issue',
+  (await page.locator('#warningsList').innerText()).includes('not a subject column'),
+  (await page.locator('#warningsList').innerText()).split('\n')[0]);
 await page.click('#groupForm button[type="submit"]');
 await page.fill('#groupSearch', 'K341');
 await page.locator('#groupsTable tbody tr').first().locator('button[data-act="edit"]').click();

@@ -39,6 +39,25 @@
     font-size: 15px; line-height: 1; padding: 0 4px; cursor: pointer;
   }
   .chips .chip button:hover { color: var(--red); background: none; }
+  /* Tick lists: pick several at once without an Add button. */
+  .ticks {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    max-height: 148px; overflow-y: auto; margin-top: 6px;
+  }
+  .ticks:empty::after { content: 'nothing to choose from yet'; color: var(--muted); font-size: 13px; }
+  .ticks label {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 4px 12px 4px 9px; font-size: 13px; font-weight: 600; background: #fff;
+  }
+  .ticks label:hover { border-color: var(--accent); }
+  .ticks label.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .ticks input { margin: 0; accent-color: var(--accent); }
+  .ticks .muted { font-weight: 400; }
+  #gfMembers td:first-child { width: 28px; }
+  #gfMembers tr.out td:not(:first-child) { text-decoration: line-through; color: var(--muted); }
+  .warn-row { display: flex; align-items: baseline; gap: 8px; }
+  .warn-row .actions { margin-left: auto; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -215,16 +234,16 @@
       <div class="toolbar">
         <input type="search" id="teacherSearch" placeholder="Search teachers" style="min-width:220px">
         <span class="spacer"></span>
-        <button class="primary" id="addTeacherBtn">Add teacher</button>
+        <button class="primary" id="addTeacherBtn" title="Add a teacher">+</button>
       </div>
       <div class="card">
-        <p class="hint">Names live here so they are picked from a list when you create a class, never
-          retyped. Renaming one updates every class it is tagged to.</p>
+        <p class="hint">Add the name first with <strong>+</strong>, then give them classes. Click a name to
+          change it — every class they are tagged to follows.</p>
         <table class="list" id="teachersTable">
           <thead><tr><th>Teacher</th><th>Classes</th><th>Students</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
-        <p class="empty" id="teachersEmpty" hidden>No teachers yet — use <strong>Add teacher</strong>.</p>
+        <p class="empty" id="teachersEmpty" hidden>No teachers yet — press <strong>+</strong>.</p>
       </div>
     </section>
 
@@ -314,35 +333,33 @@
         <p class="hint" style="margin:4px 0 0">Groups the class under this heading on the teacher page,
           and keeps it to that level's students.</p>
       </div>
-      <label>Must be taking</label>
+      <label for="gfAutoKey">Must be taking</label>
       <div>
-        <div id="gfCriteria"></div>
-        <div style="display:flex; gap:8px; margin-top:6px">
-          <select id="gfAutoKey" style="flex:1"></select>
-          <select id="gfAutoValue" style="flex:1" disabled></select>
-          <button type="button" id="gfCritAdd">Add</button>
-        </div>
-        <p class="hint" style="margin:4px 0 0">Add one per column — e.g. <code>HIST = HIST G3</code>
-          plus <code>TG = TG2</code> to get the History G3 students in tutorial group 2.</p>
+        <select id="gfAutoKey"></select>
+        <div class="ticks" id="gfValueTicks" hidden></div>
+        <div id="gfCriteria" style="margin-top:6px"></div>
+        <p class="hint" style="margin:4px 0 0">Pick a column, then tick the groups it should cover —
+          tick more than one to combine them (<code>HIST G3</code> and <code>HIST G2</code>). Choose
+          another column to narrow further (<code>TG</code> = tutorial group).</p>
       </div>
-      <label for="gfAutoPg">PG</label><select id="gfAutoPg"></select>
+      <label>PG</label>
+      <div>
+        <div class="ticks" id="gfPgTicks"></div>
+        <p class="hint" style="margin:4px 0 0">Nothing ticked means any posting group.</p>
+      </div>
       <label>Limit to classes</label>
       <div>
-        <div class="chips" id="gfClassChips"></div>
-        <div style="display:flex; gap:8px">
-          <select id="gfAutoClasses" style="flex:1"></select>
-          <button type="button" id="gfClassAdd">Add</button>
-        </div>
-        <p class="hint" style="margin:4px 0 0">Form classes only. Leave empty for the whole level.</p>
+        <div class="ticks" id="gfClassTicks"></div>
+        <p class="hint" style="margin:4px 0 0">Form classes only. Tick none for the whole level.</p>
       </div>
-      <p class="hint" style="grid-column: 1 / -1; margin: 0">Every box you fill in narrows the class;
-        blanks mean “any”. Matching students are allocated automatically when the class is created, and new
-        students join it after each school-file update. You can still add or remove members by hand
-        afterwards — manual removals are only revisited if you press “Auto-fill” yourself.</p>
+      <p class="hint" style="grid-column: 1 / -1; margin: 0">Every box you tick narrows the class;
+        ticking nothing means “any”. <strong id="gfMatchCount"></strong> Matching students are allocated
+        when you press OK, and new students join after each school-file update — you can always untick
+        individuals below.</p>
       <label>Members</label>
       <div>
         <p class="hint" id="gfMemberNote" style="margin:0 0 6px"></p>
-        <div class="scrolly" id="gfMemberBox" style="max-height:160px" hidden>
+        <div class="scrolly" id="gfMemberBox" style="max-height:190px" hidden>
           <table class="list"><tbody id="gfMembers"></tbody></table>
         </div>
         <div style="display:flex; gap:8px; margin-top:6px">
@@ -354,6 +371,22 @@
       <label for="gfSubject">Subject label</label><input type="text" id="gfSubject" list="subjectList" placeholder="shown on the teacher page">
       <div class="actions">
         <button type="button" id="groupCancelBtn">Cancel</button>
+        <button type="submit" class="primary">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="teacherClassesDialog">
+    <h2>Classes for <span id="tcName"></span></h2>
+    <p class="small muted">Tick every class this teacher takes. Unticking removes their name from it;
+      the class and its students stay.</p>
+    <form class="fields" id="teacherClassesForm">
+      <label for="tcSearch">Find</label>
+      <input type="search" id="tcSearch" placeholder="Search by class, subject or level">
+      <label>Classes</label>
+      <div><div class="ticks" id="tcTicks" style="max-height:300px"></div></div>
+      <div class="actions">
+        <button type="button" id="tcCancelBtn">Cancel</button>
         <button type="submit" class="primary">OK</button>
       </div>
     </form>
@@ -895,11 +928,7 @@
     selectedIds.forEach(function (id) { if (!ix.studentsById.has(id)) selectedIds.delete(id); });
     candSelected.forEach(function (id) { if (!ix.studentsById.has(id)) candSelected.delete(id); });
 
-    var warnings = Array.from(new Set(loadWarnings.concat(S.validateModel(model))));
-    $('warningsBox').hidden = !warnings.length;
-    $('warningsCount').textContent = warnings.length;
-    $('warningsList').innerHTML = warnings.slice(0, 30).map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') +
-      (warnings.length > 30 ? '<li>… and ' + (warnings.length - 30) + ' more</li>' : '');
+    renderWarnings();
 
     fillOptions($('studentLevelFilter'), uniqueValues('level'), 'All levels');
     fillOptions($('studentClassFilter'), uniqueValues('class'), 'All classes');
@@ -916,8 +945,52 @@
     if (currentTab === 'sources') renderSources();
   }
 
+  /* Things the admin can act on rather than only read: each holds a label and
+   * the buttons that resolve it (created here by the class discovery). */
+  var openIssues = [];
+
+  var shownIssues = 0;
+
+  function addIssue(issue) {
+    if (!openIssues.some(function (i) { return i.id === issue.id; })) openIssues.push(issue);
+  }
+
+  function renderWarnings() {
+    var warnings = Array.from(new Set(loadWarnings.concat(S.validateModel(model))));
+    var total = warnings.length + openIssues.length;
+    $('warningsBox').hidden = !total;
+    $('warningsCount').textContent = total;
+    // Something to act on should not be hidden behind a closed twisty.
+    if (openIssues.length > shownIssues) $('warningsBox').querySelector('details').open = true;
+    shownIssues = openIssues.length;
+    $('warningsList').innerHTML =
+      openIssues.map(function (i) {
+        return '<li><div class="warn-row"><span>' + esc(i.text) + '</span>' +
+          '<span class="actions">' + i.actions.map(function (a, ai) {
+            return '<button class="linklike' + (a.danger ? ' danger' : '') +
+              '" data-issue="' + esc(i.id) + '" data-act="' + ai + '">' + esc(a.label) + '</button>';
+          }).join('') + '</span></div></li>';
+      }).join('') +
+      warnings.slice(0, 30).map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') +
+      (warnings.length > 30 ? '<li>… and ' + (warnings.length - 30) + ' more</li>' : '');
+  }
+
+  $('warningsList').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-issue]');
+    if (!btn) return;
+    var issue = openIssues.find(function (i) { return i.id === btn.dataset.issue; });
+    if (!issue) return;
+    var action = issue.actions[parseInt(btn.dataset.act, 10)];
+    openIssues = openIssues.filter(function (i) { return i.id !== issue.id; });
+    if (action && action.run) action.run(issue);
+    refresh();
+  });
+
   function uniqueValues(field) {
-    return Array.from(new Set(model.students.map(function (s) { return s[field]; }).filter(Boolean))).sort(S.cmp);
+    var read = field === 'pg'
+      ? function (s) { return S.normPg(s.pg); }     // PG1 and 1 are the same posting group
+      : function (s) { return s[field]; };
+    return Array.from(new Set(model.students.map(read).filter(Boolean))).sort(S.cmp);
   }
 
   function fillOptions(sel, values, allLabel) {
@@ -1325,17 +1398,49 @@
   /* Ministry-format files name the teaching class inside each subject cell
    * ("English Language - G2 - K200"), so every distinct allocation already IS
    * a class. Offer them ready-made rather than making the admin write rules. */
+  function createDiscovered(g) {
+    delete g.n; delete g.suspect; delete g.why;
+    model.groups.push(g);
+    var placed = S.autoFillGroup(model, g);
+    markDirty();
+    return placed;
+  }
+
   $('discoverBtn').addEventListener('click', function () {
     var levels = uniqueValues('level');
     var found = S.discoverClasses(model.students, levels.length === 1 ? levels[0] : '');
-    var fresh = found.filter(function (g) {
+    var isNew = function (g) {
       return !model.groups.some(function (e) {
         return S.normKey(e.code) === S.normKey(g.code) ||
           S.matchersToString(S.matchers(e)) === g.autoMatch;
       });
+    };
+    /* Columns that are not allocations at all ("Year" = 2026, "N/A") would
+     * otherwise become teaching classes. They are held back and listed under
+     * “Check these”, where they can be created or dismissed one by one. */
+    var suspect = found.filter(function (g) { return g.suspect && isNew(g); });
+    var fresh = found.filter(function (g) { return !g.suspect && isNew(g); });
+    suspect.forEach(function (g) {
+      addIssue({
+        id: 'suspect:' + g.autoMatch,
+        text: 'Not created — ' + g.why + ' (' + g.n + ' student(s), from ' +
+          g.subject + ' = ' + g.name + ').',
+        actions: [
+          { label: 'Create it anyway', run: function () {
+            var placed = createDiscovered(g);
+            toast('"' + g.name + '" created with ' + placed + ' student(s)');
+          } },
+          { label: 'Ignore', danger: true },
+        ],
+      });
     });
     if (!found.length) {
       alert('No subject allocations found in the student data yet — import a school file first.');
+      return;
+    }
+    if (!fresh.length && suspect.length) {
+      toast(suspect.length + ' odd column(s) held back — see “Check these” above');
+      refresh();
       return;
     }
     if (!fresh.length) { toast('All ' + found.length + ' classes in the data already exist'); return; }
@@ -1346,13 +1451,10 @@
       (fresh.length > 12 ? '\n  … and ' + (fresh.length - 12) + ' more' : '') +
       '\n\nCreate them and allocate students automatically?\nYou can then tag teachers to each one.')) return;
     var placed = 0;
-    fresh.forEach(function (g) {
-      delete g.n;
-      model.groups.push(g);
-      placed += S.autoFillGroup(model, g);
-    });
-    markDirty();
-    toast(fresh.length + ' classes created, ' + placed + ' student allocations — now tag teachers to them');
+    fresh.forEach(function (g) { placed += createDiscovered(g); });
+    toast(fresh.length + ' classes created, ' + placed + ' student allocations' +
+      (suspect.length ? '; ' + suspect.length + ' odd column(s) held back — see “Check these”' :
+        ' — now tag teachers to them'));
   });
 
   $('groupSearch').addEventListener('input', renderGroups);
@@ -1405,32 +1507,96 @@
     return Array.from(vals).sort(S.cmp);
   }
 
-  function fillAutoValueSelect(key, current) {
-    var sel = $('gfAutoValue');
-    if (!key) {
-      sel.innerHTML = '<option value="">—</option>';
-      sel.disabled = true;
+  /* One tick list. `options` are [{ value, label, n }]; `chosen` is the list of
+   * ticked values, mutated in place by the caller's onChange. */
+  function renderTicks(el, options, chosen, onChange) {
+    el.innerHTML = options.map(function (o, i) {
+      var on = chosen.some(function (c) { return S.normKey(c) === S.normKey(o.value); });
+      return '<label class="' + (on ? 'on' : '') + '"><input type="checkbox" data-i="' + i + '"' +
+        (on ? ' checked' : '') + '>' + esc(o.label) +
+        (o.n ? ' <span class="muted">' + o.n + '</span>' : '') + '</label>';
+    }).join('');
+    el.onchange = function (ev) {
+      var box = ev.target.closest('input[data-i]');
+      if (!box) return;
+      var value = options[parseInt(box.dataset.i, 10)].value;
+      var at = chosen.findIndex(function (c) { return S.normKey(c) === S.normKey(value); });
+      if (box.checked && at === -1) chosen.push(value);
+      if (!box.checked && at !== -1) chosen.splice(at, 1);
+      box.closest('label').classList.toggle('on', box.checked);
+      onChange();
+    };
+  }
+
+  /* How many students the rule as ticked would take, shown live so an empty
+   * class is obvious before it is created rather than after. */
+  function updateMatchCount() {
+    var rec = dialogRule();
+    if (!S.groupHasRule(rec)) {
+      $('gfMatchCount').textContent = 'No filters ticked — members are added by hand.';
       return;
     }
-    sel.disabled = false;
-    sel.innerHTML = '<option value="">(any — everyone taking ' + esc(key) + ')</option>' +
-      subjectValueOptions(key).map(function (v) {
-        return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
-      }).join('');
-    if (current) sel.value = current;
+    var n = model.students.filter(function (s) { return S.matchesRule(s, rec); }).length;
+    $('gfMatchCount').textContent = n
+      ? n + ' student' + (n === 1 ? '' : 's') + ' match this right now.'
+      : 'No students match this yet — loosen a tick above.';
+  }
+
+  function renderValueTicks() {
+    var key = $('gfAutoKey').value;
+    var box = $('gfValueTicks');
+    box.hidden = !key;
+    if (!key) return;
+    var crit = dialogCriteria.find(function (c) { return S.normKey(c.key) === S.normKey(key); });
+    if (!crit) { crit = { key: key, values: [] }; dialogCriteria.push(crit); }
+    var counts = {};
+    model.students.forEach(function (s) {
+      var v = s.subjects && S.norm(s.subjects[key]);
+      if (v) counts[v] = (counts[v] || 0) + 1;
+    });
+    renderTicks(box, subjectValueOptions(key).map(function (v) {
+      return { value: v, label: v, n: counts[v] };
+    }), crit.values, function () {
+      renderCriteria();
+      suggestGroupIdentity();
+      updateMatchCount();
+    });
+  }
+
+  function renderPgTicks() {
+    var counts = {};
+    model.students.forEach(function (s) {
+      var v = S.normPg(s.pg);
+      if (v) counts[v] = (counts[v] || 0) + 1;
+    });
+    renderTicks($('gfPgTicks'), uniqueValues('pg').map(function (v) {
+      return { value: v, label: v, n: counts[v] };
+    }), dialogPgs, function () { suggestGroupIdentity(); updateMatchCount(); });
+  }
+
+  function renderClassTicks() {
+    var counts = {};
+    model.students.forEach(function (s) {
+      if (S.norm(s.class)) counts[s.class] = (counts[s.class] || 0) + 1;
+    });
+    renderTicks($('gfClassTicks'), uniqueValues('class').map(function (c) {
+      return { value: c, label: c, n: counts[c] };
+    }), dialogClasses, function () { suggestGroupIdentity(); updateMatchCount(); });
   }
 
   function suggestGroupIdentity() {
-    var first = dialogCriteria[0] || { key: '', value: '' };
+    var first = dialogCriteria.filter(function (c) { return S.norm(c.key); })[0] || { key: '', values: [] };
     var key = first.key;
-    var val = first.value;
+    var val = (first.values || []).join(' + ');
     var lvl = S.norm($('gfLevel').value);
-    var pg = S.norm($('gfAutoPg').value);
-    var cls = dialogClasses[0] || '';
+    var pg = dialogPgs.join('/');
+    var cls = dialogClasses.join('/');
     var base = val || key;
     if (!base) return;
-    var qualifier = cls || pg || '';
-    var label = (lvl ? 'S' + lvl + ' ' : '') + base + (qualifier ? ' ' + qualifier : '');
+    var qualifier = cls || (pg ? 'PG' + pg : '');
+    // A level already reads "Sec 1"; only a bare number wants the S prefix.
+    var lead = /^\d+$/.test(lvl) ? 'S' + lvl : lvl;
+    var label = (lead ? lead + ' ' : '') + base + (qualifier ? ' ' + qualifier : '');
     if (!$('gfCode').dataset.userEdited) {
       $('gfCode').value = label.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
     }
@@ -1439,10 +1605,14 @@
   }
 
   $('gfAutoKey').addEventListener('change', function () {
-    fillAutoValueSelect($('gfAutoKey').value, '');
+    renderValueTicks();
+    renderCriteria();
+    updateMatchCount();
   });
-  $('gfLevel').addEventListener('change', suggestGroupIdentity);
-  $('gfAutoPg').addEventListener('change', suggestGroupIdentity);
+  $('gfLevel').addEventListener('change', function () {
+    suggestGroupIdentity();
+    updateMatchCount();
+  });
   ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
     $(id).addEventListener('input', function () { $(id).dataset.userEdited = '1'; });
   });
@@ -1450,31 +1620,42 @@
   /* Teachers are tagged as chips — several may share one class, the way the
    * setup grid ticks more than one teacher per row. */
   var dialogTeachers = [];
-  var dialogCriteria = [];
+  var dialogCriteria = [];   // [{ key, values: [] }] — columns ANDed, ticks ORed
+  var dialogPgs = [];
 
+  /* The rule exactly as the boxes are ticked right now. */
+  function dialogRule() {
+    return {
+      code: S.norm($('gfCode').value),
+      level: S.norm($('gfLevel').value),
+      autoMatch: S.matchersToString(dialogCriteria),
+      autoPg: dialogPgs.join(', '),
+      autoClasses: dialogClasses.join(', '),
+    };
+  }
+
+  /* The column on show has its own ticks; the chips are the other columns
+   * this class is also narrowed by, each removable. */
   function renderCriteria() {
-    $('gfCriteria').innerHTML = dialogCriteria.length
-      ? '<div class="chips">' + dialogCriteria.map(function (c, i) {
-          return '<span class="chip">' + esc(c.key + (c.value ? ' = ' + c.value : ' (any)')) +
-            '<button type="button" data-i="' + i + '" title="Remove">\u00d7</button></span>';
+    var current = S.normKey($('gfAutoKey').value);
+    var others = dialogCriteria.filter(function (c) {
+      return c.values.length && S.normKey(c.key) !== current;
+    });
+    $('gfCriteria').innerHTML = others.length
+      ? '<div class="chips"><span class="small muted" style="align-self:center">and</span>' +
+        others.map(function (c) {
+          return '<span class="chip">' + esc(c.key + ' = ' + c.values.join(' or ')) +
+            '<button type="button" data-key="' + esc(c.key) + '" title="Remove">\u00d7</button></span>';
         }).join('') + '</div>'
-      : '<p class="hint" style="margin:0">Any student, unless narrowed below.</p>';
+      : '';
   }
   $('gfCriteria').addEventListener('click', function (ev) {
-    var b = ev.target.closest('button[data-i]');
+    var b = ev.target.closest('button[data-key]');
     if (!b) return;
-    dialogCriteria.splice(parseInt(b.dataset.i, 10), 1);
+    dialogCriteria = dialogCriteria.filter(function (c) { return S.normKey(c.key) !== S.normKey(b.dataset.key); });
     renderCriteria();
     suggestGroupIdentity();
-  });
-  $('gfCritAdd').addEventListener('click', function () {
-    var key = $('gfAutoKey').value;
-    if (!key) return;
-    var value = $('gfAutoValue').value;
-    dialogCriteria = dialogCriteria.filter(function (c) { return S.normKey(c.key) !== S.normKey(key); });
-    dialogCriteria.push({ key: key, value: value });
-    renderCriteria();
-    suggestGroupIdentity();
+    updateMatchCount();
   });
 
   function renderTeacherChips() {
@@ -1525,16 +1706,6 @@
     $('gfTeacherAdd').disabled = !avail.length;
   }
 
-  function fillClassSelect() {
-    var avail = uniqueValues('class').filter(function (c) {
-      return dialogClasses.indexOf(c) === -1;
-    });
-    $('gfAutoClasses').innerHTML = avail.length
-      ? avail.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('')
-      : '<option value="">— no other classes —</option>';
-    $('gfClassAdd').disabled = !avail.length;
-  }
-
   var dialogClasses = [];
   var dialogRemoved = null;   // members struck out in the dialog, applied on OK
 
@@ -1547,25 +1718,27 @@
         'Students matching the rule above are allocated as soon as you press OK.';
       return;
     }
-    var members = (ix.membersByGroup.get(editingGroupCode) || [])
-      .filter(function (s) { return !dialogRemoved.has(s.id); });
+    var members = ix.membersByGroup.get(editingGroupCode) || [];
     box.hidden = members.length === 0;
     $('gfMembers').innerHTML = members.map(function (s) {
-      return '<tr><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td>' +
-        '<td class="actions"><button type="button" class="linklike danger" data-id="' +
-        esc(s.id) + '">Remove</button></td></tr>';
+      var out = dialogRemoved.has(s.id);
+      return '<tr class="' + (out ? 'out' : '') + '"><td><input type="checkbox" data-id="' +
+        esc(s.id) + '"' + (out ? '' : ' checked') + ' title="Untick to take ' + esc(s.name) +
+        ' out of this class"></td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td></tr>';
     }).join('');
+    var keeping = members.length - dialogRemoved.size;
     $('gfMemberNote').textContent = members.length
-      ? members.length + ' student' + (members.length === 1 ? '' : 's') + ' in this class' +
-        (dialogRemoved.size ? ' (' + dialogRemoved.size + ' to be removed when you press OK)' : '')
-      : (dialogRemoved.size ? 'All ' + dialogRemoved.size + ' member(s) will be removed when you press OK.'
-        : 'No students yet — change the rule above, or use “Add students…”.');
+      ? 'Untick anyone who should not be on this namelist — ' + keeping + ' of ' + members.length +
+        ' ticked' + (dialogRemoved.size ? ', ' + dialogRemoved.size + ' will be removed when you press OK' : '') + '.'
+      : 'No students yet — tick a filter above, or use “Add students…”.';
   }
 
-  $('gfMembers').addEventListener('click', function (ev) {
-    var b = ev.target.closest('button[data-id]');
+  $('gfMembers').addEventListener('change', function (ev) {
+    var b = ev.target.closest('input[data-id]');
     if (!b) return;
-    dialogRemoved.add(b.dataset.id);
+    if (b.checked) dialogRemoved.delete(b.dataset.id);
+    else dialogRemoved.add(b.dataset.id);
+    b.closest('tr').classList.toggle('out', !b.checked);
     renderDialogMembers();
   });
 
@@ -1577,28 +1750,6 @@
       if (code) $('memGroupSelect').value = code;
       renderMemberships();
     });
-  });
-
-  function renderClassChips() {
-    $('gfClassChips').innerHTML = dialogClasses.map(function (c, i) {
-      return '<span class="chip">' + esc(c) + '<button type="button" data-i="' + i + '">\u00d7</button></span>';
-    }).join('');
-  }
-  $('gfClassChips').addEventListener('click', function (ev) {
-    var b = ev.target.closest('button[data-i]');
-    if (!b) return;
-    dialogClasses.splice(parseInt(b.dataset.i, 10), 1);
-    renderClassChips();
-    fillClassSelect();
-    suggestGroupIdentity();
-  });
-  $('gfClassAdd').addEventListener('click', function () {
-    var c = $('gfAutoClasses').value;
-    if (!c || dialogClasses.indexOf(c) !== -1) return;
-    dialogClasses.push(c);
-    renderClassChips();
-    fillClassSelect();
-    suggestGroupIdentity();
   });
 
   function openGroupDialog(group) {
@@ -1616,30 +1767,28 @@
       return '<option value="' + esc(l) + '">' + esc(l) + '</option>';
     }).join('');
     $('gfLevel').value = group ? (group.level || '') : (levels.length === 1 ? levels[0] : '');
-    var pgs = uniqueValues('pg');
-    $('gfAutoPg').innerHTML = '<option value="">— any PG —</option>' + pgs.map(function (v) {
-      return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
-    }).join('');
     $('gfAutoKey').innerHTML = '<option value="">(none — members added by hand)</option>' +
       (model.subjectKeys || []).map(function (k) {
         return '<option value="' + esc(k) + '">' + esc(k) + '</option>';
       }).join('');
     dialogCriteria = group ? S.matchers(group) : [];
-    renderCriteria();
-    $('gfAutoKey').value = '';
-    fillAutoValueSelect('', '');
-    $('gfAutoPg').value = group ? (group.autoPg || '') : '';
+    dialogPgs = group ? S.splitList(group.autoPg) : [];
+    dialogClasses = group ? S.splitList(group.autoClasses) : [];
     dialogRemoved = new Set();
-    dialogClasses = group && group.autoClasses
-      ? group.autoClasses.split(/[,;]+/).map(function (c) { return S.norm(c); }).filter(Boolean)
-      : [];
-    renderClassChips();
-    fillClassSelect();
+    // Open on the column the class is already built around, so its ticks show.
+    var live = dialogCriteria.filter(function (c) { return c.values.length; })[0];
+    $('gfAutoKey').value = live ? live.key : '';
+    if ($('gfAutoKey').value !== (live ? live.key : '')) $('gfAutoKey').value = '';
+    renderValueTicks();
+    renderPgTicks();
+    renderClassTicks();
+    renderCriteria();
     ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
       if (group) $(id).dataset.userEdited = '1';       // never rewrite an existing group's identity
       else delete $(id).dataset.userEdited;
     });
     renderDialogMembers();
+    updateMatchCount();
     $('groupDialog').showModal();
     $('gfTeacher').focus();
   }
@@ -1651,7 +1800,7 @@
       code: code, name: S.norm($('gfName').value), subject: S.norm($('gfSubject').value),
       teachers: dialogTeachers.slice(), level: S.norm($('gfLevel').value),
       autoMatch: S.matchersToString(dialogCriteria),
-      autoPg: S.norm($('gfAutoPg').value),
+      autoPg: dialogPgs.join(', '),
       autoClasses: dialogClasses.join(', '),
     };
     if (!code) return;
@@ -1856,51 +2005,100 @@
   }
 
   $('teacherSearch').addEventListener('input', renderTeachers);
+
+  /* A brand-new teacher starts as an empty, focused row: the name is typed
+   * straight into the list rather than into a pop-up, and the classes follow
+   * afterwards. `editingTeacher` is the name being edited ('' for the new one). */
+  var editingTeacher = null;
+
   $('addTeacherBtn').addEventListener('click', function () {
-    var name = prompt('Teacher\u2019s name:');
-    name = name === null ? '' : S.norm(name);
-    if (!name) return;
-    if (allTeachers().some(function (t) { return S.normKey(t) === S.normKey(name); })) {
-      alert('"' + name + '" is already in the list.');
+    editingTeacher = '';
+    renderTeachers();
+    var box = $('teachersTable').querySelector('input[data-edit]');
+    if (box) box.focus();
+  });
+
+  function commitTeacherName(from, to) {
+    to = S.norm(to);
+    editingTeacher = null;
+    if (!to) { renderTeachers(); return; }
+    if (S.normKey(to) === S.normKey(from || '')) { renderTeachers(); return; }
+    var clash = allTeachers().some(function (t) { return S.normKey(t) === S.normKey(to); });
+    if (clash) {
+      alert('"' + to + '" is already in the list.');
+      renderTeachers();
       return;
     }
-    model.teachers.push(name);
+    if (!confirm(from ? 'Save "' + from + '" as "' + to + '"?\n\nEvery class they are tagged to will show the new name.'
+      : 'Add "' + to + '" to the teacher list?')) {
+      renderTeachers();
+      return;
+    }
+    if (from) {
+      var touched = S.renameTeacher(model, from, to);
+      toast('Renamed to ' + to + (touched ? ' on ' + touched + ' class(es)' : ''));
+    } else {
+      model.teachers.push(to);
+      toast(to + ' added — now give them their classes');
+    }
     markDirty();
-    toast(name + ' added — they can now be picked when you create a class');
-  });
+  }
 
   function renderTeachers() {
     var q = $('teacherSearch').value.trim().toLowerCase();
     var list = allTeachers().filter(function (t) { return !q || t.toLowerCase().indexOf(q) !== -1; });
     $('countTeachers').textContent = allTeachers().length;
-    $('teachersTable').querySelector('tbody').innerHTML = list.map(function (t) {
+    function nameCell(t) {
+      return editingTeacher !== null && S.normKey(editingTeacher) === S.normKey(t)
+        ? '<input type="text" data-edit value="' + esc(t) + '" style="width:100%">'
+        : '<button class="linklike" data-act="edit" title="Click to change the name">' + esc(t) + '</button>';
+    }
+    var rows = list.map(function (t) {
       var groups = ix.groupsByTeacher.get(t) || [];
       var students = groups.reduce(function (n, g) {
         return n + (ix.membersByGroup.get(g.code) || []).length;
       }, 0);
-      return '<tr data-name="' + esc(t) + '"><td>' + esc(t) + '</td>' +
+      return '<tr data-name="' + esc(t) + '"><td>' + nameCell(t) + '</td>' +
         '<td class="tags">' + (groups.length
           ? esc(groups.map(function (g) { return g.name || g.code; }).join(', '))
           : '<span class="muted">no classes yet</span>') + '</td>' +
         '<td>' + (students || '') + '</td>' +
-        '<td class="actions"><button class="linklike" data-act="rename">Rename</button>' +
+        '<td class="actions"><button class="linklike" data-act="classes">Classes…</button>' +
         '<button class="linklike danger" data-act="del">Remove</button></td></tr>';
-    }).join('');
-    $('teachersEmpty').hidden = list.length > 0;
+    });
+    if (editingTeacher === '') {
+      rows.unshift('<tr data-name=""><td><input type="text" data-edit placeholder="Teacher\u2019s name" ' +
+        'style="width:100%"></td><td class="muted" colspan="3">Type the name, then press Enter</td></tr>');
+    }
+    $('teachersTable').querySelector('tbody').innerHTML = rows.join('');
+    $('teachersEmpty').hidden = list.length > 0 || editingTeacher === '';
   }
+
+  $('teachersTable').addEventListener('keydown', function (ev) {
+    var box = ev.target.closest('input[data-edit]');
+    if (!box) return;
+    if (ev.key === 'Enter') { ev.preventDefault(); box.blur(); }
+    if (ev.key === 'Escape') { editingTeacher = null; renderTeachers(); }
+  });
+  $('teachersTable').addEventListener('focusout', function (ev) {
+    var box = ev.target.closest('input[data-edit]');
+    if (!box) return;
+    commitTeacherName(box.closest('tr').dataset.name, box.value);
+    refresh();
+  });
 
   $('teachersTable').addEventListener('click', function (ev) {
     var btn = ev.target.closest('button[data-act]');
     if (!btn) return;
     var name = btn.closest('tr').dataset.name;
-    if (btn.dataset.act === 'rename') {
-      var next = prompt('New name for "' + name + '":', name);
-      next = next === null ? '' : S.norm(next);
-      if (!next || next === name) return;
-      var touched = S.renameTeacher(model, name, next);
-      markDirty();
-      toast('Renamed to ' + next + (touched ? ' on ' + touched + ' class(es)' : ''));
+    if (btn.dataset.act === 'edit') {
+      editingTeacher = name;
+      renderTeachers();
+      var box = $('teachersTable').querySelector('input[data-edit]');
+      if (box) { box.focus(); box.select(); }
+      return;
     }
+    if (btn.dataset.act === 'classes') { openTeacherClasses(name); return; }
     if (btn.dataset.act === 'del') {
       var groups = ix.groupsByTeacher.get(name) || [];
       if (groups.length && !confirm('"' + name + '" is tagged to ' + groups.length +
@@ -1910,6 +2108,61 @@
       });
       model.teachers = (model.teachers || []).filter(function (t) { return S.normKey(t) !== S.normKey(name); });
       markDirty();
+    }
+  });
+
+  /* ---- giving a teacher their classes after the name exists ---- */
+
+  var tcTeacher = null;
+  var tcChosen = [];
+
+  function tcRows() {
+    var q = $('tcSearch').value.trim().toLowerCase();
+    return sortedGroups().filter(function (g) {
+      return !q || (g.code + ' ' + g.name + ' ' + g.subject + ' ' + g.level).toLowerCase().indexOf(q) !== -1;
+    });
+  }
+
+  function renderTcTicks() {
+    renderTicks($('tcTicks'), tcRows().map(function (g) {
+      return {
+        value: g.code,
+        label: (g.name || g.code) + (g.level ? ' · ' + g.level : ''),
+        n: (ix.membersByGroup.get(g.code) || []).length,
+      };
+    }), tcChosen, function () {});
+  }
+
+  function openTeacherClasses(name) {
+    tcTeacher = name;
+    tcChosen = (ix.groupsByTeacher.get(name) || []).map(function (g) { return g.code; });
+    $('tcName').textContent = name;
+    $('tcSearch').value = '';
+    renderTcTicks();
+    $('teacherClassesDialog').showModal();
+    $('tcSearch').focus();
+  }
+
+  $('tcSearch').addEventListener('input', renderTcTicks);
+  $('tcCancelBtn').addEventListener('click', function () { $('teacherClassesDialog').close(); });
+  $('teacherClassesForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var added = 0, dropped = 0;
+    model.groups.forEach(function (g) {
+      var names = S.teacherNames(g);
+      var has = names.some(function (t) { return S.normKey(t) === S.normKey(tcTeacher); });
+      var want = tcChosen.some(function (c) { return S.normKey(c) === S.normKey(g.code); });
+      if (want && !has) { g.teachers = names.concat([tcTeacher]); added++; }
+      if (!want && has) {
+        g.teachers = names.filter(function (t) { return S.normKey(t) !== S.normKey(tcTeacher); });
+        dropped++;
+      }
+    });
+    $('teacherClassesDialog').close();
+    if (added || dropped) {
+      markDirty();
+      toast(tcTeacher + ': ' + (added ? added + ' class(es) added' : '') +
+        (added && dropped ? ', ' : '') + (dropped ? dropped + ' removed' : ''));
     }
   });
 

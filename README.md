@@ -54,14 +54,15 @@ edits go through `admin.html`, the two can never drift apart.
    - keeps the remaining columns (TG, EL, MT, HMT, MA, SCI, HIST, GEOG, LIT, …) as
      **subject/band columns** — sortable and searchable per student; untick any you
      don't want (PSLE/remark columns are unticked by default).
-4. Create teaching groups. The fast way is **auto-allocation**: in Add group, type
-   the teacher's name and pick the subject group she takes (e.g. `EL` → `EL G2`,
-   optionally limited to classes like `1R`) — every matching student is allocated
-   instantly, and new students from later school-file updates flow in automatically.
-   The group code/name are suggested for you. Members can still be adjusted by hand
-   afterwards (Students tab bulk-select, or the Group members tab) — auto-allocation
-   only ever *adds*, so manual changes stick; re-check a group any time with its
-   **Auto-fill from rule** button. Then press **Save**.
+4. Create teaching groups. The fast way is **auto-allocation**: in Add class, pick
+   the teacher, then tick the subject group she takes (e.g. column `EL` → `EL G2`),
+   optionally a PG and some form classes — the dialog says how many students the
+   ticks cover, every one of them is allocated on OK, and new students from later
+   school-file updates flow in automatically. The class code/name are suggested for
+   you. Members can be adjusted right there (untick anyone in the **Members** list)
+   or later from the Group members tab — auto-allocation only ever *adds*, so manual
+   changes stick; re-check a class any time with its **Auto-fill from rule** button.
+   Then press **Save**.
 5. Make a desktop shortcut for teachers (see below).
 
 ### Keeping levels up to date from the school's files
@@ -227,6 +228,7 @@ test/allocation-format.browser.mjs  ministry-format import -> discover -> teach
 test/setup-flow.browser.mjs  first run asks which file is each level
 test/auto-update.browser.mjs  opening the editor refreshes levels by itself
 test/class-dialog.browser.mjs  teacher roster + building a class from criteria
+test/edit-class.browser.mjs    editing a class re-applies its rule; members untick
 ```
 
 Requires only Node (no npm packages):
@@ -242,6 +244,8 @@ browser test that needs Playwright installed:
 
 ```
 PLAYWRIGHT_CHROMIUM=/path/to/chromium node test/conflict.browser.mjs
+PLAYWRIGHT_CHROMIUM=... node test/class-dialog.browser.mjs
+PLAYWRIGHT_CHROMIUM=... node test/edit-class.browser.mjs
 PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \
   node test/allocation-format.browser.mjs
 PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \
@@ -320,28 +324,45 @@ notes admins leave in spare slot columns.
 
 Teacher names live in the **Teachers** tab, so they are picked from a list when
 you build a class rather than retyped — no more two spellings of one person.
-The tab shows what each teacher currently has, lets you add someone before they
-have any classes, and **renaming one updates every class it is tagged to**.
+Press **+** to add a name straight into the list; click any name to change it
+(the app asks you to confirm before saving, since **renaming one updates every
+class it is tagged to**). **Classes…** on a teacher's row hands them their
+classes after the fact — tick the ones they take, untick to drop their name.
 A class can be taught by several teachers; each of them sees it under their own
 name, with the others noted as co-teachers.
 
-Everything else about a class is chosen from what is actually in the data:
+Everything else about a class is ticked from what is actually in the data, with
+a running count of how many students the ticks currently cover:
 
 | Field | What it does |
 |---|---|
 | **Level** | groups the class under that heading on the teacher page, *and* keeps it to that level's students |
-| **Must be taking** | one criterion per column, repeatable — `HIST = HIST G3` plus `TG = TG2` gives the History G3 students in tutorial group 2 |
-| **PG** | narrows to a posting group |
-| **Limit to classes** | form classes, picked and shown as chips |
+| **Must be taking** | pick a column, tick its groups — several ticks in one column mean "either" (`HIST G3` or `HIST G2`), and a second column narrows further (`TG = TG2`) |
+| **PG** | tick one or more posting groups (always 1, 2, 3 — a file that writes `PG2` is read as `2`) |
+| **Limit to classes** | tick the form classes |
+| **Members** | everyone currently on the namelist, each with a tick — untick anyone who should not be there |
 
-Blanks mean "any", and a student whose Level cell the office left blank is
-never excluded by the level — being unknown must not mean disappearing from
-every namelist. The warnings panel lists anyone who ends up in no class at all.
+Ticking nothing means "any", and a student whose Level cell the office left
+blank is never excluded by the level — being unknown must not mean disappearing
+from every namelist. The warnings panel lists anyone who ends up in no class at
+all.
 
 Because the criteria stack, a class is usually created already full of the
-right students, and you then edit the exceptions out by hand in the Group
-members tab. That also reproduces a namelist query like "Level 3, PG3,
-SG = 3 A, Subject = SS/Geo" from a setup grid.
+right students. **Editing a class re-applies its rule**, so fixing the criteria
+of a class that came out empty fills it immediately; if the change narrows the
+rule, the app offers to drop the members who no longer match. The **Members**
+list is the place to handle the exceptions — half of 1R5 shared with another
+teacher is 27 matched, four unticked, 23 on the namelist — and unticked
+students stay out even when the rule is applied again. That also reproduces a
+namelist query like "Level 3, PG3, SG = 3 A, Subject = SS/Geo" from a setup
+grid.
+
+**Classes found in the data.** *Find classes in the data* creates one class per
+allocation the school's file already contains. Columns that are plainly not
+allocations — a `Year` column holding `2026`, a placeholder `N/A` — are **not**
+turned into classes; they appear under **Check these** with *Create it anyway*
+and *Ignore*, so a mislabelled column is a decision rather than a phantom class
+in the list.
 
 ### Two people editing at once
 

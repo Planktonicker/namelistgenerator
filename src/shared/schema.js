@@ -110,6 +110,26 @@
     return norm(v).toLowerCase().replace(/[^a-z0-9]/g, '');
   }
 
+  /* Posting groups are 1, 2, 3 — nothing else. Files write them as "PG1",
+   * "PG 2", "P.G.3" or plain "3" depending on who typed them, so every PG is
+   * reduced to its number here, on the way in and on the way back out. A
+   * value that is not a plain posting group (blank, "N/A", something odd) is
+   * left exactly as it was rather than being mangled into a digit. */
+  function normPg(v) {
+    var t = norm(v);
+    if (!t) return '';
+    var m = /^p\.?\s*g\.?\s*[-:]?\s*(\d+)$/i.exec(t);
+    if (m) return m[1];
+    if (/^\d+$/.test(t)) return String(parseInt(t, 10));
+    return t;
+  }
+
+  /* "1, 2" -> ['1','2']; used for the fields the class dialog now ticks
+   * several boxes into (PG and form classes). */
+  function splitList(v) {
+    return norm(v).split(/[,;|]+/).map(norm).filter(Boolean);
+  }
+
   function emptyModel() {
     return { students: [], groups: [], memberships: [], subjectKeys: [], sources: [], teachers: [] };
   }
@@ -213,6 +233,7 @@
       Object.keys(STUDENT_FIELDS).forEach(function (f) {
         rec[f] = f in idx ? norm(row[idx[f]]) : '';
       });
+      rec.pg = normPg(rec.pg);
       // Files written before the Origin column existed: assume the students
       // came from the school file (the pre-existing behaviour).
       if (rec.origin !== ORIGIN_ADDED) rec.origin = ORIGIN_FILE;
@@ -252,6 +273,7 @@
         // old columns, so the in-memory shape has exactly one representation.
         g.autoMatch = matchersToString(matchers(g));
         if (!norm(g.level) && norm(g.autoLevel)) g.level = g.autoLevel;
+        g.autoPg = splitList(g.autoPg).map(normPg).join(', ');
         delete g.autoKey;
         delete g.autoValue;
         delete g.autoLevel;
@@ -511,8 +533,43 @@
     };
   }
 
+  /* Columns that are plainly not subject allocations, however they were
+   * ticked during the import review, plus values that are placeholders
+   * rather than a class. Anything caught here is reported for the admin to
+   * decide on instead of quietly becoming a teaching class. */
+  var NON_SUBJECT_COLUMNS = ['year', 'level', 'class', 'classname', 'formclass', 'index',
+    'indexno', 'sn', 'serialno', 'regno', 'register', 'admissionno', 'gender', 'sex',
+    'dob', 'dateofbirth', 'age', 'nric', 'contact', 'remarks'];
+  var PLACEHOLDER_VALUES = ['na', 'n', 'nil', 'none', 'no', 'x', 'tbc', 'tba', '0', '-'];
+
+  function classProblem(subject, value) {
+    if (NON_SUBJECT_COLUMNS.indexOf(normKey(subject)) !== -1) {
+      return '"' + subject + '" is not a subject column';
+    }
+    if (PLACEHOLDER_VALUES.indexOf(normKey(value)) !== -1) {
+      return '"' + value + '" is a placeholder, not a class';
+    }
+    if (/^\d+$/.test(norm(value))) {
+      return '"' + value + '" is just a number — probably a year or a count';
+    }
+    return '';
+  }
+
+  /* A readable fallback code for an allocation the file gave no code for:
+   * "Humanities (SS, Literature in English) - G3" -> "HUMANITIES-G3". */
+  function fallbackCode(subject, band) {
+    var base = norm(subject).replace(/\([^)]*\)/g, ' ').replace(/[^A-Za-z0-9 ]+/g, ' ');
+    var words = base.split(/\s+/).filter(Boolean);
+    var slug = words.length > 2
+      ? words.map(function (w) { return w.slice(0, 3); }).join('').slice(0, 12)
+      : words.join('').slice(0, 12);
+    return (slug || 'CLASS').toUpperCase() + (band ? '-' + band.toUpperCase() : '');
+  }
+
   /* Every distinct allocation across the students, as ready-made classes to
-   * tag teachers onto. Codeless allocations fall back to a name+band slug. */
+   * tag teachers onto. Codeless allocations fall back to a name+band slug.
+   * Entries that do not look like allocations at all come back marked
+   * `suspect` with a `why`, for the caller to surface rather than create. */
   function discoverClasses(students, level) {
     var found = new Map();
     (students || []).forEach(function (s) {
@@ -524,9 +581,12 @@
         var code = bits.length > 1 ? bits[bits.length - 1] : (band ? '' : bits[0]);
         var key = subject + '|' + value;
         if (found.has(key)) { found.get(key).n++; return; }
+        var why = classProblem(subject, value);
         found.set(key, {
-          code: code || normKey(subject + '-' + band).toUpperCase().slice(0, 16),
+          code: code || fallbackCode(subject, band),
           name: subject + (band ? ' - ' + band : ''),
+          suspect: !!why,
+          why: why,
           subject: subject,
           teachers: [],
           level: norm(level),
@@ -757,7 +817,7 @@
       students.push({
         id: id, name: name, class: cls,
         level: cell(row, 'level'),
-        gender: cell(row, 'gender'), pg: cell(row, 'pg'),
+        gender: cell(row, 'gender'), pg: normPg(cell(row, 'pg')),
         origin: ORIGIN_FILE, sourceName: name, subjects: subjects,
       });
     }
@@ -997,6 +1057,9 @@
    * "has anything in that column". Everything filled in must hold; blanks
    * mean "any". The class filter takes comma-separated names or prefixes
    * ("1R" matches 1R1…1R6). */
+  /* A rule reads "HIST=HIST G3|HIST G2; TG=TG2": different columns are ANDed,
+   * the values ticked inside one column are ORed. Older files hold a single
+   * value per column, which parses to a one-entry list. */
   function matchers(group) {
     var out = [];
     var seen = {};
@@ -1004,7 +1067,8 @@
       key = norm(key);
       if (!key || seen[normKey(key)]) return;
       seen[normKey(key)] = true;
-      out.push({ key: key, value: norm(value) });
+      var values = norm(value).split('|').map(norm).filter(Boolean);
+      out.push({ key: key, values: values, value: values[0] || '' });
     }
     norm(group.autoMatch).split(';').forEach(function (part) {
       if (!norm(part)) return;
@@ -1018,7 +1082,10 @@
 
   function matchersToString(list) {
     return (list || []).filter(function (m) { return norm(m.key); })
-      .map(function (m) { return norm(m.key) + '=' + norm(m.value); })
+      .map(function (m) {
+        var values = m.values || (m.value ? [m.value] : []);
+        return norm(m.key) + '=' + values.map(norm).filter(Boolean).join('|');
+      })
       .join('; ');
   }
 
@@ -1035,8 +1102,11 @@
      * must not mean being dropped from every namelist. */
     var level = norm(group.level);
     if (level && norm(student.level) && normKey(student.level) !== normKey(level)) return false;
-    var pg = norm(group.autoPg);
-    if (pg && normKey(student.pg) !== normKey(pg)) return false;
+    var pgs = splitList(group.autoPg);
+    if (pgs.length) {
+      var spg = normKey(normPg(student.pg));
+      if (!pgs.some(function (p) { return normKey(normPg(p)) === spg; })) return false;
+    }
     var classes = norm(group.autoClasses);
     if (classes) {
       var sc = normKey(student.class);
@@ -1049,7 +1119,8 @@
     return matchers(group).every(function (m) {
       var v = student.subjects ? norm(student.subjects[m.key]) : '';
       if (!v) return false;
-      return !m.value || normKey(v) === normKey(m.value);
+      if (!m.values.length) return true;      // any allocation in that column
+      return m.values.some(function (want) { return normKey(v) === normKey(want); });
     });
   }
 
@@ -1225,6 +1296,8 @@
     MEMBERSHIP_FIELDS: MEMBERSHIP_FIELDS,
     norm: norm,
     normKey: normKey,
+    normPg: normPg,
+    splitList: splitList,
     emptyModel: emptyModel,
     mapHeaders: mapHeaders,
     sheetRows: sheetRows,
@@ -1254,6 +1327,7 @@
     hasSubjectSlots: hasSubjectSlots,
     parseAllocation: parseAllocation,
     discoverClasses: discoverClasses,
+    classProblem: classProblem,
     matchers: matchers,
     matchersToString: matchersToString,
     derivePattern: derivePattern,

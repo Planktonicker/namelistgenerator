@@ -704,4 +704,43 @@ test('a namelist prints in the school\'s own layout', () => {
   assert.strictEqual(plain.subject, 'Remedial');
 });
 
+test('subject-based banding: the PG fills in a band the label leaves out', () => {
+  const students = [
+    { id: 'a', name: 'A', pg: '3', class: '3S1', subjects: { HUM: 'SS/Hist' } },       // G3 by PG
+    { id: 'b', name: 'B', pg: '3', class: '3S2', subjects: { HUM: 'SSHist G3' } },     // spelt out
+    { id: 'c', name: 'C', pg: '2', class: '3S3', subjects: { HUM: 'SS/Hist G3' } },    // above their PG
+    { id: 'd', name: 'D', pg: '2', class: '3S4', subjects: { HUM: 'SS/Hist' } },       // G2 by PG
+    { id: 'e', name: 'E', pg: '1', class: '3S5', subjects: { HUM: 'SS/Geo' } },
+  ];
+  // the spellings fold together, and the group carries the effective band
+  assert.deepStrictEqual(S.allocationOptions(students, 'HUM'),
+    [{ value: 'SS/Geo G1', n: 1, implied: 1 },
+      { value: 'SS/Hist G2', n: 1, implied: 1 },
+      { value: 'SS/Hist G3', n: 3, implied: 1 }]);
+
+  const g3 = { code: 'H3', autoMatch: 'HUM=SS/Hist G3' };
+  const g2 = { code: 'H2', autoMatch: 'HUM=SS/Hist G2' };
+  assert.deepStrictEqual(students.filter((s) => S.matchesRule(s, g3)).map((s) => s.id),
+    ['a', 'b', 'c']);
+  assert.deepStrictEqual(students.filter((s) => S.matchesRule(s, g2)).map((s) => s.id), ['d']);
+
+  // a rule written the other way round finds the same students
+  assert.deepStrictEqual(
+    students.filter((s) => S.matchesRule(s, { code: 'X', autoMatch: 'HUM=SSHist G3' })).map((s) => s.id),
+    ['a', 'b', 'c']);
+
+  // discovery makes one class per teaching group, not per spelling
+  assert.deepStrictEqual(S.discoverClasses(students, 'Sec 3').map((g) => g.autoMatch).sort(),
+    ['HUM=SS/Geo G1', 'HUM=SS/Hist G2', 'HUM=SS/Hist G3']);
+
+  // ministry-coded cells name their class outright and are left alone
+  const coded = [{ id: 'k', name: 'K', pg: '2', subjects: { EL: 'G3 - K300' } }];
+  assert.strictEqual(S.sbbParts('G3 - K300'), null);
+  assert.ok(S.matchesRule(coded[0], { code: 'K', autoMatch: 'EL=G3 - K300' }));
+  assert.ok(!S.matchesRule(coded[0], { code: 'K', autoMatch: 'EL=G2 - K200' }));
+
+  // a student with no PG and no band in the cell keeps the label as written
+  assert.strictEqual(S.allocationLabel({ pg: '', subjects: { HUM: 'SS/Hist' } }, 'HUM'), 'SS/Hist');
+});
+
 console.log(passed + ' tests passed');

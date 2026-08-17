@@ -394,7 +394,11 @@
             </div>
             <div class="graph-row" id="gfValueRow" hidden>
               <span class="graph-key">Group</span>
-              <div class="ticks" id="gfValueTicks"></div>
+              <div>
+                <div class="ticks" id="gfValueTicks"></div>
+                <p class="hint" id="gfValueNote" style="margin:6px 0 0; max-width:430px" hidden>
+                  * counts students whose cell names no band — it is read from their PG.</p>
+              </div>
             </div>
             <div class="graph-row" id="gfTgRow" hidden>
               <span class="graph-key">TG / SG</span>
@@ -2136,9 +2140,23 @@
     if (!key) { box.innerHTML = ''; return; }
     var crit = dialogCriteria.find(function (c) { return S.normKey(c.key) === S.normKey(key); });
     if (!crit) { crit = { key: key, values: [] }; dialogCriteria.push(crit); }
-    renderTicks(box, tickOptions(function (s) {
-      return s.subjects && s.subjects[key];
-    }, crit.values), crit.values, function () {
+    /* One node per teaching group, not per spelling: the school's variants are
+     * folded together and a band left unwritten is read from the posting
+     * group, so "SS/Hist" (PG3) and "SSHist G3" are the same node. */
+    var options = S.allocationOptions(dialogPool(), key).map(function (o) {
+      return {
+        value: o.value,
+        label: o.value + (o.implied ? ' *' : ''),
+        n: o.n,
+      };
+    });
+    crit.values.forEach(function (v) {
+      if (!options.some(function (o) { return S.normKey(o.value) === S.normKey(v); })) {
+        options.push({ value: v, label: v, n: 0 });
+      }
+    });
+    $('gfValueNote').hidden = !options.some(function (o) { return / \*$/.test(o.label); });
+    renderTicks(box, options, crit.values, function () {
       clearBelow('group');
       renderTgTicks();
       renderClassTicks();

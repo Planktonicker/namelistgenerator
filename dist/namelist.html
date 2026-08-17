@@ -1051,6 +1051,91 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     };
   }
 
+  /* ---- subject-based banding -------------------------------------------
+   * Two habits collide in the school's files. Subjects are written however the
+   * teacher writes them ("SS/Hist", "SSHist", "SS Hist"), and the band is only
+   * spelt out when it differs from the student's posting group:
+   *
+   *   PG 3, "SS/Hist"      -> History at G3 (the band is the posting group)
+   *   PG 2, "SS/Hist G3"   -> History at G3, taken above their posting group
+   *   PG 2, "SS/Hist"      -> History at G2
+   *
+   * So an allocation is read as a subject plus an EFFECTIVE band: the band in
+   * the cell if there is one, the posting group's band if there is not. Both
+   * students above land in the same G3 class, whichever way it was typed.
+   *
+   * Ministry-coded cells ("G2 - K200") name the class outright and are left
+   * exactly as they are — there is nothing to infer. */
+  function pgBand(pg) {
+    var p = normPg(pg);
+    return /^[1-3]$/.test(p) ? 'G' + p : '';
+  }
+
+  function isCodedValue(value) {
+    return /\b[A-Za-z]{1,3}\d{2,5}\b/.test(norm(value));   // K200, S1234
+  }
+
+  /* { subject, band } for a plainly written allocation, or null when the cell
+   * is a coded one that should be matched verbatim. */
+  function sbbParts(value) {
+    var raw = norm(value);
+    if (!raw || isCodedValue(raw)) return null;
+    var band = '';
+    var subject = raw.replace(/\bG\s?([1-3])\b/i, function (all, n) { band = 'G' + n; return ' '; });
+    subject = subject.replace(/\s{2,}/g, ' ').replace(/^[\s\-\/]+|[\s\-\/]+$/g, '').trim();
+    if (!subject) return null;
+    return { subject: subject, band: band };
+  }
+
+  /* What a student is really taking in one column, band and all. */
+  function allocationLabel(student, key) {
+    var raw = norm(student.subjects && student.subjects[key]);
+    if (!raw) return '';
+    var p = sbbParts(raw);
+    if (!p) return raw;
+    var band = p.band || pgBand(student.pg);
+    return p.subject + (band ? ' ' + band : '');
+  }
+
+  /* The distinct groups a column actually holds, counted, with the spelling
+   * the school uses most often as the label. `implied` counts the students
+   * whose band came from their posting group rather than the cell. */
+  function allocationOptions(students, key) {
+    var groups = {};
+    (students || []).forEach(function (s) {
+      var label = allocationLabel(s, key);
+      if (!label) return;
+      var id = normKey(label);
+      var g = groups[id] || (groups[id] = { n: 0, implied: 0, spellings: {} });
+      g.n++;
+      var raw = norm(s.subjects[key]);
+      var p = sbbParts(raw);
+      if (p && !p.band) g.implied++;
+      g.spellings[label] = (g.spellings[label] || 0) + 1;
+    });
+    return Object.keys(groups).map(function (id) {
+      var g = groups[id];
+      var label = Object.keys(g.spellings).sort(function (a, b) {
+        return g.spellings[b] - g.spellings[a] || cmp(a, b);
+      })[0];
+      return { value: label, n: g.n, implied: g.implied };
+    }).sort(function (a, b) { return cmp(a.value, b.value); });
+  }
+
+  /* Does a student's allocation in `key` answer to `want`? Exactly as written,
+   * or as the same subject at the same effective band. */
+  function allocationMatches(student, key, want) {
+    var raw = norm(student.subjects && student.subjects[key]);
+    if (!raw) return false;
+    if (normKey(raw) === normKey(want)) return true;
+    var a = sbbParts(raw);
+    var b = sbbParts(want);
+    if (!a || !b) return false;
+    if (normKey(a.subject) !== normKey(b.subject)) return false;
+    var band = a.band || pgBand(student.pg);
+    return !b.band || b.band === band;
+  }
+
   /* Columns that are plainly not subject allocations, however they were
    * ticked during the import review, plus values that are placeholders
    * rather than a class. Anything caught here is reported for the admin to
@@ -1089,18 +1174,26 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
    * Entries that do not look like allocations at all come back marked
    * `suspect` with a `why`, for the caller to surface rather than create. */
   function discoverClasses(students, level) {
-    var found = new Map();
+    /* The subject columns in the order the students first show them. */
+    var keys = [];
+    var seenKey = {};
     (students || []).forEach(function (s) {
-      Object.keys(s.subjects || {}).forEach(function (subject) {
-        var value = norm(s.subjects[subject]);
-        if (!value) return;
+      Object.keys(s.subjects || {}).forEach(function (k) {
+        if (!seenKey[k]) { seenKey[k] = true; keys.push(k); }
+      });
+    });
+    var list = [];
+    keys.forEach(function (subject) {
+      /* One class per teaching group, read through the school's labelling:
+       * "SS/Hist" for a PG3 student and "SSHist G3" for another are the same
+       * class, and the band a cell leaves out comes from the posting group. */
+      allocationOptions(students, subject).forEach(function (opt) {
+        var value = opt.value;
         var bits = value.split(' - ');
         var band = /^G\d$/i.test(bits[0]) ? bits[0] : '';
         var code = bits.length > 1 ? bits[bits.length - 1] : (band ? '' : bits[0]);
-        var key = subject + '|' + value;
-        if (found.has(key)) { found.get(key).n++; return; }
         var why = classProblem(subject, value);
-        found.set(key, {
+        list.push({
           code: code || fallbackCode(subject, band),
           name: subject + (band ? ' - ' + band : ''),
           suspect: !!why,
@@ -1112,11 +1205,10 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
           autoLevel: '',
           autoPg: '',
           autoClasses: '',
-          n: 1,
+          n: opt.n,
         });
       });
     });
-    var list = Array.from(found.values());
     // Two subjects could share a slug; keep codes unique.
     var used = {};
     list.forEach(function (g) {
@@ -1682,7 +1774,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       var v = student.subjects ? norm(student.subjects[m.key]) : '';
       if (!v) return false;
       if (!m.values.length) return true;      // any allocation in that column
-      return m.values.some(function (want) { return normKey(v) === normKey(want); });
+      return m.values.some(function (want) { return allocationMatches(student, m.key, want); });
     });
   }
 
@@ -2036,6 +2128,11 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     parseAllocation: parseAllocation,
     discoverClasses: discoverClasses,
     classProblem: classProblem,
+    pgBand: pgBand,
+    sbbParts: sbbParts,
+    allocationLabel: allocationLabel,
+    allocationOptions: allocationOptions,
+    allocationMatches: allocationMatches,
     coverageGaps: coverageGaps,
     groupSubjectKeys: groupSubjectKeys,
     matchers: matchers,

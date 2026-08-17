@@ -328,6 +328,41 @@ converted on load: the value moves onto the student, the column disappears from
 the subject list, and any class rule that pointed at it is rewritten to the new
 field. Nothing needs to be redone by hand.
 
+### Subject-based banding, however it was typed
+
+The band a student takes a subject at is often left out of the cell, because
+the posting group already says it — and the subject itself is written however
+the teacher writes it. The app reads an allocation as a **subject plus an
+effective band**: the band in the cell if there is one, the posting group's band
+if there is not.
+
+| PG | Cell says | Read as |
+|---|---|---|
+| 3 | `SS/Hist` | History at G3 |
+| 3 | `SSHist G3` | History at G3 — same class |
+| 2 | `SS/Hist G3` | History at G3 — taken above their posting group |
+| 2 | `SS/Hist` | History at G2 |
+
+So `SS/Hist`, `SSHist` and `SS Hist` are one subject (spacing, slashes and case
+are noise), and one node in the class builder covers every student who belongs
+in that teaching group whichever way their row was filled in. Nodes whose
+membership includes students with no band in the cell are marked `*`.
+
+Real numbers from a Sec 3 grouping list, where the same class is written four
+different ways:
+
+```
+in the file                            read as
+SS/Hist      PG3   ×28   ┐
+SSHist G3    PG3   × …   ├──────────►  SS/Hist G3   ×33   (28 from PG)
+SS/Hist G3   PG2   × 5   ┘
+SS/Hist      PG2   ×17   ──────────►   SS/Hist G2   ×18   (17 from PG)
+```
+
+Ministry-coded cells (`G3 - K300`) name their class outright, so they are left
+exactly as they are — there is nothing to infer, and a K-code still matches
+itself and nothing else.
+
 ### Positional subject columns (Sub 5, Sub 6, Sub 7)
 
 Upper-secondary files list the electives in numbered slots rather than named

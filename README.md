@@ -19,6 +19,11 @@ No server, no installation, no internet — just two HTML files next to an Excel
 Works in **Google Chrome** and **Microsoft Edge** (they provide the folder-access API
 the admin page needs).
 
+**Preparing next year's files?** [`docs/conventions.md`](docs/conventions.md)
+is the one-page version for the office and the admin: what the app looks for in
+a school file, how subject bands and names should be written, and how to roll
+over to a new year.
+
 ## The deployed folder
 
 Copy the two files from `dist/` into your shared folder. After the first save it looks like:

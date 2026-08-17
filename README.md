@@ -617,6 +617,33 @@ checked against the office's list line by line; a student added in the app, who
 has no S/N of their own, falls back to their row number. **Note** is left blank
 to write in.
 
+### Undo
+
+**Ctrl+Z**, or the ↶ button in the topbar. **Ctrl+Y** (or Ctrl+Shift+Z) redoes.
+The button's tooltip names what will go — *Undo deleting the student(s)* — so
+you can tell before pressing it.
+
+It covers everything that changes the data: deletions, edits, merges of two
+records, class rules, memberships, teacher changes, request decisions, level
+updates and imports. Twenty steps are kept. Each one restores the whole picture,
+so undoing a delete brings the student back *with* their class places, not as a
+bare row.
+
+Two deliberate limits:
+
+- **Ctrl+Z inside a text box is the browser's own**, not the app's — you are
+  asking to undo your typing, not the data. Undo also stays out of the way while
+  a dialog is open.
+- **It will not reach past another admin's work.** Every step is a snapshot of
+  the whole model, so restoring one taken before their changes arrived would
+  quietly revert them and then save that away. When a merge brings something in,
+  the history is dropped and the button says why. Undo starts collecting again
+  immediately.
+
+Undo is a change like any other, so an undone step is saved (or autosaved) in
+the normal way. For anything older than the history, `backups/` still holds a
+copy of the workbook from every save.
+
 ### Opening a student
 
 **Click a name in the Students tab** — or double-click anywhere on the row — and

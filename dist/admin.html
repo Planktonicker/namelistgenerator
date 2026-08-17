@@ -547,6 +547,12 @@ dialog .actions {
   #dirtyNote.saved { background: var(--ok-soft); color: var(--ok-ink); }
   #dirtyNote.warn { background: var(--danger-soft); color: var(--danger-ink); font-weight: 600; }
   /* Live-collaboration status read as two stray hyperlinks. */
+  .iconbtn {
+    font-size: var(--fs-lg); line-height: 1; padding: 6px 10px; min-width: 36px;
+    color: var(--accent);
+  }
+  .iconbtn:disabled { color: var(--line-strong); background: var(--surface); cursor: default; }
+  .iconbtn:disabled:hover { background: var(--surface); border-color: var(--line-strong); }
   .statchip {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 3px 11px; border-radius: var(--r-full);
@@ -798,6 +804,8 @@ dialog .actions {
       </div>
       <span class="spacer"></span>
       <div class="topbar-actions">
+        <button id="undoBtn" class="iconbtn" disabled aria-label="Undo">↶</button>
+        <button id="redoBtn" class="iconbtn" disabled aria-label="Redo">↷</button>
         <button id="importBtn">Import…</button>
         <button id="reloadBtn">Reload from file</button>
         <label class="autosave" title="Save a few seconds after each change">
@@ -3963,6 +3971,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     show('mainScreen');
     refresh();
     if (!baseModel && !baseCleared) noteBase();
+    if (undoBase === null) noteUndoPoint();
     startSync();
     beatPresence();
     if (!autoUpdateRan) {
@@ -4329,6 +4338,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     savedAt = null;
     requireManualFirstSave = false;
     baseCleared = false;
+    undoStack = [];
+    redoStack = [];
+    undoBase = null;
+    undoDropped = '';
   }
 
   async function readModelFromFile(file) {
@@ -4348,6 +4361,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     loadedLastModified = file.lastModified;
     if (out.conflicts.length) openConflicts = openConflicts.concat(out.conflicts);
     mergedIn = mergedIn.concat(out.changes).concat(out.renamed);
+    /* Undo restores the whole model, so a snapshot from before their changes
+     * arrived would revert their work and then save it away. */
+    if (out.changes.length || out.conflicts.length || out.renamed.length) {
+      clearUndo('Undo history was cleared when another admin\u2019s changes came in.');
+    }
     /* If the merge produced exactly what is on disk we have nothing of our own
      * left to publish — which is what stops two editors saving at each other
      * in circles. */
@@ -4464,7 +4482,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     openConflicts = [];
     $('conflictDialog').close();
     renderSyncNote();
-    markDirty();
+    markDirty('settling the clashes');
     toast(took ? took + ' of their version(s) taken' : 'Your versions kept');
   });
 
@@ -4746,7 +4764,107 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     document.title = (v ? '● ' : '') + 'Namelist Admin';
   }
 
-  function markDirty() {
+  /* ================= undo =================
+   * Everything that changes the data goes through markDirty(), so that is
+   * where the previous state is kept. Snapshots are held as JSON text rather
+   * than as objects: the model is plain data, the string is what cloneModel
+   * would build anyway, and a thousand students cost a megabyte rather than a
+   * live object graph.
+   *
+   * The one thing undo must not do is reach back past another admin's work.
+   * A snapshot is the whole model, so restoring one taken before their changes
+   * were merged in would quietly revert them — and then save them away. When a
+   * merge brings something in, the history is dropped and says so.
+   */
+  var UNDO_LIMIT = 20;
+  var undoStack = [];      // [{ label, json }] — oldest first
+  var redoStack = [];
+  var undoBase = null;     // the model as it stood at the last settled point
+
+  function noteUndoPoint() {
+    undoBase = JSON.stringify(model);
+  }
+
+  function clearUndo(why) {
+    undoStack = [];
+    redoStack = [];
+    noteUndoPoint();
+    renderUndo();
+    if (why) undoDropped = why;
+  }
+  var undoDropped = '';
+
+  function pushUndo(label) {
+    if (undoBase === null) { noteUndoPoint(); return; }
+    undoStack.push({ label: label || 'that change', json: undoBase });
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+    redoStack = [];
+    undoDropped = '';
+    noteUndoPoint();
+  }
+
+  function applySnapshot(json) {
+    model = JSON.parse(json);
+    ix = S.buildIndexes(model);
+    selectedIds.forEach(function (id) { if (!ix.studentsById.has(id)) selectedIds.delete(id); });
+    candSelected.forEach(function (id) { if (!ix.studentsById.has(id)) candSelected.delete(id); });
+    undoBase = json;
+    setDirty(true);        // it no longer matches the file, whichever way we went
+    refresh();
+    renderUndo();
+  }
+
+  function undo() {
+    if (!undoStack.length) {
+      if (undoDropped) toast(undoDropped);
+      return;
+    }
+    var entry = undoStack.pop();
+    redoStack.push({ label: entry.label, json: JSON.stringify(model) });
+    applySnapshot(entry.json);
+    toast('Undone — ' + entry.label);
+  }
+
+  function redo() {
+    if (!redoStack.length) return;
+    var entry = redoStack.pop();
+    undoStack.push({ label: entry.label, json: JSON.stringify(model) });
+    applySnapshot(entry.json);
+    toast('Redone — ' + entry.label);
+  }
+
+  function renderUndo() {
+    var u = $('undoBtn'), r = $('redoBtn');
+    if (!u || !r) return;
+    u.disabled = !undoStack.length;
+    r.disabled = !redoStack.length;
+    u.title = undoStack.length
+      ? 'Undo ' + undoStack[undoStack.length - 1].label + '  (Ctrl+Z)'
+      : (undoDropped || 'Nothing to undo');
+    r.title = redoStack.length
+      ? 'Redo ' + redoStack[redoStack.length - 1].label + '  (Ctrl+Y)'
+      : 'Nothing to redo';
+  }
+
+  $('undoBtn').addEventListener('click', undo);
+  $('redoBtn').addEventListener('click', redo);
+
+  document.addEventListener('keydown', function (ev) {
+    if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
+    var k = ev.key.toLowerCase();
+    if (k !== 'z' && k !== 'y') return;
+    // Inside a text box the browser's own undo is the one being asked for,
+    // and mid-dialog an undo of the data underneath would be bewildering.
+    var el = document.activeElement;
+    if (el && el.matches && el.matches('input, textarea, select')) return;
+    if (document.querySelector('dialog[open]')) return;
+    ev.preventDefault();
+    if (k === 'y' || ev.shiftKey) redo();
+    else undo();
+  });
+
+  function markDirty(label) {
+    pushUndo(label);
     setDirty(true);
     refresh();
   }
@@ -4826,6 +4944,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (currentTab === 'requests') renderRequests();
     if (currentTab === 'sources') renderSources();
 
+    renderUndo();
     if (hadFocus && document.activeElement === document.body) {
       var back = document.getElementById(hadFocus);
       if (back && typeof back.focus === 'function') back.focus();
@@ -5031,7 +5150,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       return;
     }
     model.subjectKeys.push(name);
-    markDirty();
+    markDirty('adding the subject column');
   });
 
   /* The header row is rebuilt on every render (subject columns are dynamic),
@@ -5189,7 +5308,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       student.status = '';
       var back = 0;
       model.groups.forEach(function (g) { back += S.autoFillGroup(model, g, [student.id]); });
-      markDirty();
+      markDirty('putting them back on the roll');
       toast(student.name + ' is back on the roll' +
         (back ? ', in ' + back + ' class' + (back === 1 ? '' : 'es') : ''));
     }
@@ -5205,7 +5324,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     model.students = model.students.filter(function (s) { return !kill.has(s.id); });
     model.memberships = model.memberships.filter(function (m) { return !kill.has(m.studentId); });
     ids.forEach(function (id) { selectedIds.delete(id); });
-    markDirty();
+    markDirty('deleting the student(s)');
   }
 
   /* ---- selection action bar ---- */
@@ -5247,7 +5366,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var res = S.mergeStudents(model, keeper.id, loser.id);
     if (!res) return;
     selectedIds.clear();
-    markDirty();
+    markDirty('merging the two records');
     toast('Merged into ' + res.keeper.name + (res.moved ? ' — ' + res.moved + ' class(es) moved across' : ''));
   });
 
@@ -5278,7 +5397,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       var exists = model.memberships.some(function (m) { return m.studentId === id && m.groupCode === code; });
       if (!exists) { model.memberships.push({ studentId: id, groupCode: code }); added++; }
     });
-    markDirty();
+    markDirty('adding students to the class');
     toast(added + ' student' + (added === 1 ? '' : 's') + ' added to ' + (group.name || group.code) +
       (added < ids.length ? ' (' + (ids.length - added) + ' already in it)' : ''));
   }
@@ -5424,7 +5543,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         if (!key) { sel.value = ''; return; }
         if (!(model.subjectKeys || []).some(function (k) { return S.normKey(k) === S.normKey(key); })) {
           model.subjectKeys.push(key);
-          markDirty();
+          markDirty('adding the subject column');
         }
       }
       if (extraSubjectKeys.indexOf(key) === -1) extraSubjectKeys.push(key);
@@ -5576,7 +5695,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       movedBy(rec, existing);
     }
     $('studentDialog').close();
-    markDirty();
+    markDirty('the student edit');
     if (joined) toast(rec.name + ' created and put into ' + joined);
     else if (autoN) toast(rec.name + ' auto-allocated to ' + autoN + ' group' + (autoN === 1 ? '' : 's'));
   });
@@ -5657,7 +5776,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     delete g.n; delete g.suspect; delete g.why;
     model.groups.push(g);
     var placed = S.autoFillGroup(model, g);
-    markDirty();
+    markDirty('creating the class');
     return placed;
   }
 
@@ -5748,7 +5867,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       if (!confirm('Delete group "' + (group.name || code) + '"' + (n ? ' and its ' + n + ' membership(s)' : '') + '?')) return;
       model.groups = model.groups.filter(function (g) { return g.code !== code; });
       model.memberships = model.memberships.filter(function (m) { return m.groupCode !== code; });
-      markDirty();
+      markDirty('deleting the class');
     }
   });
 
@@ -6266,7 +6385,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (!name) return;
     if (!model.teachers.some(function (t) { return S.normKey(t) === S.normKey(name); })) {
       model.teachers.push(name);
-      markDirty();          // the roster changed, whether or not the class is saved
+      markDirty('adding the teacher');          // the roster changed, whether or not the class is saved
     }
     fillTeacherSelect(name);
     addDialogTeacher();
@@ -6304,7 +6423,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (!name) return;
     if (!allSubjects().some(function (t) { return S.normKey(t) === S.normKey(name); })) {
       model.subjectLabels = (model.subjectLabels || []).concat([name]);
-      markDirty();
+      markDirty('adding the subject');
     }
     $('gfSubject').dataset.userEdited = '1';
     fillSubjectSelect(name);
@@ -6322,7 +6441,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     model.subjectLabels = (model.subjectLabels || []).filter(function (t) {
       return S.normKey(t) !== S.normKey(cur);
     });
-    markDirty();
+    markDirty('removing the subject');
     fillSubjectSelect('');
     toast('"' + cur + '" removed from the subject list');
   });
@@ -6527,7 +6646,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       pendingBulkAdd = false;
       addStudentsToGroup(Array.from(selectedIds), code);
     } else {
-      markDirty();
+      markDirty('renaming the teacher');
     }
     if (autoAdded || removed) {
       toast([
@@ -6564,7 +6683,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (!group || !S.groupHasRule(group)) return;
     var added = S.autoFillGroup(model, group);
     if (added) {
-      markDirty();
+      markDirty('removing the teacher');
       toast(added + ' student' + (added === 1 ? '' : 's') + ' added by rule (' + ruleSummary(group) + ')');
     } else {
       toast('Everyone matching the rule is already in this group');
@@ -6659,7 +6778,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var id = btn.closest('tr').dataset.id;
     var code = selectedGroupCode();
     model.memberships = model.memberships.filter(function (m) { return !(m.studentId === id && m.groupCode === code); });
-    markDirty();
+    markDirty('the class list for that teacher');
   });
 
   $('memAddSelBtn').addEventListener('click', function () {
@@ -6729,7 +6848,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       model.teachers.push(to);
       toast(to + ' added — now give them their classes');
     }
-    markDirty();
+    markDirty('taking them off the class');
   }
 
   /* Start of year: forty names arrive in one message, not one at a time. */
@@ -6772,7 +6891,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     $('pasteTeachersDialog').close();
     if (!fresh.length) { toast('No new names in that list'); return; }
     fresh.forEach(function (name) { model.teachers.push(name); });
-    markDirty();
+    markDirty('marking them as left');
     toast(fresh.length + ' teacher(s) added — give them their classes with “Classes…”');
   });
 
@@ -6839,7 +6958,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         g.teachers = S.teacherNames(g).filter(function (t) { return S.normKey(t) !== S.normKey(name); });
       });
       model.teachers = (model.teachers || []).filter(function (t) { return S.normKey(t) !== S.normKey(name); });
-      markDirty();
+      markDirty('the class edit');
     }
   });
 
@@ -6970,7 +7089,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     });
     $('teacherClassesDialog').close();
     if (added || dropped) {
-      markDirty();
+      markDirty('adding the students');
       toast(tcTeacher + ': ' + (added ? added + ' class(es) added' : '') +
         (added && dropped ? ', ' : '') + (dropped ? dropped + ' removed' : ''));
     }
@@ -7025,7 +7144,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     req.status = status;
     req.decided = new Date().toISOString();
     if (note) req.note = note;
-    markDirty();
+    markDirty('removing from the class');
   }
 
   function renderRequests() {
@@ -7247,7 +7366,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (read.error) return { error: read.error };
     if (!read.items.length) return { error: 'That message has no suggestions in it.' };
     var merged = S.mergeRequests(model, read.items);
-    if (merged.added) markDirty();
+    if (merged.added) markDirty('reading in the request');
     else refresh();
     return {
       teacher: read.teacher,
@@ -7339,7 +7458,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     addDefaultLevels();
     var added = model.sources.length - before;
     if (!added) { toast('Sec 1–5 are already listed'); return; }
-    markDirty();
+    markDirty('putting them in the class');
     toast(added + ' level' + (added === 1 ? '' : 's') + ' added — now pick each one\'s file');
   });
 
@@ -7363,7 +7482,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       model.sources.push({ level: level, file: '', pattern: '', lastFile: '', lastImported: '', mapping: '' });
     }
     $('sourceDialog').close();
-    markDirty();
+    markDirty('taking them off the class');
     if (!prev) openPickFileDialog(model.sources.length - 1);
   });
 
@@ -7428,7 +7547,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     src.pattern = S.derivePattern(name);
     $('pickFileDialog').close();
     pickingIndex = null;
-    markDirty();
+    markDirty('the request decision');
     var entry = S.findByName(srcFiles, name);
     if (entry) runLevelUpdate(index, entry);   // advances to the next level once it finishes
   });
@@ -7591,7 +7710,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (act === 'del') {
       if (!confirm('Remove level "' + src.level + '" from this list? (Students are not affected.)')) return;
       model.sources.splice(i, 1);
-      markDirty();
+      markDirty('the level update');
     }
     if (act === 'switch') {
       var st = sourceStates[i];
@@ -7600,7 +7719,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         (src.file || 'the previous file') + ')')) return;
       src.file = st.alt.name;
       src.pattern = S.derivePattern(st.alt.name);
-      markDirty();
+      markDirty('the level update');
       await runLevelUpdate(i, st.alt);
     }
     if (act === 'update') {
@@ -7813,7 +7932,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     }
     src.lastFile = file.name;
     src.lastImported = new Date().toISOString();
-    markDirty();
+    markDirty('the import');
     /* Appended, not assigned: a five-level refresh reports on all five. The
      * callers clear the list once before they start. */
     lastChanges = lastChanges.concat((report.changes || []).map(function (c) {
@@ -8020,6 +8139,16 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   window.__beatNowForTest = function () { lastBeat = 0; return beatPresence(); };
   window.__presenceForTest = function () { return othersHere; };
   window.__testSetClean = function () { setDirty(false); };
+  window.__undoDepthForTest = function () { return undoStack.length; };
+  /* Applies a merge result the way a sync would, without a fake filesystem. */
+  window.__mergeForTest = function (out) {
+    model = out.model;
+    if (out.changes.length || out.conflicts.length || out.renamed.length) {
+      clearUndo('Undo history was cleared when another admin\u2019s changes came in.');
+    }
+    setDirty(true);
+    refresh();
+  };
   window.__loadModelForTest = function (m) {
     model = m;
     model.subjectKeys = model.subjectKeys || [];

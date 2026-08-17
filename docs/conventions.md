@@ -133,6 +133,10 @@ for a namelist.
 - **Build the rest on the map**, top down: level → subject → group → TG/SG.
   Answering higher up clears what hung below, and *Clear the map* starts again.
   PG lives behind *More filters* because the subject group usually implies it.
+- **Ctrl+Z undoes.** Twenty steps back, covering anything that changes the
+  data — a deletion brings the student back with their class places. The ↶
+  button in the topbar names what it will undo before you press it. It stops at
+  the point another admin's changes were merged in, and says so.
 - **Click a student's name** in the Students tab to open them — name, class, PG,
   TG/SG and every subject in one window. Fixing a subject or a band moves them
   between namelists straight away: they join the classes they now match, and you

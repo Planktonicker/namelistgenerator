@@ -481,6 +481,15 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     padding: 2px 8px; border-radius: 999px; }
   .req .tag.add { background: var(--accent-soft); color: var(--accent); }
   .req .tag.remove { background: #fdeaea; color: #a12; }
+  /* the student editor */
+  .namelink { font-weight: 600; color: var(--ink); text-align: left; }
+  .namelink:hover { color: var(--accent); text-decoration: underline; }
+  .fields .subhead {
+    grid-column: 1 / -1; margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--line);
+    font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--muted);
+  }
+
   /* two admins at once */
   .clash-bar { display: flex; align-items: center; gap: 12px; }
   .clash-bar button { margin-left: auto; }
@@ -616,9 +625,10 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         <button class="primary" id="addStudentBtn">Add student</button>
       </div>
       <div class="card">
-        <p class="hint no-print">Click rows to select students — hold <strong>Shift</strong> to select a range,
-          or use the header checkbox to select everything shown. Click any column header (including a subject)
-          to sort; students not taking that subject sort last. Then assign the selection to a group from the bar below.</p>
+        <p class="hint no-print"><strong>Click a name</strong> (or double-click the row) to open a student and
+          change their name, class or subjects. Clicking anywhere else on a row selects it — hold <strong>Shift</strong>
+          for a range, or use the header checkbox for everything shown — and the bar below assigns the selection to a
+          class. Click any column header, including a subject, to sort; students not taking that subject sort last.</p>
         <div class="tablewrap">
           <table class="list selectable" id="studentsTable">
             <thead></thead>
@@ -4610,7 +4620,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       var sel = selectedIds.has(s.id);
       return '<tr data-id="' + esc(s.id) + '"' + (sel ? ' class="selected"' : '') + '>' +
         '<td class="checkcol"><input type="checkbox" class="rowcheck" tabindex="-1"' + (sel ? ' checked' : '') + '></td>' +
-        '<td>' + esc(s.id) + '</td><td>' + esc(s.name) +
+        '<td>' + esc(s.id) + '</td>' +
+        '<td><button class="linklike namelink" data-act="open" title="Open this student">' +
+        esc(s.name) + '</button>' +
         (s.origin === S.ORIGIN_ADDED ? ' <span class="badge added" title="Added in this app — not in the school\'s file">added</span>' : '') +
         (s.sourceName && S.normKey(s.sourceName) !== S.normKey(s.name)
           ? ' <span class="badge plain" title="The school file calls them: ' + esc(s.sourceName) +
@@ -4642,6 +4654,25 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   wireRowSelection($('studentsTable').querySelector('tbody'), selectedIds, renderStudents);
 
+  /* Double-clicking a row opens it too — the same reflex as a spreadsheet,
+   * without taking single-click away from selecting. Timed by hand rather than
+   * with a dblclick listener, because selecting re-draws the row between the
+   * two clicks and the browser then sees two clicks on different elements. */
+  var lastRowClick = { id: '', at: 0 };
+  $('studentsTable').querySelector('tbody').addEventListener('click', function (ev) {
+    var tr = ev.target.closest('tr[data-id]');
+    if (!tr || ev.target.closest('button')) { lastRowClick = { id: '', at: 0 }; return; }
+    var id = tr.dataset.id;
+    var now = Date.now();
+    if (lastRowClick.id === id && now - lastRowClick.at < 500) {
+      lastRowClick = { id: '', at: 0 };
+      var s = ix.studentsById.get(id);
+      if (s) openStudentDialog(s);
+      return;
+    }
+    lastRowClick = { id: id, at: now };
+  }, true);
+
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape' && selectedIds.size && !document.querySelector('dialog[open]')) {
       selectedIds.clear();
@@ -4655,7 +4686,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var id = btn.closest('tr').dataset.id;
     var student = ix.studentsById.get(id);
     if (!student) return;
-    if (btn.dataset.act === 'edit') openStudentDialog(student);
+    if (btn.dataset.act === 'edit' || btn.dataset.act === 'open') openStudentDialog(student);
     if (btn.dataset.act === 'back') {
       student.status = '';
       var back = 0;
@@ -4761,6 +4792,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     editingStudentId = student ? student.id : null;
     reqPendingGroup = '';
     reqPendingId = '';
+    extraSubjectKeys = [];
     $('sfRequestNote').hidden = true;
     $('studentDialogTitle').textContent = student ? 'Edit student' : 'Add student';
     $('sfAddedNote').hidden = !!(student && student.origin !== S.ORIGIN_ADDED);
@@ -4842,19 +4874,98 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     $('sfTgLabel').hidden = hideTg;
 
     // Only the subject columns this level uses, each offering that level's
-    // own groups — Sec 4's POA options never appear under Sec 1.
+    // own groups — Sec 4's POA options never appear under Sec 1. Columns the
+    // admin has opened by hand stay open while the dialog is up.
     var keys = (model.subjectKeys || []).filter(function (k) {
       return pool.some(function (s) { return s.subjects && S.norm(s.subjects[k]); }) ||
-        (student && student.subjects && S.norm(student.subjects[k]));
+        (student && student.subjects && S.norm(student.subjects[k])) ||
+        extraSubjectKeys.indexOf(k) !== -1;
     });
-    $('sfSubjects').innerHTML = keys.map(function (k, i) {
-      return '<label for="sfSubj' + i + '">' + esc(k) + '</label>' +
-        '<select id="sfSubj' + i + '" data-subj="' + esc(k) + '"></select>';
-    }).join('');
+    $('sfSubjects').innerHTML =
+      '<div class="subhead">Subjects</div>' +
+      keys.map(function (k, i) {
+        return '<label for="sfSubj' + i + '">' + esc(k) + '</label>' +
+          '<select id="sfSubj' + i + '" data-subj="' + esc(k) + '"></select>';
+      }).join('') +
+      '<label for="sfAddSubject">Another subject</label>' +
+      '<div><select id="sfAddSubject"></select>' +
+      '<p class="hint" style="margin:4px 0 0">Pick <strong>Other…</strong> against a subject to type ' +
+      'a class this level has not used before.</p></div>';
     keys.forEach(function (k, i) {
       var values = poolValues(pool, function (s) { return s.subjects && s.subjects[k]; });
-      fillPick($('sfSubj' + i), values, '— not taking —',
-        (!reset && student && student.subjects && student.subjects[k]) || '');
+      var current = (!reset && student && student.subjects && student.subjects[k]) || '';
+      fillPick($('sfSubj' + i), values, '— not taking —', current, true);
+    });
+    fillAddSubject(keys);
+  }
+
+  /* Columns opened by hand in this dialog: a Sec 3 student who has picked up a
+   * subject nobody at that level takes yet still needs somewhere to put it. */
+  var extraSubjectKeys = [];
+
+  function fillAddSubject(shown) {
+    var rest = (model.subjectKeys || []).filter(function (k) {
+      return shown.indexOf(k) === -1;
+    });
+    $('sfAddSubject').innerHTML = '<option value="">— add one —</option>' +
+      rest.map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join('') +
+      '<option value="__new">A subject not listed…</option>';
+  }
+
+  $('sfSubjects').addEventListener('change', function (ev) {
+    var sel = ev.target.closest('select');
+    if (!sel) return;
+    var current = editingStudentId === null ? null : ix.studentsById.get(editingStudentId);
+
+    if (sel.id === 'sfAddSubject') {
+      var key = sel.value;
+      if (!key) return;
+      if (key === '__new') {
+        key = S.norm(prompt('Name of the subject column, as the school\'s file writes it ' +
+          '(e.g. POA, HIST, "Sub 5"):') || '');
+        if (!key) { sel.value = ''; return; }
+        if (!(model.subjectKeys || []).some(function (k) { return S.normKey(k) === S.normKey(key); })) {
+          model.subjectKeys.push(key);
+          markDirty();
+        }
+      }
+      if (extraSubjectKeys.indexOf(key) === -1) extraSubjectKeys.push(key);
+      var keep = collectSubjectPicks();
+      renderStudentFields(current);
+      restoreSubjectPicks(keep);
+      var box = $('sfSubjects').querySelector('select[data-subj="' + CSS.escape(key) + '"]');
+      if (box) box.focus();
+      return;
+    }
+
+    if (sel.dataset.subj && sel.value === '__other') {
+      var typed = S.norm(prompt('What does the file call this class?\n\n' +
+        'Write it as the school does — "HIST G3", "SS/Geo", "English Language - G2 - K200".\n' +
+        'A band left out is read from the student\'s PG.', '') || '');
+      var values = poolValues(studentLevelPool(), function (s) {
+        return s.subjects && s.subjects[sel.dataset.subj];
+      });
+      fillPick(sel, values, '— not taking —', typed, true);
+    }
+  });
+
+  /* Keeping what is on screen across a re-render of the subject rows. */
+  function collectSubjectPicks() {
+    var out = {};
+    $('sfSubjects').querySelectorAll('select[data-subj]').forEach(function (sel) {
+      if (S.norm(sel.value) && sel.value !== '__other') out[sel.dataset.subj] = sel.value;
+    });
+    return out;
+  }
+
+  function restoreSubjectPicks(picks) {
+    $('sfSubjects').querySelectorAll('select[data-subj]').forEach(function (sel) {
+      var want = picks[sel.dataset.subj];
+      if (!want) return;
+      if (!Array.prototype.some.call(sel.options, function (o) { return o.value === want; })) {
+        sel.insertBefore(new Option(want, want), sel.options[sel.options.length - 1]);
+      }
+      sel.value = want;
     });
   }
 
@@ -4902,7 +5013,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       ix.studentsById.get(editingStudentId) || {}).subjects || {};
     Object.keys(existingSubjects).forEach(function (k) { subjects[k] = existingSubjects[k]; });
     $('sfSubjects').querySelectorAll('select[data-subj]').forEach(function (sel) {
-      var v = S.norm(sel.value);
+      var v = sel.value === '__other' ? '' : S.norm(sel.value);
       if (v) subjects[sel.dataset.subj] = v;
       else delete subjects[sel.dataset.subj];
     });
@@ -4950,12 +5061,54 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         model.memberships.forEach(function (m) { if (m.studentId === editingStudentId) m.studentId = id; });
         if (selectedIds.delete(editingStudentId)) selectedIds.add(id);
       }
+      /* Correcting a subject, band, PG or class is really a statement about
+       * which classes this student belongs in, so the namelists follow rather
+       * than being left for someone to notice next term. */
+      movedBy(rec, existing);
     }
     $('studentDialog').close();
     markDirty();
     if (joined) toast(rec.name + ' created and put into ' + joined);
     else if (autoN) toast(rec.name + ' auto-allocated to ' + autoN + ' group' + (autoN === 1 ? '' : 's'));
   });
+
+  /* After an edit: put them in every rule-built class they now match, and offer
+   * to take them out of the ones they no longer do. Classes with no rule are
+   * somebody's hand-picked list and are never touched. */
+  function movedBy(rec, before) {
+    var watched = ['class', 'level', 'pg', 'tg'];
+    var changed = watched.some(function (f) {
+      return S.normKey(before[f]) !== S.normKey(rec[f]);
+    }) || JSON.stringify(before.subjects || {}) !== JSON.stringify(rec.subjects || {});
+    if (!changed) return 0;
+
+    var added = 0;
+    var addedNames = [];
+    model.groups.forEach(function (g) {
+      var n = S.autoFillGroup(model, g, [rec.id]);
+      if (n) { added += n; addedNames.push(g.name || g.code); }
+    });
+
+    var stale = (ix.groupsByStudent.get(rec.id) || []).filter(function (g) {
+      return S.groupHasRule(g) && !S.matchesRule(rec, g) &&
+        addedNames.indexOf(g.name || g.code) === -1;
+    });
+    if (stale.length && confirm(rec.name + ' no longer matches ' + stale.length +
+      ' class' + (stale.length === 1 ? '' : 'es') + ':\n' +
+      stale.map(function (g) { return '  ' + (g.name || g.code); }).join('\n') +
+      '\n\nOK — take them off those namelists\nCancel — leave them in')) {
+      var codes = {};
+      stale.forEach(function (g) { codes[g.code] = true; });
+      model.memberships = model.memberships.filter(function (m) {
+        return !(m.studentId === rec.id && codes[m.groupCode]);
+      });
+      if (!added) toast(rec.name + ' taken off ' + stale.length + ' namelist(s)');
+    }
+    if (added) {
+      toast(rec.name + ' now in ' + addedNames.slice(0, 3).join(', ') +
+        (addedNames.length > 3 ? ' and ' + (addedNames.length - 3) + ' more' : ''));
+    }
+  }
 
   /* Whichever way the form is dismissed, it stops standing for a request. */
   $('studentDialog').addEventListener('close', function () {

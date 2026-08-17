@@ -57,9 +57,9 @@ check('the classes are that level\'s classes',
 const s4subjects = await page.locator('#sfSubjects label').allInnerTexts();
 check('so are the subjects', s4subjects.includes('POA') && !s4subjects.includes('HIST'),
   s4subjects.join(','));
-check('and each subject offers that level\'s groups',
+check('and each subject offers that level\'s groups, plus a way to type a new one',
   (await page.locator('#sfSubjects select').first().locator('option').allInnerTexts())
-    .join(',') === '— not taking —,EL G2',
+    .join(',') === '— not taking —,EL G2,Other…',
   (await page.locator('#sfSubjects select').first().locator('option').allInnerTexts()).join(','));
 check('a class that does not exist yet can still be entered',
   s4classes.includes('Other…'));

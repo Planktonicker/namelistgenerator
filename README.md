@@ -268,6 +268,8 @@ wall — the app works fine with read-only access to that folder.
 - **Admins:** open `admin.html` → pick the folder (Chrome asks once per session) →
   edit → **Save**. The moment you save, every teacher who reopens the page sees the
   update. Any group's namelist can also be printed from the Group members tab.
+  **Click a student's name** (or double-click their row) to open them and change
+  anything about them — see *Opening a student* below.
 
 ## Windows shared-drive notes
 
@@ -614,6 +616,37 @@ when it has none. **S/N is the school's own serial number**, captured from the
 checked against the office's list line by line; a student added in the app, who
 has no S/N of their own, falls back to their row number. **Note** is left blank
 to write in.
+
+### Opening a student
+
+**Click a name in the Students tab** — or double-click anywhere on the row — and
+that student opens. (Single-clicking elsewhere on a row still selects it for the
+bulk actions, and the row's *Edit* link still works.)
+
+Everything about them is in one window: their name, level, class, gender, PG,
+TG/SG, and one row per subject.
+
+**The name.** Typed in capitals as you go, because that is how a printed namelist
+should read. When the school's file spells it differently, the window says so —
+*The school file calls them "Aiden Lim". Your version is kept on every update* —
+because the file's own spelling is what future imports match on, and it is kept
+alongside your correction rather than replaced by it.
+
+**The subjects.** Each column offers what that level actually uses (Sec 4's POA
+options never appear under Sec 1), plus two ways out of that list:
+
+- **Other…** on any subject lets you type the allocation as the file writes it —
+  `HIST G3`, `SS/Geo`, `English Language - G2 - K200` — for a class this level has
+  not used before. A band left out is still read from the student's PG.
+- **Another subject** at the bottom adds a column this level does not use, or
+  creates one that does not exist anywhere yet.
+
+**The namelists follow.** Correcting a subject, band, PG, class or level is really
+a statement about which classes the student belongs in, so when you press OK they
+are added to every rule-built class they now match, and you are asked before they
+come off any they no longer match. Classes with no rule are somebody's hand-picked
+list and are never touched. This is the difference between fixing the data and
+having to remember to fix the namelists too.
 
 ### Suggestions from teachers
 

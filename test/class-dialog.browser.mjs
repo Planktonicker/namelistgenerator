@@ -151,11 +151,11 @@ check('ticking a second group in the same column widens the class', /[1-9]/.test
 await page.locator('.tabs button[data-tab="groups"]').click();
 await page.click('#addGroupBtn');
 await page.locator('#gfTgTicks label').filter({ hasText: /^SG2\b/ }).first().click();
-await page.fill('#gfCode', 'SG2-ONLY');
+await page.fill('#gfName', 'SG2 only');
 await page.click('#groupForm button[type="submit"]');
 await page.waitForTimeout(400);
 await page.locator('.tabs button[data-tab="memberships"]').click();
-await page.selectOption('#memGroupSelect', 'SG2-ONLY');
+await page.selectOption('#memGroupSelect', 'SG2 only');
 const sgClasses = new Set((await page.locator('#memTable tbody tr').allInnerTexts())
   .map((t) => t.split('\t')[2]));
 check('a subject group cuts across form classes',

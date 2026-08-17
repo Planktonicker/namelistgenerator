@@ -78,7 +78,9 @@ check('discovers the teaching classes in the file',
   (await page.locator('#countGroups').innerText()) === '50', await page.locator('#countGroups').innerText());
 await page.fill('#groupSearch', 'K300');
 const row = page.locator('#groupsTable tbody tr').first();
-check('a discovered class is named from the cell', (await row.innerText()).includes('English Language - G3'));
+check('a discovered class is named from the cell, with its code beside it',
+  (await row.innerText()).includes('English Language - G3') && (await row.innerText()).includes('K300'),
+  (await row.innerText()).replace(/\s+/g, ' '));
 await page.locator('.tabs button[data-tab="memberships"]').click();
 await page.selectOption('#memGroupSelect', 'K300');
 check('K300 has all 82 students the file gives it',
@@ -113,7 +115,11 @@ await page.selectOption('#gfTeacher', 'Mr Tan');
 await page.click('#gfTeacherAdd');
 check('two teachers can be tagged to one class',
   (await page.locator('#gfTeacherChips .chip').count()) === 2);
-check('the class rule opens on its own column, already ticked',
+check('a school code is kept and shown, since the name does not carry it',
+  !(await page.locator('#gfCodeRow').isHidden()) &&
+  (await page.locator('#gfCode').inputValue()) === 'K300',
+  await page.locator('#gfCode').inputValue());
+check('the rule opens on its own column, already ticked',
   (await page.locator('#gfAutoKey').inputValue()).includes('English Language') &&
   (await page.locator('#gfValueTicks label.on').count()) === 1,
   await page.locator('#gfAutoKey').inputValue());

@@ -48,9 +48,11 @@ check('and with those students already selected',
   (await page.locator('#groupDialogTitle').innerText()).includes('78 selected'),
   await page.locator('#groupDialogTitle').innerText());
 check('the class is named for you, so OK is all that is left',
-  (await page.locator('#gfCode').inputValue()).length > 0 &&
   (await page.locator('#gfName').inputValue()).includes('GEOG G3'),
   await page.locator('#gfName').inputValue());
+check('the class code is the name — not a second thing to fill in',
+  (await page.locator('#gfCodeRow').isHidden()) &&
+  (await page.locator('#gfCode').inputValue()) === (await page.locator('#gfName').inputValue()));
 await page.selectOption('#gfTeacher', { index: 0 });
 await page.click('#gfTeacherAdd');
 await page.click('#groupForm button[type="submit"]');

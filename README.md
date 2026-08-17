@@ -396,6 +396,14 @@ are not in the way.
 | **Limit to classes** | tick the form classes |
 | **Members** | everyone currently on the namelist, each with a tick — untick anyone who should not be there |
 
+The class has **one name**, and that name is also its code — there is no second
+field to keep in step. A code only appears when it says something the name does
+not: classes discovered from a ministry-format file keep the school's own code
+(`K300`) and show it beside the name in the list and under **Advanced — class
+code…** in the dialog, where it can also be set by hand if your school files
+expect a particular code. Renaming a class carries its code (and its students)
+along, unless you gave it a code of its own.
+
 Ticking nothing means "any", and a student whose Level cell the office left
 blank is never excluded by the level — being unknown must not mean disappearing
 from every namelist. The warnings panel lists anyone who ends up in no class at

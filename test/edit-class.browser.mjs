@@ -24,17 +24,17 @@ await page.evaluate(() => { const d = window.NAMELIST_DATA;
 await page.locator('.tabs button[data-tab="groups"]').click();
 await page.click('#addGroupBtn');
 await page.click('#gfTeacherNew');
-await page.fill('#gfCode', 'S1-HIST-TEST');
+await page.fill('#gfName', 'S1 HIST test');
 await page.click('#groupForm button[type="submit"]');
 await page.waitForTimeout(300);
 await page.locator('.tabs button[data-tab="memberships"]').click();
-await page.selectOption('#memGroupSelect', 'S1-HIST-TEST');
+await page.selectOption('#memGroupSelect', 'S1 HIST test');
 const start = parseInt(await page.locator('#memCount').innerText(), 10);
 check('a class with only a Level takes that whole level (' + start + ')', start === 156);
 
 // now EDIT it and give it a rule — this used to do nothing
 await page.locator('.tabs button[data-tab="groups"]').click();
-await page.fill('#groupSearch', 'S1-HIST-TEST');
+await page.fill('#groupSearch', 'S1 HIST test');
 await page.locator('#groupsTable tbody tr').first().locator('button[data-act="edit"]').click();
 check('the dialog lists the current members up front',
   (await page.locator('#gfMemberNote').innerText()).includes('156 of 156 ticked'));
@@ -46,7 +46,7 @@ check('the live count says how many the rule takes',
 await page.click('#groupForm button[type="submit"]');   // accepts the "no longer match" prompt
 await page.waitForTimeout(500);
 await page.locator('.tabs button[data-tab="memberships"]').click();
-await page.selectOption('#memGroupSelect', 'S1-HIST-TEST');
+await page.selectOption('#memGroupSelect', 'S1 HIST test');
 const filled = parseInt(await page.locator('#memCount').innerText(), 10);
 check('narrowing the rule on edit re-applies it (' + filled + ' of 156)',
   filled > 0 && filled < 156);
@@ -63,7 +63,7 @@ check('unticking stages the removals',
 await page.click('#groupForm button[type="submit"]');
 await page.waitForTimeout(400);
 await page.locator('.tabs button[data-tab="memberships"]').click();
-await page.selectOption('#memGroupSelect', 'S1-HIST-TEST');
+await page.selectOption('#memGroupSelect', 'S1 HIST test');
 check('removing from the dialog sticks (' + filled + ' -> ' +
   (await page.locator('#memCount').innerText()) + ')',
   parseInt(await page.locator('#memCount').innerText(), 10) === filled - 2);
@@ -74,7 +74,7 @@ await page.locator('#groupsTable tbody tr').first().locator('button[data-act="ed
 await page.click('#groupForm button[type="submit"]');
 await page.waitForTimeout(300);
 await page.locator('.tabs button[data-tab="memberships"]').click();
-await page.selectOption('#memGroupSelect', 'S1-HIST-TEST');
+await page.selectOption('#memGroupSelect', 'S1 HIST test');
 check('an unchanged rule does not undo manual removals',
   parseInt(await page.locator('#memCount').innerText(), 10) === filled - 2);
 check('no JS errors', errors.length === 0, errors.slice(0, 2).join('|'));

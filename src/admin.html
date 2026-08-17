@@ -181,7 +181,7 @@
       </div>
       <div class="card">
         <table class="list" id="groupsTable">
-          <thead><tr><th>Code</th><th>Class name</th><th>Subject</th><th>Teachers</th><th>Level</th><th>Auto-fill</th><th>Members</th><th></th></tr></thead>
+          <thead><tr><th>Class</th><th>Subject</th><th>Teachers</th><th>Level</th><th>Auto-fill</th><th>Members</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
         <p class="empty" id="groupsEmpty" hidden>No teaching groups yet — use <strong>Add group</strong>.</p>
@@ -381,9 +381,19 @@
           <button type="button" id="gfManageMembers">Add students…</button>
         </div>
       </div>
-      <label for="gfCode">Group code *</label><input type="text" id="gfCode" required placeholder="e.g. EL-G3">
-      <label for="gfName">Group name</label><input type="text" id="gfName" placeholder="e.g. English G3">
+      <label for="gfName">Class name *</label><input type="text" id="gfName" required placeholder="e.g. English G3 1R1">
       <label for="gfSubject">Subject label</label><input type="text" id="gfSubject" list="subjectList" placeholder="shown on the teacher page">
+      <label id="gfCodeToggleLabel" hidden></label>
+      <div id="gfCodeToggleRow" hidden>
+        <button type="button" class="linklike" id="gfCodeBtn">Advanced — class code…</button>
+      </div>
+      <label for="gfCode" id="gfCodeLabel" hidden>Class code</label>
+      <div id="gfCodeRow" hidden>
+        <input type="text" id="gfCode" placeholder="same as the class name">
+        <p class="hint" style="margin:4px 0 0">Only worth changing to match a code the school already
+          uses (<code>K300</code>). Left alone it is the class name, and it stays with the class if you
+          rename it.</p>
+      </div>
       <div class="actions">
         <button type="button" id="groupCancelBtn">Cancel</button>
         <button type="submit" class="primary">OK</button>
@@ -1669,8 +1679,10 @@
     var tbody = $('groupsTable').querySelector('tbody');
     tbody.innerHTML = rows.map(function (g) {
       var n = (ix.membersByGroup.get(g.code) || []).length;
+      var codeNote = S.normKey(g.code) === S.normKey(g.name || '')
+        ? '' : ' <span class="badge plain" title="Class code">' + esc(g.code) + '</span>';
       return '<tr data-code="' + esc(g.code) + '">' +
-        '<td>' + esc(g.code) + '</td><td>' + esc(g.name) + '</td><td>' + esc(g.subject) + '</td>' +
+        '<td>' + esc(g.name || g.code) + codeNote + '</td><td>' + esc(g.subject) + '</td>' +
         '<td>' + esc(S.teacherNames(g).join(', ')) + '</td><td>' + esc(g.level) + '</td>' +
         '<td class="tags">' + esc(ruleSummary(g)) + '</td><td>' + n + '</td>' +
         '<td class="actions"><button class="linklike" data-act="edit">Edit</button>' +
@@ -1878,10 +1890,8 @@
     // A level already reads "Sec 1"; only a bare number wants the S prefix.
     var lead = /^\d+$/.test(lvl) ? 'S' + lvl : lvl;
     var label = (lead ? lead + ' ' : '') + base + (qualifier ? ' ' + qualifier : '');
-    if (!$('gfCode').dataset.userEdited) {
-      $('gfCode').value = label.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    }
     if (!$('gfName').dataset.userEdited) $('gfName').value = label;
+    if (!$('gfCode').dataset.userEdited) $('gfCode').value = $('gfName').value;
     if (!$('gfSubject').dataset.userEdited && key) $('gfSubject').value = key;
   }
 
@@ -1897,6 +1907,18 @@
   ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
     $(id).addEventListener('input', function () { $(id).dataset.userEdited = '1'; });
   });
+  $('gfName').addEventListener('input', function () {
+    // One name, one code — unless the admin has deliberately set a code.
+    if (!$('gfCode').dataset.userEdited) $('gfCode').value = $('gfName').value;
+  });
+  $('gfCodeBtn').addEventListener('click', function () { showCodeRow(true); });
+
+  function showCodeRow(show) {
+    $('gfCodeLabel').hidden = !show;
+    $('gfCodeRow').hidden = !show;
+    $('gfCodeToggleLabel').hidden = show;
+    $('gfCodeToggleRow').hidden = show;
+  }
 
   /* Teachers are tagged as chips — several may share one class, the way the
    * setup grid ticks more than one teacher per row. */
@@ -2040,8 +2062,9 @@
     $('groupDialogTitle').textContent = group ? 'Edit class' :
       (pendingBulkAdd ? 'New class for ' + selectedIds.size + ' selected student(s)' : 'Add class');
     $('gfCode').value = group ? group.code : '';
-    $('gfName').value = group ? group.name : '';
+    $('gfName').value = group ? (group.name || group.code) : '';
     $('gfSubject').value = group ? group.subject : '';
+    showCodeRow(!!group && S.normKey(group.code) !== S.normKey(group.name || ''));
     dialogTeachers = group ? S.teacherNames(group).slice() : [];
     renderTeacherChips();
     fillTeacherSelect();
@@ -2069,6 +2092,11 @@
       if (group) $(id).dataset.userEdited = '1';       // never rewrite an existing group's identity
       else delete $(id).dataset.userEdited;
     });
+    /* A class whose code is just its name keeps the two in step when renamed;
+     * one carrying the school's own code (K300) keeps that code. */
+    if (group && S.normKey(group.code) === S.normKey(group.name || '')) {
+      delete $('gfCode').dataset.userEdited;
+    }
     renderDialogMembers();
     // A class opened from a coverage gap arrives with its rule already ticked,
     // so name it as if those ticks had been made by hand.
@@ -2080,19 +2108,26 @@
   $('groupCancelBtn').addEventListener('click', function () { pendingBulkAdd = false; $('groupDialog').close(); });
   $('groupForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
-    var code = S.norm($('gfCode').value);
+    var name = S.norm($('gfName').value);
+    if (!name) return;
+    var code = S.norm($('gfCode').value) || name;
+    /* An auto-derived code that clashes is nudged rather than refused — two
+     * classes may legitimately be called the same thing in different levels. */
+    if (!S.norm($('gfCode').value) && code !== editingGroupCode) {
+      var base = code, n = 2;
+      while (ix.groupsByCode.get(code) && code !== editingGroupCode) code = base + ' ' + (n++);
+    }
     var rec = {
-      code: code, name: S.norm($('gfName').value), subject: S.norm($('gfSubject').value),
+      code: code, name: name, subject: S.norm($('gfSubject').value),
       teachers: dialogTeachers.slice(), level: S.norm($('gfLevel').value),
       autoMatch: S.matchersToString(dialogCriteria),
       autoPg: dialogPgs.join(', '),
       autoTg: dialogTgs.join(', '),
       autoClasses: dialogClasses.join(', '),
     };
-    if (!code) return;
     var clash = ix.groupsByCode.get(code);
     if (clash && code !== editingGroupCode) {
-      alert('Group code "' + code + '" is already used by "' + (clash.name || clash.code) + '".');
+      alert('Class code "' + code + '" is already used by "' + (clash.name || clash.code) + '".');
       return;
     }
     var isNew = editingGroupCode === null;

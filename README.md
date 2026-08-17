@@ -173,6 +173,7 @@ build.mjs                inlines vendor/shared assets → self-contained dist/ p
 tools/gen-sample.cjs     deterministic sample data → sample/
 test/roundtrip.test.cjs  schema round-trip + validation tests
 test/conflict.browser.mjs  save/conflict/backup path against a fake filesystem
+test/allocation-format.browser.mjs  ministry-format import -> discover -> teach
 ```
 
 Requires only Node (no npm packages):
@@ -188,7 +189,56 @@ browser test that needs Playwright installed:
 
 ```
 PLAYWRIGHT_CHROMIUM=/path/to/chromium node test/conflict.browser.mjs
+PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \
+  node test/allocation-format.browser.mjs
 ```
+
+### Source file layouts
+
+Two shapes of school file are recognised automatically.
+
+**Fixed subject columns** — one column per subject, the band in the cell:
+
+| Name | Class | PG | EL | MT | MA |
+|---|---|---|---|---|---|
+| … | 1R1 | 3 | EL G3 | CL G3 | MA G3 |
+
+**Positional subject slots** (the ministry allocation format) — generic
+`Subject 1 … Subject 20` columns, with the subject named inside the cell as
+`Subject - Band - Code`:
+
+| Class Name | Reg# | Student Name | Subject 1 | Subject 2 |
+|---|---|---|---|---|
+| 3S1 | 1 | … | English Language - G2 - K200 | Mathematics - G2 - K210 |
+
+For the second shape the app splits each cell into subject, band and class
+code, so the students table still shows one readable column per subject
+(*English Language*, *Mathematics*, …) rather than *Subject 1…20*. The code
+(`K200`) identifies the teaching class, so **Find classes in the data** in the
+Teaching groups tab creates every class the file already implies, allocates
+its students, and leaves you only to tag teachers. Register numbers, where
+present, give stable ids (`3S1-01`).
+
+Cells without a band or a code are ignored, which quietly filters out the
+notes admins leave in spare slot columns.
+
+### Teachers and classes
+
+A class can be taught by **several teachers** — add them as chips in the class
+dialog; each of them sees the class under their own name. A class also has:
+
+- a **Level label**, which is only how the teacher page groups the class
+  ("Sec 3"); and
+- rule fields — **Only this level**, **PG**, **classes**, and any number of
+  **must be taking** criteria — which decide who is allocated to it.
+
+Keeping those separate matters: a class discovered from a file gets a level
+label but no level *filter*, so a student whose Level cell the office left
+blank still lands in their classes instead of vanishing from every namelist.
+The warnings panel lists any student who ends up in no class at all.
+
+Several criteria can apply at once, which is what reproduces a query like
+"Level 3, PG3, SG = 3 A, Subject = SS/Geo" from a setup grid.
 
 ### Two people editing at once
 
@@ -214,9 +264,10 @@ containing `sample/namelist.xlsx`.
 
 | Sheet | Columns |
 |---|---|
-| Students | StudentID, Name, Class, Gender, PG, then one column per subject/band (EL, MT, MA, …) |
-| Groups | GroupCode, GroupName, Subject, Teacher |
+| Students | StudentID, Name, Class, Level, Gender, PG, Origin, then one column per subject |
+| Groups | GroupCode, GroupName, Subject, Teachers, Level, AutoMatch, AutoLevel, AutoPG, AutoClasses |
 | Memberships | StudentID, GroupCode |
+| Sources | Level, SourceFile, FilePattern, LastFile, LastImported |
 
 On the Students sheet, any header that isn't one of the fixed five is treated as a
 subject/band column holding that student's allocation (e.g. `EL G3`, `CL G2`) —

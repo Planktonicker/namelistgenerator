@@ -24,10 +24,10 @@ const MT_LANGS = ['CL', 'ML', 'TL'];
 const EL_TEACHERS = ['Mrs Lim Bee Leng', 'Mr Daniel Tan', 'Ms Nur Aisyah', 'Mrs Grace Chua', 'Mr Marcus Lee', 'Mdm Sarimah Bakar'];
 const MA_TEACHERS = ['Mr Rajesh Kumar', 'Mdm Halimah Yusof', 'Ms Serene Goh', 'Mr Alvin Ong', 'Mrs Doris Koh', 'Mr Wei Jie Chan'];
 const BAND_GROUPS = [
-  { code: 'SCI-G3', name: 'Science G3', subject: 'Science', teacher: 'Dr Sarah Loh', key: 'SCI', value: 'SCI G3' },
-  { code: 'HIST-G3', name: 'History G3', subject: 'History', teacher: 'Ms Priyanka Nair', key: 'HIST', value: 'HIST G3' },
-  { code: 'GEOG-G2', name: 'Geography G2', subject: 'Geography', teacher: 'Mr Kenneth Sim', key: 'GEOG', value: 'GEOG G2' },
-  { code: 'LIT-G3', name: 'Literature G3', subject: 'Literature', teacher: 'Mrs Evelyn Phua', key: 'LIT', value: 'LIT G3' },
+  { code: 'SCI-G3', name: 'Science G3', subject: 'Science', teachers: ['Dr Sarah Loh', 'Mr Benjamin Teo'], key: 'SCI', value: 'SCI G3' },
+  { code: 'HIST-G3', name: 'History G3', subject: 'History', teachers: ['Ms Priyanka Nair'], key: 'HIST', value: 'HIST G3' },
+  { code: 'GEOG-G2', name: 'Geography G2', subject: 'Geography', teachers: ['Mr Kenneth Sim'], key: 'GEOG', value: 'GEOG G2' },
+  { code: 'LIT-G3', name: 'Literature G3', subject: 'Literature', teachers: ['Mrs Evelyn Phua'], key: 'LIT', value: 'LIT G3' },
 ];
 
 function buildSampleModel() {
@@ -42,18 +42,21 @@ function buildSampleModel() {
 
   CLASSES.forEach((cls, c) => {
     model.groups.push({
-      code: 'EL-' + cls, name: 'English ' + cls, subject: 'English Language', teacher: EL_TEACHERS[c],
-      autoKey: 'EL', autoValue: '', autoClasses: cls,
+      code: 'EL-' + cls, name: 'English ' + cls, subject: 'English Language',
+      teachers: [EL_TEACHERS[c]], level: '1',
+      autoMatch: 'EL=', autoLevel: '1', autoPg: '', autoClasses: cls,
     });
     model.groups.push({
-      code: 'MA-' + cls, name: 'Mathematics ' + cls, subject: 'Mathematics', teacher: MA_TEACHERS[c],
-      autoKey: 'MA', autoValue: '', autoClasses: cls,
+      code: 'MA-' + cls, name: 'Mathematics ' + cls, subject: 'Mathematics',
+      teachers: [MA_TEACHERS[c]], level: '1',
+      autoMatch: 'MA=', autoLevel: '1', autoPg: '', autoClasses: cls,
     });
   });
   BAND_GROUPS.forEach((g) => {
     model.groups.push({
-      code: g.code, name: g.name, subject: g.subject, teacher: g.teacher,
-      autoKey: g.key, autoValue: g.value, autoClasses: '',
+      code: g.code, name: g.name, subject: g.subject,
+      teachers: g.teachers, level: '1',
+      autoMatch: g.key + '=' + g.value, autoLevel: '1', autoPg: '', autoClasses: '',
     });
   });
 
@@ -76,7 +79,7 @@ function buildSampleModel() {
         LIT: 'LIT ' + g,
       };
       if (n % 7 === 0) subjects.HMT = n % 3 === 0 ? 'CHINESE' : 'MALAY';
-      const student = { id, name, class: cls, gender, pg, origin: S.ORIGIN_FILE, subjects };
+      const student = { id, name, class: cls, level: '1', gender, pg, origin: S.ORIGIN_FILE, subjects };
       model.students.push(student);
 
       model.memberships.push({ studentId: id, groupCode: 'EL-' + cls });

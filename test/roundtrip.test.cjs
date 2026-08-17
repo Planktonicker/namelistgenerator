@@ -45,11 +45,11 @@ test('data.js output evaluates and matches the model', () => {
 test('header aliases, subject columns, and messy input are tolerated', () => {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-    ['Student ID', 'Full Name', 'Form Class', 'Sex', 'Posting Group', 'EL', 'MT'],
-    [' s001 ', '  Alice Tan ', '1R1', 'F', '3', 'EL G3', 'CL G2'],
-    ['', '', '', '', '', '', ''],                      // blank row: skipped silently
-    ['s002', 'Bob Lim', '1R2', 'M', '2', 'EL G2', ''], // empty subject cell: key omitted
-    ['', 'No Id Here', '1R3', 'M', '1', '', ''],       // missing ID: skipped with warning
+    ['Student ID', 'Full Name', 'Form Class', 'Level', 'Sex', 'Posting Group', 'EL', 'MT'],
+    [' s001 ', '  Alice Tan ', '1R1', '1', 'F', '3', 'EL G3', 'CL G2'],
+    ['', '', '', '', '', '', '', ''],                        // blank row: skipped silently
+    ['s002', 'Bob Lim', '1R2', '1', 'M', '2', 'EL G2', ''],  // empty subject cell: key omitted
+    ['', 'No Id Here', '1R3', '1', 'M', '1', '', ''],        // missing ID: skipped with warning
   ]), 'students');                                     // lowercase sheet name still matches
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['GroupCode', 'GroupName', 'Subject', 'Teacher']]), 'Groups');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['StudentID', 'GroupCode']]), 'Memberships');
@@ -58,7 +58,7 @@ test('header aliases, subject columns, and messy input are tolerated', () => {
   assert.strictEqual(model.students.length, 2);
   assert.deepStrictEqual(model.subjectKeys, ['EL', 'MT']);
   assert.deepStrictEqual(model.students[0],
-    { id: 's001', name: 'Alice Tan', class: '1R1', gender: 'F', pg: '3', origin: 'file', subjects: { EL: 'EL G3', MT: 'CL G2' } });
+    { id: 's001', name: 'Alice Tan', class: '1R1', level: '1', gender: 'F', pg: '3', origin: 'file', subjects: { EL: 'EL G3', MT: 'CL G2' } });
   assert.deepStrictEqual(model.students[1].subjects, { EL: 'EL G2' });
   assert.ok(warnings.some((w) => w.includes('row 5')), 'expected a skipped-row warning');
 });
@@ -85,7 +85,7 @@ test('importStudents: auto-IDs, subject columns, skipped rows', () => {
   ];
   const res = S.importStudents(rows, {
     headerRow: 1,
-    cols: { id: null, name: 1, class: 2, gender: 3, pg: 4 },
+    cols: { id: null, name: 1, class: 2, gender: 3, pg: 4, level: null },
     subjectCols: [{ index: 5, header: 'TG' }, { index: 6, header: 'EL' }, { index: 7, header: 'MT' }],
   });
   assert.strictEqual(res.students.length, 3);
@@ -93,7 +93,7 @@ test('importStudents: auto-IDs, subject columns, skipped rows', () => {
   assert.deepStrictEqual(res.students[0].subjects, { TG: 'TG1', EL: 'EL G3', MT: 'CL G2' });
   assert.deepStrictEqual(res.students[1].subjects, { TG: 'TG2', EL: 'EL G2' }); // empty cell omitted
   assert.deepStrictEqual(res.students[2],
-    { id: '1R2-01', name: 'Carol', class: '1R2', gender: 'F', pg: '1', origin: 'file', subjects: { TG: 'TG1', EL: 'EL G1', MT: 'ML G1' } });
+    { id: '1R2-01', name: 'Carol', class: '1R2', level: '', gender: 'F', pg: '1', origin: 'file', subjects: { TG: 'TG1', EL: 'EL G1', MT: 'ML G1' } });
   assert.strictEqual(res.warnings.length, 1);
   assert.ok(res.warnings[0].includes('no name'));
 });
@@ -125,7 +125,7 @@ test('applyLevelUpdate matches by name, keeps IDs and memberships, scopes column
       { id: '1R1-02', name: 'Bob Lim', class: '1R1', gender: 'M', pg: '2', subjects: { EL: 'EL G2', MT: 'ML G2' } },
       { id: '2R1-01', name: 'Sec Two Kid', class: '2R1', gender: 'M', pg: '1', subjects: { EL: 'EL G1' } },
     ],
-    groups: [{ code: 'G1', name: 'G', subject: 'X', teacher: 'T' }],
+    groups: [{ code: 'G1', name: 'G', subject: 'X', teachers: ['T'] }],
     memberships: [
       { studentId: '1R1-01', groupCode: 'G1' },
       { studentId: '2R1-01', groupCode: 'G1' },
@@ -160,11 +160,11 @@ test('applyLevelUpdate matches by name, keeps IDs and memberships, scopes column
 test('students added in the app survive level updates and are adopted on match', () => {
   const model = {
     students: [
-      { id: '1R1-01', name: 'From File', class: '1R1', gender: 'F', pg: '3', origin: 'file', subjects: { EL: 'EL G3' } },
-      { id: '1R1-27', name: 'Late Transfer', class: '1R1', gender: 'M', pg: '2', origin: 'added', subjects: { EL: 'EL G2' } },
-      { id: '1R1-28', name: 'Also Added', class: '1R1', gender: 'F', pg: '1', origin: 'added', subjects: { EL: 'EL G1' } },
+      { id: '1R1-01', name: 'From File', class: '1R1', level: '1', gender: 'F', pg: '3', origin: 'file', subjects: { EL: 'EL G3' } },
+      { id: '1R1-27', name: 'Late Transfer', class: '1R1', level: '1', gender: 'M', pg: '2', origin: 'added', subjects: { EL: 'EL G2' } },
+      { id: '1R1-28', name: 'Also Added', class: '1R1', level: '1', gender: 'F', pg: '1', origin: 'added', subjects: { EL: 'EL G1' } },
     ],
-    groups: [{ code: 'G1', name: 'G', subject: 'X', teacher: 'T' }],
+    groups: [{ code: 'G1', name: 'G', subject: 'X', teachers: ['T'] }],
     memberships: [{ studentId: '1R1-27', groupCode: 'G1' }],
     subjectKeys: ['EL'],
     sources: [],
@@ -172,8 +172,8 @@ test('students added in the app survive level updates and are adopted on match',
   // The school's file lists only the original student, plus (finally) one of
   // the added ones. Neither added student may be proposed for removal.
   const imported = [
-    { id: 'x', name: 'From File', class: '1R1', gender: 'F', pg: '3', origin: 'file', subjects: { EL: 'EL G3' } },
-    { id: 'y', name: 'Late Transfer', class: '1R1', gender: 'M', pg: '2', origin: 'file', subjects: { EL: 'EL G1' } },
+    { id: 'x', name: 'From File', class: '1R1', level: '1', gender: 'F', pg: '3', origin: 'file', subjects: { EL: 'EL G3' } },
+    { id: 'y', name: 'Late Transfer', class: '1R1', level: '1', gender: 'M', pg: '2', origin: 'file', subjects: { EL: 'EL G1' } },
   ];
   const report = S.applyLevelUpdate(model, imported, ['EL']);
   assert.strictEqual(report.updated, 2);
@@ -290,15 +290,15 @@ test('findNewestMatch picks the latest matching file and skips lock files', () =
 test('auto-fill rules match bands and class prefixes, never remove, respect onlyIds', () => {
   const model = {
     students: [
-      { id: '1R1-01', name: 'A', class: '1R1', gender: 'F', pg: '3', subjects: { EL: 'EL G3', HMT: 'CHINESE' } },
-      { id: '1R2-01', name: 'B', class: '1R2', gender: 'M', pg: '3', subjects: { EL: 'el g3' } },  // case-insensitive value
-      { id: '1R2-02', name: 'C', class: '1R2', gender: 'M', pg: '2', subjects: { EL: 'EL G2' } },
-      { id: '2R1-01', name: 'D', class: '2R1', gender: 'F', pg: '3', subjects: { EL: 'EL G3' } },
+      { id: '1R1-01', name: 'A', class: '1R1', level: '1', gender: 'F', pg: '3', subjects: { EL: 'EL G3', HMT: 'CHINESE' } },
+      { id: '1R2-01', name: 'B', class: '1R2', level: '1', gender: 'M', pg: '3', subjects: { EL: 'el g3' } },  // case-insensitive value
+      { id: '1R2-02', name: 'C', class: '1R2', level: '1', gender: 'M', pg: '2', subjects: { EL: 'EL G2' } },
+      { id: '2R1-01', name: 'D', class: '2R1', level: '2', gender: 'F', pg: '3', subjects: { EL: 'EL G3' } },
     ],
     groups: [
-      { code: 'ELG3-S1', name: '', subject: '', teacher: '', autoKey: 'EL', autoValue: 'EL G3', autoClasses: '1R' },
-      { code: 'HMT-ALL', name: '', subject: '', teacher: '', autoKey: 'HMT', autoValue: '', autoClasses: '' },
-      { code: 'MANUAL', name: '', subject: '', teacher: '', autoKey: '', autoValue: '', autoClasses: '' },
+      { code: 'ELG3-S1', name: '', subject: '', teachers: [], level: '', autoMatch: 'EL=EL G3', autoLevel: '', autoPg: '', autoClasses: '1R' },
+      { code: 'HMT-ALL', name: '', subject: '', teachers: [], level: '', autoMatch: 'HMT=', autoLevel: '', autoPg: '', autoClasses: '' },
+      { code: 'MANUAL', name: '', subject: '', teachers: [], level: '', autoMatch: '', autoLevel: '', autoPg: '', autoClasses: '' },
     ],
     memberships: [],
     subjectKeys: ['EL', 'HMT'],
@@ -322,13 +322,96 @@ test('auto-fill rules match bands and class prefixes, never remove, respect only
   assert.strictEqual(S.autoFillGroup(model, model.groups[2]), 0);
 });
 
+test('a class can be shared by several teachers', () => {
+  const model = {
+    students: [{ id: 'S1', name: 'A', class: '3S1', level: '3', gender: 'M', pg: 'PG3', subjects: { SG: '3 A' } }],
+    groups: [{
+      code: 'G1', name: 'Hist 3 A', subject: 'Hist',
+      teachers: ['Teacher 1', 'Teacher 2'], level: '3',
+      autoMatch: 'SG=3 A', autoLevel: '3', autoPg: '', autoClasses: '',
+    }],
+    memberships: [{ studentId: 'S1', groupCode: 'G1' }],
+    subjectKeys: ['SG'],
+    sources: [],
+  };
+  const ix = S.buildIndexes(model);
+  assert.deepStrictEqual(ix.teachers, ['Teacher 1', 'Teacher 2']);
+  assert.strictEqual(ix.groupsByTeacher.get('Teacher 1')[0].code, 'G1');
+  assert.strictEqual(ix.groupsByTeacher.get('Teacher 2')[0].code, 'G1');
+
+  // teachers survive the xlsx round-trip as a list
+  const back = S.workbookToModel(XLSX.read(
+    XLSX.write(S.modelToWorkbook(model), { bookType: 'xlsx', type: 'array' }), { type: 'array' }));
+  assert.deepStrictEqual(back.model.groups[0].teachers, ['Teacher 1', 'Teacher 2']);
+  assert.strictEqual(back.model.groups[0].level, '3');
+  // a legacy single "Teacher" column still reads
+  assert.deepStrictEqual(S.parseTeachers('Solo Teacher'), ['Solo Teacher']);
+});
+
+test('rules key on Level + PG + group value, like the setup grid', () => {
+  const mk = (id, level, pg, sg, cls) =>
+    ({ id, name: id, class: cls, level, gender: 'M', pg, subjects: { SG: sg } });
+  const model = {
+    students: [
+      mk('a', '3', 'PG3', '3 A', '3S1'),
+      mk('b', '3', 'PG3', '3 A', '3S2'),
+      mk('c', '3', 'PG2', '3 A', '3S1'),   // wrong PG
+      mk('d', '4', 'PG3', '3 A', '4E1'),   // wrong level
+      mk('e', '3', 'PG3', '3 B', '3S1'),   // wrong group
+    ],
+    groups: [{
+      code: 'H3A', name: 'Hist 3 A', subject: 'Hist', teachers: ['T1'], level: '3',
+      autoMatch: 'SG=3 A', autoLevel: '3', autoPg: 'PG3', autoClasses: '',
+    }],
+    memberships: [],
+    subjectKeys: ['SG'],
+    sources: [],
+  };
+  assert.strictEqual(S.autoFillGroup(model, model.groups[0]), 2);
+  assert.deepStrictEqual(model.memberships.map((m) => m.studentId), ['a', 'b']);
+
+  // a level-only rule takes the whole cohort
+  model.groups.push({
+    code: 'L3', name: 'All Sec 3', subject: '', teachers: ['T2'], level: '3',
+    autoMatch: '', autoLevel: '3', autoPg: '', autoClasses: '',
+  });
+  assert.strictEqual(S.autoFillGroup(model, model.groups[1]), 4);
+});
+
+test('a teacher\'s classes are bucketed by level, in level order', () => {
+  const g = (code, level, teachers) =>
+    ({ code, name: code, subject: 'X', teachers, level, autoMatch: '', autoLevel: '', autoPg: '', autoClasses: '' });
+  const model = {
+    students: [
+      { id: 's3', name: 'Three', class: '3S1', level: '3', gender: 'M', pg: '', subjects: {} },
+      { id: 's4', name: 'Four', class: '4E1', level: '4', gender: 'M', pg: '', subjects: {} },
+    ],
+    groups: [g('B', '4', ['Mrs Wong']), g('A', '3', ['Mrs Wong']), g('C', '', ['Mrs Wong'])],
+    memberships: [
+      { studentId: 's4', groupCode: 'B' },
+      { studentId: 's3', groupCode: 'A' },
+      { studentId: 's3', groupCode: 'C' },
+    ],
+    subjectKeys: [],
+    sources: [],
+  };
+  const ix = S.buildIndexes(model);
+  const buckets = S.groupsByLevelFor(ix, 'Mrs Wong');
+  // C has no level of its own, so it follows its members (Sec 3)
+  assert.deepStrictEqual(buckets.map((b) => b.level), ['3', '4']);
+  assert.deepStrictEqual(buckets[0].groups.map((x) => x.code).sort(), ['A', 'C']);
+  assert.deepStrictEqual(buckets[1].groups.map((x) => x.code), ['B']);
+  // a group with neither level nor members files under "" and sorts last
+  assert.strictEqual(S.groupLevel({ level: '' }, []), '');
+});
+
 test('validation flags duplicates and dangling memberships', () => {
   const model = {
     students: [
-      { id: 'S1', name: 'A', class: '1R1', gender: 'F', pg: '3', subjects: {} },
-      { id: 'S1', name: 'B', class: '1R2', gender: 'M', pg: '2', subjects: {} },
+      { id: 'S1', name: 'A', class: '1R1', level: '1', gender: 'F', pg: '3', subjects: {} },
+      { id: 'S1', name: 'B', class: '1R2', level: '1', gender: 'M', pg: '2', subjects: {} },
     ],
-    groups: [{ code: 'G1', name: 'G', subject: 'X', teacher: '' }],
+    groups: [{ code: 'G1', name: 'G', subject: 'X', teachers: [] }],
     memberships: [
       { studentId: 'S1', groupCode: 'G1' },
       { studentId: 'S1', groupCode: 'G1' },

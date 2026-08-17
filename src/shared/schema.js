@@ -27,28 +27,61 @@
   var ORIGIN_FILE = 'file';
   var ORIGIN_ADDED = 'added';
 
-  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG', 'Origin'];
-  var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teacher', 'AutoSubject', 'AutoValue', 'AutoClasses'];
+  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'Origin'];
+  var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teachers', 'Level',
+    'AutoMatch', 'AutoLevel', 'AutoPG', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
   var SOURCE_HEADERS = ['Level', 'SourceFile', 'FilePattern', 'LastFile', 'LastImported'];
 
   var STUDENT_FIELDS = {
     id: ['studentid', 'id', 'studentno', 'indexno', 'regno', 'nric'],
     name: ['name', 'studentname', 'fullname'],
-    class: ['class', 'formclass', 'form'],
+    class: ['class', 'classname', 'formclass', 'form', 'formclassname'],
+    level: ['level', 'yearlevel', 'year'],
     gender: ['gender', 'sex'],
     pg: ['pg', 'postinggroup', 'stream'],
     origin: ['origin'],
   };
+
+  /* Only used when mapping a raw school file: a register number is a way to
+   * build a stable id, not something the app stores on the student. */
+  var IMPORT_FIELDS = Object.keys(STUDENT_FIELDS).reduce(function (o, k) {
+    o[k] = STUDENT_FIELDS[k];
+    return o;
+  }, { reg: ['reg', 'regno', 'registernumber', 'indexnumber'] });
   var GROUP_FIELDS = {
     code: ['groupcode', 'code'],
     name: ['groupname', 'group', 'name'],
     subject: ['subject'],
-    teacher: ['teacher', 'teachername', 'tutor'],
-    autoKey: ['autosubject'],
+    teachers: ['teachers', 'teacher', 'teachername', 'tutor'],
+    level: ['level'],
+    autoMatch: ['automatch'],
+    autoLevel: ['autolevel'],
+    autoKey: ['autosubject'],      // pre-multi-criteria files
     autoValue: ['autovalue'],
+    autoPg: ['autopg'],
     autoClasses: ['autoclasses'],
   };
+
+  /* Several teachers can share one teaching group (the school's setup grid
+   * ticks any number of them per Level/Subject/PG/SG row), so a group holds a
+   * list. Stored in one cell separated by " ; ". */
+  var TEACHER_SEP = ' ; ';
+
+  function parseTeachers(value) {
+    if (Array.isArray(value)) value = value.join(';');
+    return norm(value).split(';')
+      .map(function (t) { return norm(t); })
+      .filter(function (t, i, all) { return t && all.indexOf(t) === i; });
+  }
+
+  function teacherNames(group) {
+    return Array.isArray(group.teachers) ? group.teachers : parseTeachers(group.teachers);
+  }
+
+  function teacherLabel(group) {
+    return teacherNames(group).join(TEACHER_SEP);
+  }
   var MEMBERSHIP_FIELDS = {
     studentId: ['studentid', 'id', 'student'],
     groupCode: ['groupcode', 'group', 'code'],
@@ -156,7 +189,7 @@
     for (var r = 1; r < rows.length; r++) {
       var row = rows[r];
       if (!row || isBlankRow(row)) continue;
-      var rec = { id: '', name: '', class: '', gender: '', pg: '', origin: '', subjects: {} };
+      var rec = { id: '', name: '', class: '', level: '', gender: '', pg: '', origin: '', subjects: {} };
       Object.keys(STUDENT_FIELDS).forEach(function (f) {
         rec[f] = f in idx ? norm(row[idx[f]]) : '';
       });
@@ -189,8 +222,17 @@
       model.subjectKeys = read.subjectKeys;
     }
     else warnings.push('Sheet "Students" not found.');
-    if (groups) model.groups = readTable(groups, GROUP_FIELDS, ['code'], 'Groups', warnings);
-    else warnings.push('Sheet "Groups" not found.');
+    if (groups) {
+      model.groups = readTable(groups, GROUP_FIELDS, ['code'], 'Groups', warnings);
+      model.groups.forEach(function (g) {
+        g.teachers = parseTeachers(g.teachers);
+        // Fold a pre-multi-criteria rule into the criteria list and drop the
+        // old columns, so the in-memory shape has exactly one representation.
+        g.autoMatch = matchersToString(matchers(g));
+        delete g.autoKey;
+        delete g.autoValue;
+      });
+    } else warnings.push('Sheet "Groups" not found.');
     if (memberships) model.memberships = readTable(memberships, MEMBERSHIP_FIELDS, ['studentId', 'groupCode'], 'Memberships', warnings);
     else warnings.push('Sheet "Memberships" not found.');
     var sources = findSheet(wb, 'Sources');   // optional sheet — older files lack it
@@ -205,18 +247,19 @@
 
     var keys = model.subjectKeys || [];
     ws = X.utils.aoa_to_sheet([STUDENT_HEADERS.concat(keys)].concat(model.students.map(function (s) {
-      return [s.id, s.name, s.class, s.gender, s.pg, s.origin || ORIGIN_FILE].concat(keys.map(function (k) {
-        return (s.subjects && s.subjects[k]) || '';
-      }));
+      return [s.id, s.name, s.class, s.level, s.gender, s.pg, s.origin || ORIGIN_FILE]
+        .concat(keys.map(function (k) { return (s.subjects && s.subjects[k]) || ''; }));
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 8 }, { wch: 5 }, { wch: 8 }]
+    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 5 }, { wch: 8 }]
       .concat(keys.map(function () { return { wch: 12 }; }));
     X.utils.book_append_sheet(wb, ws, 'Students');
 
     ws = X.utils.aoa_to_sheet([GROUP_HEADERS].concat(model.groups.map(function (g) {
-      return [g.code, g.name, g.subject, g.teacher, g.autoKey, g.autoValue, g.autoClasses];
+      return [g.code, g.name, g.subject, teacherLabel(g), g.level,
+        matchersToString(matchers(g)), g.autoLevel, g.autoPg, g.autoClasses];
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 18 }, { wch: 24 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];
+    ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 18 }, { wch: 34 }, { wch: 14 },
+      { wch: 40 }, { wch: 14 }, { wch: 8 }, { wch: 14 }];
     X.utils.book_append_sheet(wb, ws, 'Groups');
 
     ws = X.utils.aoa_to_sheet([MEMBERSHIP_HEADERS].concat(model.memberships.map(function (m) {
@@ -257,21 +300,73 @@
     model.groups.forEach(function (g) {
       if (groupCodes[g.code]) warnings.push('Duplicate GroupCode "' + g.code + '".');
       groupCodes[g.code] = true;
-      if (!g.teacher) warnings.push('Group "' + g.code + '" has no teacher assigned.');
+      if (!teacherNames(g).length) warnings.push('Group "' + g.code + '" has no teacher assigned.');
     });
     var seen = {};
+    var placed = {};
     model.memberships.forEach(function (m) {
       if (!studentIds[m.studentId]) warnings.push('Membership refers to unknown StudentID "' + m.studentId + '".');
       if (!groupCodes[m.groupCode]) warnings.push('Membership refers to unknown GroupCode "' + m.groupCode + '".');
-      var key = m.studentId + ' ' + m.groupCode;
+      var key = m.studentId + ' ' + m.groupCode;
       if (seen[key]) warnings.push('Duplicate membership: student "' + m.studentId + '" in group "' + m.groupCode + '".');
       seen[key] = true;
+      placed[m.studentId] = true;
     });
+
+    /* A student in no class at all shows up on nobody's namelist — exactly
+     * the silent gap a blank cell in the source file produces. Only worth
+     * saying once there are classes to be in. */
+    if (model.groups.length) {
+      var orphans = model.students.filter(function (s) { return !placed[s.id]; });
+      if (orphans.length) {
+        warnings.push(orphans.length + ' student' + (orphans.length === 1 ? ' is' : 's are') +
+          ' not in any class: ' +
+          orphans.slice(0, 8).map(function (s) { return s.name + ' (' + (s.class || 'no class') + ')'; }).join(', ') +
+          (orphans.length > 8 ? ', …' : ''));
+      }
+    }
     return warnings;
   }
 
   function cmp(a, b) {
     return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  /* A group's level: the one set on the group, else whichever level its
+   * members mostly belong to (so groups built before levels existed still
+   * file themselves correctly on the teacher page). */
+  function groupLevel(group, members) {
+    var own = norm(group.level);
+    if (own) return own;
+    var tally = {};
+    (members || []).forEach(function (s) {
+      var l = norm(s.level);
+      if (l) tally[l] = (tally[l] || 0) + 1;
+    });
+    var best = '', bestN = 0;
+    Object.keys(tally).forEach(function (l) {
+      if (tally[l] > bestN) { bestN = tally[l]; best = l; }
+    });
+    return best;
+  }
+
+  /* Group a teacher's groups by level, in level order, for the
+   * "which classes do I teach in each level" view. */
+  function groupsByLevelFor(indexes, teacher) {
+    var groups = indexes.groupsByTeacher.get(teacher) || [];
+    var buckets = new Map();
+    groups.forEach(function (g) {
+      var lvl = groupLevel(g, indexes.membersByGroup.get(g.code));
+      if (!buckets.has(lvl)) buckets.set(lvl, []);
+      buckets.get(lvl).push(g);
+    });
+    return Array.from(buckets.keys())
+      .sort(function (a, b) {
+        if (!a) return 1;          // ungraded groups last
+        if (!b) return -1;
+        return cmp(a, b);
+      })
+      .map(function (lvl) { return { level: lvl, groups: buckets.get(lvl) }; });
   }
 
   function byClassThenName(a, b) {
@@ -280,6 +375,85 @@
 
   /* ---- raw-document import ------------------------------------------- */
 
+  /* ---- positional subject slots -------------------------------------
+   * Ministry-style allocation files put the subjects in generic
+   * "Subject 1 … Subject 20" columns, so the subject's identity is inside
+   * the cell: "English Language - G2 - K200" = subject, band, class code.
+   * The code is the teaching class every student in that cell belongs to. */
+
+  function isSlotHeader(h) {
+    return /^subject\s*\d+$/i.test(norm(h));
+  }
+
+  function slotColumns(headers) {
+    var out = [];
+    (headers || []).forEach(function (h, i) { if (isSlotHeader(h)) out.push(i); });
+    return out;
+  }
+
+  /* Positional layout only when there are several such columns, so a file
+   * with one honest "Subject" column keeps the fixed-column behaviour. */
+  function hasSubjectSlots(headers) {
+    return slotColumns(headers).length >= 3;
+  }
+
+  /* "English Language - G2 - K200" -> { subject, band, code, value }.
+   * Returns null for anything without a band or a code, which filters out
+   * the stray notes admins leave in spare slot columns. */
+  function parseAllocation(cell) {
+    var raw = norm(cell);
+    if (!raw) return null;
+    var parts = raw.split(' - ').map(function (p) { return norm(p); });
+    var code = '';
+    var band = '';
+    if (parts.length > 1 && /^[A-Z]{1,3}\d{2,5}$/i.test(parts[parts.length - 1])) code = parts.pop();
+    if (parts.length > 1 && /^G\d$/i.test(parts[parts.length - 1])) band = parts.pop();
+    var subject = parts.join(' - ');
+    if (!subject || (!band && !code)) return null;
+    return {
+      subject: subject, band: band, code: code,
+      value: [band, code].filter(Boolean).join(' - '),
+    };
+  }
+
+  /* Every distinct allocation across the students, as ready-made classes to
+   * tag teachers onto. Codeless allocations fall back to a name+band slug. */
+  function discoverClasses(students, level) {
+    var found = new Map();
+    (students || []).forEach(function (s) {
+      Object.keys(s.subjects || {}).forEach(function (subject) {
+        var value = norm(s.subjects[subject]);
+        if (!value) return;
+        var bits = value.split(' - ');
+        var band = /^G\d$/i.test(bits[0]) ? bits[0] : '';
+        var code = bits.length > 1 ? bits[bits.length - 1] : (band ? '' : bits[0]);
+        var key = subject + '|' + value;
+        if (found.has(key)) { found.get(key).n++; return; }
+        found.set(key, {
+          code: code || normKey(subject + '-' + band).toUpperCase().slice(0, 16),
+          name: subject + (band ? ' - ' + band : ''),
+          subject: subject,
+          teachers: [],
+          level: norm(level),
+          autoMatch: subject + '=' + value,
+          autoLevel: '',
+          autoPg: '',
+          autoClasses: '',
+          n: 1,
+        });
+      });
+    });
+    var list = Array.from(found.values());
+    // Two subjects could share a slug; keep codes unique.
+    var used = {};
+    list.forEach(function (g) {
+      var base = g.code, i = 2;
+      while (used[normKey(g.code)]) g.code = base + '-' + (i++);
+      used[normKey(g.code)] = true;
+    });
+    return list.sort(function (a, b) { return cmp(a.subject, b.subject) || cmp(a.name, b.name); });
+  }
+
   /* Find the most plausible header row in the first 15 rows of a sheet
    * (real documents often carry titles/dates above the actual table). */
   function detectHeaderRow(rows) {
@@ -287,7 +461,7 @@
     var bestScore = -1;
     var limit = Math.min(rows.length, 15);
     for (var r = 0; r < limit; r++) {
-      var m = mapHeaders(rows[r] || [], STUDENT_FIELDS);
+      var m = mapHeaders(rows[r] || [], IMPORT_FIELDS);
       var score = Object.keys(m).length + ('name' in m ? 2 : 0);
       if (score > bestScore) { bestScore = score; best = r; }
     }
@@ -318,9 +492,15 @@
       var cls = cell(row, 'class');
       var id = cell(row, 'id');
       if (!id) {
-        var base = cls || 'S';
-        counters[base] = (counters[base] || 0) + 1;
-        id = base + '-' + (counters[base] < 10 ? '0' : '') + counters[base];
+        // A register number makes a stable id that survives row reordering.
+        var reg = cell(row, 'reg');
+        if (reg) {
+          id = (cls || 'S') + '-' + (reg.length < 2 ? '0' + reg : reg);
+        } else {
+          var base = cls || 'S';
+          counters[base] = (counters[base] || 0) + 1;
+          id = base + '-' + (counters[base] < 10 ? '0' : '') + counters[base];
+        }
       }
       if (usedIds[id]) { warnings.push('Row ' + (r + 1) + ': duplicate ID "' + id + '" — skipped.'); continue; }
       usedIds[id] = true;
@@ -329,8 +509,21 @@
         var v = norm(row[sc.index]);
         if (v) subjects[norm(sc.header)] = v;
       });
+      // Positional "Subject N" slots: the subject names itself inside the cell.
+      (mapping.slotCols || []).forEach(function (ci) {
+        var a = parseAllocation(row[ci]);
+        if (!a) return;
+        var key = a.subject;
+        if (subjects[key] && subjects[key] !== a.value) {
+          var n = 2;
+          while (subjects[key + ' (' + n + ')']) n++;
+          key = key + ' (' + n + ')';       // same subject twice: keep both
+        }
+        subjects[key] = a.value;
+      });
       students.push({
         id: id, name: name, class: cls,
+        level: cell(row, 'level'),
         gender: cell(row, 'gender'), pg: cell(row, 'pg'),
         origin: ORIGIN_FILE, subjects: subjects,
       });
@@ -390,6 +583,7 @@
         m.name = imp.name;
         m.origin = ORIGIN_FILE;   // adopted: the school's file now lists them
         if (imp.class) m.class = imp.class;
+        if (imp.level) m.level = imp.level;
         if (imp.gender) m.gender = imp.gender;
         if (imp.pg) m.pg = imp.pg;
         m.subjects = m.subjects || {};
@@ -401,7 +595,7 @@
       } else {
         var newId = freeId(imp.class);
         model.students.push({
-          id: newId, name: imp.name, class: imp.class,
+          id: newId, name: imp.name, class: imp.class, level: imp.level,
           gender: imp.gender, pg: imp.pg, origin: ORIGIN_FILE, subjects: imp.subjects,
         });
         addedIds.push(newId);
@@ -447,15 +641,50 @@
 
   /* ---- auto-allocation rules ------------------------------------------ */
 
-  /* A group's rule can name a subject column (with an optional band value)
-   * and/or a class filter — comma-separated class names or prefixes
-   * ("1R" matches 1R1…1R6). Both parts must hold when both are set. */
+  /* A group's rule mirrors the school's setup grid: Level + PG + a class
+   * filter + any number of column criteria. Reproducing a namelist query
+   * such as "Level 3, PG3, SG = 3 A, Subject = SS/Geo" needs two column
+   * criteria at once, so they are held as a list, stored in one cell as
+   * "SG=3 A; History/Geog/HEM=SS/Geo". A criterion with no value means
+   * "has anything in that column". Everything filled in must hold; blanks
+   * mean "any". The class filter takes comma-separated names or prefixes
+   * ("1R" matches 1R1…1R6). */
+  function matchers(group) {
+    var out = [];
+    var seen = {};
+    function add(key, value) {
+      key = norm(key);
+      if (!key || seen[normKey(key)]) return;
+      seen[normKey(key)] = true;
+      out.push({ key: key, value: norm(value) });
+    }
+    norm(group.autoMatch).split(';').forEach(function (part) {
+      if (!norm(part)) return;
+      var at = part.indexOf('=');
+      if (at === -1) add(part, '');
+      else add(part.slice(0, at), part.slice(at + 1));
+    });
+    add(group.autoKey, group.autoValue);   // pre-multi-criteria files
+    return out;
+  }
+
+  function matchersToString(list) {
+    return (list || []).filter(function (m) { return norm(m.key); })
+      .map(function (m) { return norm(m.key) + '=' + norm(m.value); })
+      .join('; ');
+  }
+
   function groupHasRule(group) {
-    return !!(norm(group.autoKey) || norm(group.autoClasses));
+    return !!(matchers(group).length || norm(group.autoClasses) ||
+      norm(group.autoPg) || norm(group.autoLevel));
   }
 
   function matchesRule(student, group) {
     if (!groupHasRule(group)) return false;
+    var level = norm(group.autoLevel);
+    if (level && normKey(student.level) !== normKey(level)) return false;
+    var pg = norm(group.autoPg);
+    if (pg && normKey(student.pg) !== normKey(pg)) return false;
     var classes = norm(group.autoClasses);
     if (classes) {
       var sc = normKey(student.class);
@@ -465,14 +694,11 @@
       });
       if (!ok) return false;
     }
-    var key = norm(group.autoKey);
-    if (key) {
-      var v = student.subjects ? norm(student.subjects[key]) : '';
+    return matchers(group).every(function (m) {
+      var v = student.subjects ? norm(student.subjects[m.key]) : '';
       if (!v) return false;
-      var want = norm(group.autoValue);
-      if (want && normKey(v) !== normKey(want)) return false;
-    }
-    return true;
+      return !m.value || normKey(v) === normKey(m.value);
+    });
   }
 
   /* Add every rule-matching student to the group. Never removes anyone, so
@@ -609,17 +835,17 @@
 
     var groupsByTeacher = new Map();
     data.groups.forEach(function (g) {
-      var t = norm(g.teacher);
-      if (!t) return;
-      if (!groupsByTeacher.has(t)) groupsByTeacher.set(t, []);
-      groupsByTeacher.get(t).push(g);
+      teacherNames(g).forEach(function (t) {
+        if (!groupsByTeacher.has(t)) groupsByTeacher.set(t, []);
+        groupsByTeacher.get(t).push(g);
+      });
     });
     groupsByTeacher.forEach(function (list) {
       list.sort(function (a, b) {
-        return a.subject.localeCompare(b.subject) || a.name.localeCompare(b.name);
+        return cmp(a.level, b.level) || cmp(a.subject, b.subject) || cmp(a.name, b.name);
       });
     });
-    var teachers = Array.from(groupsByTeacher.keys()).sort(function (a, b) { return a.localeCompare(b); });
+    var teachers = Array.from(groupsByTeacher.keys()).sort(cmp);
 
     return {
       studentsById: studentsById,
@@ -639,6 +865,7 @@
     GROUP_HEADERS: GROUP_HEADERS,
     MEMBERSHIP_HEADERS: MEMBERSHIP_HEADERS,
     STUDENT_FIELDS: STUDENT_FIELDS,
+    IMPORT_FIELDS: IMPORT_FIELDS,
     GROUP_FIELDS: GROUP_FIELDS,
     MEMBERSHIP_FIELDS: MEMBERSHIP_FIELDS,
     norm: norm,
@@ -660,11 +887,24 @@
     studentSearchText: studentSearchText,
     applyLevelUpdate: applyLevelUpdate,
     findNewestMatch: findNewestMatch,
+    isSlotHeader: isSlotHeader,
+    slotColumns: slotColumns,
+    hasSubjectSlots: hasSubjectSlots,
+    parseAllocation: parseAllocation,
+    discoverClasses: discoverClasses,
+    matchers: matchers,
+    matchersToString: matchersToString,
     derivePattern: derivePattern,
     findByName: findByName,
     resolveSource: resolveSource,
     groupHasRule: groupHasRule,
     matchesRule: matchesRule,
     autoFillGroup: autoFillGroup,
+    TEACHER_SEP: TEACHER_SEP,
+    parseTeachers: parseTeachers,
+    teacherNames: teacherNames,
+    teacherLabel: teacherLabel,
+    groupLevel: groupLevel,
+    groupsByLevelFor: groupsByLevelFor,
   };
 })();

@@ -27,6 +27,11 @@
   .result-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 12px; }
   .result-title h2 { font-size: 21px; margin: 0; }
   .tagline { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .level-head {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    margin: 22px 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--red);
+  }
+  .level-head h3 { margin: 0; font-size: 17px; color: var(--accent); }
 </style>
 </head>
 <body>
@@ -111,8 +116,9 @@
         return '<tr><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) +
           '</td><td>' + esc(s.id) + '</td><td style="width:30%"></td></tr>';
       }).join('');
-      return '<div class="card"><h2>' + esc(groupLabel(g)) + '</h2>' +
-        '<p class="sub">' + (g.teacher ? 'Teacher: ' + esc(g.teacher) + ' · ' : '') +
+      var lvl = S.groupLevel(g, members);
+      return '<div class="card"><h2>' + esc(groupLabel(g)) + (lvl ? ' (' + esc(levelLabel(lvl)) + ')' : '') + '</h2>' +
+        '<p class="sub">' + (S.teacherNames(g).length ? 'Teacher: ' + esc(S.teacherNames(g).join(', ')) + ' · ' : '') +
         members.length + ' student' + (members.length === 1 ? '' : 's') + ' · Printed ' + esc(today) +
         (data.savedAt ? ' · Data updated ' + esc(new Date(data.savedAt).toLocaleDateString()) : '') + '</p>' +
         '<table class="list"><thead><tr><th style="width:34px">#</th><th>Name</th><th>Class</th><th>ID</th><th>Remarks</th></tr></thead>' +
@@ -189,43 +195,77 @@
     var out = $('teacherResults');
     if (!selectedTeacher) { out.innerHTML = ''; return; }
     var groups = ix.groupsByTeacher.get(selectedTeacher) || [];
+    var byLevel = S.groupsByLevelFor(ix, selectedTeacher);
     var total = 0;
+    var flat = [];   // print-button index -> group
     var html = '<div class="result-title"><h2>' + esc(selectedTeacher) + '</h2>' +
       '<span class="no-print">' +
       (groups.length ? '<button class="primary" id="printAllBtn">Print all namelists</button>' : '') +
       '</span></div>';
     if (!groups.length) {
-      html += '<div class="card"><p class="empty">No teaching groups are assigned to this name.</p></div>';
+      html += '<div class="card"><p class="empty">No classes are assigned to this name yet.</p></div>';
     }
-    groups.forEach(function (g, gi) {
-      var members = ix.membersByGroup.get(g.code) || [];
-      total += members.length;
-      html += '<div class="card"><div class="group-head">' +
-        '<div class="left"><h3>' + esc(g.name || g.code) + '</h3>' +
-        (g.subject ? '<span class="badge plain">' + esc(g.subject) + '</span>' : '') +
-        '<span class="badge">' + members.length + ' student' + (members.length === 1 ? '' : 's') + '</span></div>' +
-        '<span class="no-print"><button class="print-group" data-gi="' + gi + '">Print</button></span></div>';
-      if (members.length) {
-        html += '<table class="list"><thead><tr><th style="width:40px">#</th><th>Name</th><th>Class</th><th>Student ID</th></tr></thead><tbody>';
-        members.forEach(function (s, i) {
-          html += '<tr><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.id) + '</td></tr>';
-        });
-        html += '</tbody></table>';
-      } else {
-        html += '<p class="empty">No students in this group yet.</p>';
-      }
-      html += '</div>';
+
+    byLevel.forEach(function (bucket) {
+      var count = bucket.groups.reduce(function (n, g) {
+        return n + (ix.membersByGroup.get(g.code) || []).length;
+      }, 0);
+      html += '<div class="level-head"><h3>' + esc(bucket.level ? levelLabel(bucket.level) : 'Other classes') +
+        '</h3><span class="muted small">' + bucket.groups.length + ' class' +
+        (bucket.groups.length === 1 ? '' : 'es') + ' · ' + count + ' student' + (count === 1 ? '' : 's') +
+        '</span></div>';
+
+      bucket.groups.forEach(function (g) {
+        var members = ix.membersByGroup.get(g.code) || [];
+        var gi = flat.push(g) - 1;
+        total += members.length;
+        html += '<div class="card"><div class="group-head">' +
+          '<div class="left"><h3>' + esc(g.name || g.code) + '</h3>' +
+          (g.subject ? '<span class="badge plain">' + esc(g.subject) + '</span>' : '') +
+          '<span class="badge">' + members.length + ' student' + (members.length === 1 ? '' : 's') + '</span>' +
+          coTeacherNote(g) + '</div>' +
+          '<span class="no-print"><button class="print-group" data-gi="' + gi + '">Print</button></span></div>';
+        if (members.length) {
+          html += '<table class="list"><thead><tr><th style="width:40px">#</th><th>Name</th><th>Class</th><th>Student ID</th></tr></thead><tbody>';
+          members.forEach(function (s, i) {
+            html += '<tr><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.id) + '</td></tr>';
+          });
+          html += '</tbody></table>';
+        } else {
+          html += '<p class="empty">No students in this class yet.</p>';
+        }
+        html += '</div>';
+      });
     });
+
     if (groups.length) {
-      html += '<p class="muted small no-print">' + groups.length + ' group' + (groups.length === 1 ? '' : 's') +
+      html += '<p class="muted small no-print">' + groups.length + ' class' + (groups.length === 1 ? '' : 'es') +
         ', ' + total + ' student place' + (total === 1 ? '' : 's') + ' in total.</p>';
     }
     out.innerHTML = html;
     var printAll = $('printAllBtn');
-    if (printAll) printAll.addEventListener('click', function () { printGroups(groups, selectedTeacher); });
+    if (printAll) printAll.addEventListener('click', function () { printGroups(flat, selectedTeacher); });
     out.querySelectorAll('button.print-group').forEach(function (b) {
-      b.addEventListener('click', function () { printGroups([groups[+b.dataset.gi]], selectedTeacher); });
+      b.addEventListener('click', function () { printGroups([flat[+b.dataset.gi]], selectedTeacher); });
     });
+  }
+
+  /* "3" and "SECONDARY 3" both read as "Sec 3"; anything else is left as the
+   * school wrote it. */
+  function levelLabel(level) {
+    var v = String(level).trim();
+    if (/^\d+$/.test(v)) return 'Sec ' + v;
+    var m = /^sec(?:ondary)?\s*([0-9]+[A-Za-z]?)$/i.exec(v);
+    if (m) return 'Sec ' + m[1];
+    m = /^pri(?:mary)?\s*([0-9]+[A-Za-z]?)$/i.exec(v);
+    if (m) return 'Pri ' + m[1];
+    return v;
+  }
+
+  function coTeacherNote(group) {
+    var others = S.teacherNames(group).filter(function (t) { return t !== selectedTeacher; });
+    if (!others.length) return '';
+    return '<span class="muted small">with ' + esc(others.join(', ')) + '</span>';
   }
 
   searchBox.addEventListener('input', function () {
@@ -273,7 +313,8 @@
       if (groups.length) {
         html += '<table class="list"><thead><tr><th>Subject</th><th>Group</th><th>Teacher</th></tr></thead><tbody>';
         groups.forEach(function (g) {
-          html += '<tr><td>' + esc(g.subject) + '</td><td>' + esc(g.name || g.code) + '</td><td>' + esc(g.teacher) + '</td></tr>';
+          html += '<tr><td>' + esc(g.subject) + '</td><td>' + esc(g.name || g.code) + '</td><td>' +
+            esc(S.teacherNames(g).join(', ')) + '</td></tr>';
         });
         html += '</tbody></table>';
       } else {

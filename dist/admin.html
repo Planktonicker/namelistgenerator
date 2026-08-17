@@ -346,6 +346,18 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   table.list.selectable tbody { user-select: none; cursor: pointer; }
   .rowcheck { pointer-events: none; }
   .hint { font-size: 13px; color: var(--muted); margin: 4px 0 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .chips:empty { display: none; }
+  .chips .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--accent-soft); color: var(--accent);
+    border-radius: 999px; padding: 3px 6px 3px 12px; font-size: 13px; font-weight: 600;
+  }
+  .chips .chip button {
+    border: none; background: none; box-shadow: none; color: inherit;
+    font-size: 15px; line-height: 1; padding: 0 4px; cursor: pointer;
+  }
+  .chips .chip button:hover { color: var(--red); background: none; }
 </style>
 </head>
 <body>
@@ -420,6 +432,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     <section id="tab-students">
       <div class="toolbar">
         <input type="search" id="studentSearch" placeholder="Search name, class, ID or tag (e.g. MA G3)" style="min-width:260px">
+        <select id="studentLevelFilter"><option value="">All levels</option></select>
         <select id="studentClassFilter"><option value="">All classes</option></select>
         <select id="studentPgFilter"><option value="">All PG</option></select>
         <select id="studentOriginFilter">
@@ -450,11 +463,12 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       <div class="toolbar">
         <input type="search" id="groupSearch" placeholder="Search group, subject or teacher" style="min-width:220px">
         <span class="spacer"></span>
-        <button class="primary" id="addGroupBtn">Add group</button>
+        <button id="discoverBtn">Find classes in the data</button>
+        <button class="primary" id="addGroupBtn">Add class</button>
       </div>
       <div class="card">
         <table class="list" id="groupsTable">
-          <thead><tr><th>Code</th><th>Group name</th><th>Subject</th><th>Teacher</th><th>Auto-fill</th><th>Members</th><th></th></tr></thead>
+          <thead><tr><th>Code</th><th>Class name</th><th>Subject</th><th>Teachers</th><th>Level</th><th>Auto-fill</th><th>Members</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
         <p class="empty" id="groupsEmpty" hidden>No teaching groups yet — use <strong>Add group</strong>.</p>
@@ -552,6 +566,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       <label for="sfId">Student ID *</label><input type="text" id="sfId" required>
       <label for="sfName">Name *</label><input type="text" id="sfName" required>
       <label for="sfClass">Class</label><input type="text" id="sfClass" list="classList">
+      <label for="sfLevel">Level</label><input type="text" id="sfLevel" list="levelList">
       <label for="sfGender">Gender</label><input type="text" id="sfGender" list="genderList">
       <label for="sfPg">PG</label><input type="text" id="sfPg" list="pgList">
       <p class="hint" id="sfAddedNote" style="grid-column: 1 / -1; margin: 0" hidden>
@@ -569,14 +584,32 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   <dialog id="groupDialog">
     <h2 id="groupDialogTitle">Add group</h2>
     <form class="fields" id="groupForm">
-      <label for="gfTeacher">Teacher</label><input type="text" id="gfTeacher" list="teacherList" placeholder="e.g. Mrs Wong">
-      <label for="gfAutoKey">Subject taken</label><select id="gfAutoKey"></select>
-      <label for="gfAutoValue">Band / value</label><select id="gfAutoValue" disabled></select>
-      <label for="gfAutoClasses">Limit to classes</label><input type="text" id="gfAutoClasses" placeholder="e.g. 1R or 1R1, 1R3 (blank = all)">
-      <p class="hint" style="grid-column: 1 / -1; margin: 0">Matching students are allocated automatically
-        when the group is created, and new students join it after each school-file update. You can still
-        add or remove members by hand afterwards — manual removals are only revisited if you press
-        “Auto-fill” yourself.</p>
+      <label for="gfTeacher">Teachers</label>
+      <div>
+        <div class="chips" id="gfTeacherChips"></div>
+        <div style="display:flex; gap:8px">
+          <input type="text" id="gfTeacher" list="teacherList" placeholder="Type a name and press Enter" style="flex:1">
+          <button type="button" id="gfTeacherAdd">Add</button>
+        </div>
+      </div>
+      <label for="gfLevel">Level (label)</label><input type="text" id="gfLevel" list="levelList" placeholder="groups this class on the teacher page">
+      <label for="gfAutoLevel">Only this level</label><input type="text" id="gfAutoLevel" list="levelList" placeholder="blank = any level">
+      <label>Must be taking</label>
+      <div>
+        <div id="gfCriteria"></div>
+        <div style="display:flex; gap:8px; margin-top:6px">
+          <select id="gfAutoKey" style="flex:1"></select>
+          <select id="gfAutoValue" style="flex:1" disabled></select>
+          <button type="button" id="gfCritAdd">Add</button>
+        </div>
+      </div>
+      <label for="gfAutoPg">PG</label><input type="text" id="gfAutoPg" list="pgList" placeholder="e.g. PG3 (blank = any)">
+      <label for="gfAutoClasses">Limit to classes</label><input type="text" id="gfAutoClasses" placeholder="e.g. 3S or 3S1, 3S3 (blank = all)">
+      <p class="hint" style="grid-column: 1 / -1; margin: 0">Level, column value, PG and classes work together
+        like the setup grid in your workbook — every box you fill in narrows the class, blanks mean “any”.
+        Matching students are allocated automatically when the class is created, and new students join it
+        after each school-file update. You can still add or remove members by hand afterwards — manual
+        removals are only revisited if you press “Auto-fill” yourself.</p>
       <label for="gfCode">Group code *</label><input type="text" id="gfCode" required placeholder="e.g. EL-G3">
       <label for="gfName">Group name</label><input type="text" id="gfName" placeholder="e.g. English G3">
       <label for="gfSubject">Subject label</label><input type="text" id="gfSubject" list="subjectList" placeholder="shown on the teacher page">
@@ -633,6 +666,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         <label for="impName">Name column *</label><select id="impName"></select>
         <label for="impClass">Class column</label><select id="impClass"></select>
         <label for="impGender">Gender column</label><select id="impGender"></select>
+        <label for="impLevel">Level column</label><select id="impLevel"></select>
         <label for="impPg">PG column</label><select id="impPg"></select>
         <label for="impId">Student ID column</label><select id="impId"></select>
       </div>
@@ -652,6 +686,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     </div>
   </dialog>
 
+  <datalist id="levelList"></datalist>
   <datalist id="classList"></datalist>
   <datalist id="subjectList"></datalist>
   <datalist id="teacherList"></datalist>
@@ -716,28 +751,61 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   var ORIGIN_FILE = 'file';
   var ORIGIN_ADDED = 'added';
 
-  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG', 'Origin'];
-  var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teacher', 'AutoSubject', 'AutoValue', 'AutoClasses'];
+  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'Origin'];
+  var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teachers', 'Level',
+    'AutoMatch', 'AutoLevel', 'AutoPG', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
   var SOURCE_HEADERS = ['Level', 'SourceFile', 'FilePattern', 'LastFile', 'LastImported'];
 
   var STUDENT_FIELDS = {
     id: ['studentid', 'id', 'studentno', 'indexno', 'regno', 'nric'],
     name: ['name', 'studentname', 'fullname'],
-    class: ['class', 'formclass', 'form'],
+    class: ['class', 'classname', 'formclass', 'form', 'formclassname'],
+    level: ['level', 'yearlevel', 'year'],
     gender: ['gender', 'sex'],
     pg: ['pg', 'postinggroup', 'stream'],
     origin: ['origin'],
   };
+
+  /* Only used when mapping a raw school file: a register number is a way to
+   * build a stable id, not something the app stores on the student. */
+  var IMPORT_FIELDS = Object.keys(STUDENT_FIELDS).reduce(function (o, k) {
+    o[k] = STUDENT_FIELDS[k];
+    return o;
+  }, { reg: ['reg', 'regno', 'registernumber', 'indexnumber'] });
   var GROUP_FIELDS = {
     code: ['groupcode', 'code'],
     name: ['groupname', 'group', 'name'],
     subject: ['subject'],
-    teacher: ['teacher', 'teachername', 'tutor'],
-    autoKey: ['autosubject'],
+    teachers: ['teachers', 'teacher', 'teachername', 'tutor'],
+    level: ['level'],
+    autoMatch: ['automatch'],
+    autoLevel: ['autolevel'],
+    autoKey: ['autosubject'],      // pre-multi-criteria files
     autoValue: ['autovalue'],
+    autoPg: ['autopg'],
     autoClasses: ['autoclasses'],
   };
+
+  /* Several teachers can share one teaching group (the school's setup grid
+   * ticks any number of them per Level/Subject/PG/SG row), so a group holds a
+   * list. Stored in one cell separated by " ; ". */
+  var TEACHER_SEP = ' ; ';
+
+  function parseTeachers(value) {
+    if (Array.isArray(value)) value = value.join(';');
+    return norm(value).split(';')
+      .map(function (t) { return norm(t); })
+      .filter(function (t, i, all) { return t && all.indexOf(t) === i; });
+  }
+
+  function teacherNames(group) {
+    return Array.isArray(group.teachers) ? group.teachers : parseTeachers(group.teachers);
+  }
+
+  function teacherLabel(group) {
+    return teacherNames(group).join(TEACHER_SEP);
+  }
   var MEMBERSHIP_FIELDS = {
     studentId: ['studentid', 'id', 'student'],
     groupCode: ['groupcode', 'group', 'code'],
@@ -845,7 +913,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     for (var r = 1; r < rows.length; r++) {
       var row = rows[r];
       if (!row || isBlankRow(row)) continue;
-      var rec = { id: '', name: '', class: '', gender: '', pg: '', origin: '', subjects: {} };
+      var rec = { id: '', name: '', class: '', level: '', gender: '', pg: '', origin: '', subjects: {} };
       Object.keys(STUDENT_FIELDS).forEach(function (f) {
         rec[f] = f in idx ? norm(row[idx[f]]) : '';
       });
@@ -878,8 +946,17 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       model.subjectKeys = read.subjectKeys;
     }
     else warnings.push('Sheet "Students" not found.');
-    if (groups) model.groups = readTable(groups, GROUP_FIELDS, ['code'], 'Groups', warnings);
-    else warnings.push('Sheet "Groups" not found.');
+    if (groups) {
+      model.groups = readTable(groups, GROUP_FIELDS, ['code'], 'Groups', warnings);
+      model.groups.forEach(function (g) {
+        g.teachers = parseTeachers(g.teachers);
+        // Fold a pre-multi-criteria rule into the criteria list and drop the
+        // old columns, so the in-memory shape has exactly one representation.
+        g.autoMatch = matchersToString(matchers(g));
+        delete g.autoKey;
+        delete g.autoValue;
+      });
+    } else warnings.push('Sheet "Groups" not found.');
     if (memberships) model.memberships = readTable(memberships, MEMBERSHIP_FIELDS, ['studentId', 'groupCode'], 'Memberships', warnings);
     else warnings.push('Sheet "Memberships" not found.');
     var sources = findSheet(wb, 'Sources');   // optional sheet — older files lack it
@@ -894,18 +971,19 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
     var keys = model.subjectKeys || [];
     ws = X.utils.aoa_to_sheet([STUDENT_HEADERS.concat(keys)].concat(model.students.map(function (s) {
-      return [s.id, s.name, s.class, s.gender, s.pg, s.origin || ORIGIN_FILE].concat(keys.map(function (k) {
-        return (s.subjects && s.subjects[k]) || '';
-      }));
+      return [s.id, s.name, s.class, s.level, s.gender, s.pg, s.origin || ORIGIN_FILE]
+        .concat(keys.map(function (k) { return (s.subjects && s.subjects[k]) || ''; }));
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 8 }, { wch: 5 }, { wch: 8 }]
+    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 5 }, { wch: 8 }]
       .concat(keys.map(function () { return { wch: 12 }; }));
     X.utils.book_append_sheet(wb, ws, 'Students');
 
     ws = X.utils.aoa_to_sheet([GROUP_HEADERS].concat(model.groups.map(function (g) {
-      return [g.code, g.name, g.subject, g.teacher, g.autoKey, g.autoValue, g.autoClasses];
+      return [g.code, g.name, g.subject, teacherLabel(g), g.level,
+        matchersToString(matchers(g)), g.autoLevel, g.autoPg, g.autoClasses];
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 18 }, { wch: 24 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];
+    ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 18 }, { wch: 34 }, { wch: 14 },
+      { wch: 40 }, { wch: 14 }, { wch: 8 }, { wch: 14 }];
     X.utils.book_append_sheet(wb, ws, 'Groups');
 
     ws = X.utils.aoa_to_sheet([MEMBERSHIP_HEADERS].concat(model.memberships.map(function (m) {
@@ -946,21 +1024,73 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     model.groups.forEach(function (g) {
       if (groupCodes[g.code]) warnings.push('Duplicate GroupCode "' + g.code + '".');
       groupCodes[g.code] = true;
-      if (!g.teacher) warnings.push('Group "' + g.code + '" has no teacher assigned.');
+      if (!teacherNames(g).length) warnings.push('Group "' + g.code + '" has no teacher assigned.');
     });
     var seen = {};
+    var placed = {};
     model.memberships.forEach(function (m) {
       if (!studentIds[m.studentId]) warnings.push('Membership refers to unknown StudentID "' + m.studentId + '".');
       if (!groupCodes[m.groupCode]) warnings.push('Membership refers to unknown GroupCode "' + m.groupCode + '".');
-      var key = m.studentId + ' ' + m.groupCode;
+      var key = m.studentId + ' ' + m.groupCode;
       if (seen[key]) warnings.push('Duplicate membership: student "' + m.studentId + '" in group "' + m.groupCode + '".');
       seen[key] = true;
+      placed[m.studentId] = true;
     });
+
+    /* A student in no class at all shows up on nobody's namelist — exactly
+     * the silent gap a blank cell in the source file produces. Only worth
+     * saying once there are classes to be in. */
+    if (model.groups.length) {
+      var orphans = model.students.filter(function (s) { return !placed[s.id]; });
+      if (orphans.length) {
+        warnings.push(orphans.length + ' student' + (orphans.length === 1 ? ' is' : 's are') +
+          ' not in any class: ' +
+          orphans.slice(0, 8).map(function (s) { return s.name + ' (' + (s.class || 'no class') + ')'; }).join(', ') +
+          (orphans.length > 8 ? ', …' : ''));
+      }
+    }
     return warnings;
   }
 
   function cmp(a, b) {
     return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  /* A group's level: the one set on the group, else whichever level its
+   * members mostly belong to (so groups built before levels existed still
+   * file themselves correctly on the teacher page). */
+  function groupLevel(group, members) {
+    var own = norm(group.level);
+    if (own) return own;
+    var tally = {};
+    (members || []).forEach(function (s) {
+      var l = norm(s.level);
+      if (l) tally[l] = (tally[l] || 0) + 1;
+    });
+    var best = '', bestN = 0;
+    Object.keys(tally).forEach(function (l) {
+      if (tally[l] > bestN) { bestN = tally[l]; best = l; }
+    });
+    return best;
+  }
+
+  /* Group a teacher's groups by level, in level order, for the
+   * "which classes do I teach in each level" view. */
+  function groupsByLevelFor(indexes, teacher) {
+    var groups = indexes.groupsByTeacher.get(teacher) || [];
+    var buckets = new Map();
+    groups.forEach(function (g) {
+      var lvl = groupLevel(g, indexes.membersByGroup.get(g.code));
+      if (!buckets.has(lvl)) buckets.set(lvl, []);
+      buckets.get(lvl).push(g);
+    });
+    return Array.from(buckets.keys())
+      .sort(function (a, b) {
+        if (!a) return 1;          // ungraded groups last
+        if (!b) return -1;
+        return cmp(a, b);
+      })
+      .map(function (lvl) { return { level: lvl, groups: buckets.get(lvl) }; });
   }
 
   function byClassThenName(a, b) {
@@ -969,6 +1099,85 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   /* ---- raw-document import ------------------------------------------- */
 
+  /* ---- positional subject slots -------------------------------------
+   * Ministry-style allocation files put the subjects in generic
+   * "Subject 1 … Subject 20" columns, so the subject's identity is inside
+   * the cell: "English Language - G2 - K200" = subject, band, class code.
+   * The code is the teaching class every student in that cell belongs to. */
+
+  function isSlotHeader(h) {
+    return /^subject\s*\d+$/i.test(norm(h));
+  }
+
+  function slotColumns(headers) {
+    var out = [];
+    (headers || []).forEach(function (h, i) { if (isSlotHeader(h)) out.push(i); });
+    return out;
+  }
+
+  /* Positional layout only when there are several such columns, so a file
+   * with one honest "Subject" column keeps the fixed-column behaviour. */
+  function hasSubjectSlots(headers) {
+    return slotColumns(headers).length >= 3;
+  }
+
+  /* "English Language - G2 - K200" -> { subject, band, code, value }.
+   * Returns null for anything without a band or a code, which filters out
+   * the stray notes admins leave in spare slot columns. */
+  function parseAllocation(cell) {
+    var raw = norm(cell);
+    if (!raw) return null;
+    var parts = raw.split(' - ').map(function (p) { return norm(p); });
+    var code = '';
+    var band = '';
+    if (parts.length > 1 && /^[A-Z]{1,3}\d{2,5}$/i.test(parts[parts.length - 1])) code = parts.pop();
+    if (parts.length > 1 && /^G\d$/i.test(parts[parts.length - 1])) band = parts.pop();
+    var subject = parts.join(' - ');
+    if (!subject || (!band && !code)) return null;
+    return {
+      subject: subject, band: band, code: code,
+      value: [band, code].filter(Boolean).join(' - '),
+    };
+  }
+
+  /* Every distinct allocation across the students, as ready-made classes to
+   * tag teachers onto. Codeless allocations fall back to a name+band slug. */
+  function discoverClasses(students, level) {
+    var found = new Map();
+    (students || []).forEach(function (s) {
+      Object.keys(s.subjects || {}).forEach(function (subject) {
+        var value = norm(s.subjects[subject]);
+        if (!value) return;
+        var bits = value.split(' - ');
+        var band = /^G\d$/i.test(bits[0]) ? bits[0] : '';
+        var code = bits.length > 1 ? bits[bits.length - 1] : (band ? '' : bits[0]);
+        var key = subject + '|' + value;
+        if (found.has(key)) { found.get(key).n++; return; }
+        found.set(key, {
+          code: code || normKey(subject + '-' + band).toUpperCase().slice(0, 16),
+          name: subject + (band ? ' - ' + band : ''),
+          subject: subject,
+          teachers: [],
+          level: norm(level),
+          autoMatch: subject + '=' + value,
+          autoLevel: '',
+          autoPg: '',
+          autoClasses: '',
+          n: 1,
+        });
+      });
+    });
+    var list = Array.from(found.values());
+    // Two subjects could share a slug; keep codes unique.
+    var used = {};
+    list.forEach(function (g) {
+      var base = g.code, i = 2;
+      while (used[normKey(g.code)]) g.code = base + '-' + (i++);
+      used[normKey(g.code)] = true;
+    });
+    return list.sort(function (a, b) { return cmp(a.subject, b.subject) || cmp(a.name, b.name); });
+  }
+
   /* Find the most plausible header row in the first 15 rows of a sheet
    * (real documents often carry titles/dates above the actual table). */
   function detectHeaderRow(rows) {
@@ -976,7 +1185,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var bestScore = -1;
     var limit = Math.min(rows.length, 15);
     for (var r = 0; r < limit; r++) {
-      var m = mapHeaders(rows[r] || [], STUDENT_FIELDS);
+      var m = mapHeaders(rows[r] || [], IMPORT_FIELDS);
       var score = Object.keys(m).length + ('name' in m ? 2 : 0);
       if (score > bestScore) { bestScore = score; best = r; }
     }
@@ -1007,9 +1216,15 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       var cls = cell(row, 'class');
       var id = cell(row, 'id');
       if (!id) {
-        var base = cls || 'S';
-        counters[base] = (counters[base] || 0) + 1;
-        id = base + '-' + (counters[base] < 10 ? '0' : '') + counters[base];
+        // A register number makes a stable id that survives row reordering.
+        var reg = cell(row, 'reg');
+        if (reg) {
+          id = (cls || 'S') + '-' + (reg.length < 2 ? '0' + reg : reg);
+        } else {
+          var base = cls || 'S';
+          counters[base] = (counters[base] || 0) + 1;
+          id = base + '-' + (counters[base] < 10 ? '0' : '') + counters[base];
+        }
       }
       if (usedIds[id]) { warnings.push('Row ' + (r + 1) + ': duplicate ID "' + id + '" — skipped.'); continue; }
       usedIds[id] = true;
@@ -1018,8 +1233,21 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         var v = norm(row[sc.index]);
         if (v) subjects[norm(sc.header)] = v;
       });
+      // Positional "Subject N" slots: the subject names itself inside the cell.
+      (mapping.slotCols || []).forEach(function (ci) {
+        var a = parseAllocation(row[ci]);
+        if (!a) return;
+        var key = a.subject;
+        if (subjects[key] && subjects[key] !== a.value) {
+          var n = 2;
+          while (subjects[key + ' (' + n + ')']) n++;
+          key = key + ' (' + n + ')';       // same subject twice: keep both
+        }
+        subjects[key] = a.value;
+      });
       students.push({
         id: id, name: name, class: cls,
+        level: cell(row, 'level'),
         gender: cell(row, 'gender'), pg: cell(row, 'pg'),
         origin: ORIGIN_FILE, subjects: subjects,
       });
@@ -1079,6 +1307,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         m.name = imp.name;
         m.origin = ORIGIN_FILE;   // adopted: the school's file now lists them
         if (imp.class) m.class = imp.class;
+        if (imp.level) m.level = imp.level;
         if (imp.gender) m.gender = imp.gender;
         if (imp.pg) m.pg = imp.pg;
         m.subjects = m.subjects || {};
@@ -1090,7 +1319,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       } else {
         var newId = freeId(imp.class);
         model.students.push({
-          id: newId, name: imp.name, class: imp.class,
+          id: newId, name: imp.name, class: imp.class, level: imp.level,
           gender: imp.gender, pg: imp.pg, origin: ORIGIN_FILE, subjects: imp.subjects,
         });
         addedIds.push(newId);
@@ -1136,15 +1365,50 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   /* ---- auto-allocation rules ------------------------------------------ */
 
-  /* A group's rule can name a subject column (with an optional band value)
-   * and/or a class filter — comma-separated class names or prefixes
-   * ("1R" matches 1R1…1R6). Both parts must hold when both are set. */
+  /* A group's rule mirrors the school's setup grid: Level + PG + a class
+   * filter + any number of column criteria. Reproducing a namelist query
+   * such as "Level 3, PG3, SG = 3 A, Subject = SS/Geo" needs two column
+   * criteria at once, so they are held as a list, stored in one cell as
+   * "SG=3 A; History/Geog/HEM=SS/Geo". A criterion with no value means
+   * "has anything in that column". Everything filled in must hold; blanks
+   * mean "any". The class filter takes comma-separated names or prefixes
+   * ("1R" matches 1R1…1R6). */
+  function matchers(group) {
+    var out = [];
+    var seen = {};
+    function add(key, value) {
+      key = norm(key);
+      if (!key || seen[normKey(key)]) return;
+      seen[normKey(key)] = true;
+      out.push({ key: key, value: norm(value) });
+    }
+    norm(group.autoMatch).split(';').forEach(function (part) {
+      if (!norm(part)) return;
+      var at = part.indexOf('=');
+      if (at === -1) add(part, '');
+      else add(part.slice(0, at), part.slice(at + 1));
+    });
+    add(group.autoKey, group.autoValue);   // pre-multi-criteria files
+    return out;
+  }
+
+  function matchersToString(list) {
+    return (list || []).filter(function (m) { return norm(m.key); })
+      .map(function (m) { return norm(m.key) + '=' + norm(m.value); })
+      .join('; ');
+  }
+
   function groupHasRule(group) {
-    return !!(norm(group.autoKey) || norm(group.autoClasses));
+    return !!(matchers(group).length || norm(group.autoClasses) ||
+      norm(group.autoPg) || norm(group.autoLevel));
   }
 
   function matchesRule(student, group) {
     if (!groupHasRule(group)) return false;
+    var level = norm(group.autoLevel);
+    if (level && normKey(student.level) !== normKey(level)) return false;
+    var pg = norm(group.autoPg);
+    if (pg && normKey(student.pg) !== normKey(pg)) return false;
     var classes = norm(group.autoClasses);
     if (classes) {
       var sc = normKey(student.class);
@@ -1154,14 +1418,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       });
       if (!ok) return false;
     }
-    var key = norm(group.autoKey);
-    if (key) {
-      var v = student.subjects ? norm(student.subjects[key]) : '';
+    return matchers(group).every(function (m) {
+      var v = student.subjects ? norm(student.subjects[m.key]) : '';
       if (!v) return false;
-      var want = norm(group.autoValue);
-      if (want && normKey(v) !== normKey(want)) return false;
-    }
-    return true;
+      return !m.value || normKey(v) === normKey(m.value);
+    });
   }
 
   /* Add every rule-matching student to the group. Never removes anyone, so
@@ -1298,17 +1559,17 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
     var groupsByTeacher = new Map();
     data.groups.forEach(function (g) {
-      var t = norm(g.teacher);
-      if (!t) return;
-      if (!groupsByTeacher.has(t)) groupsByTeacher.set(t, []);
-      groupsByTeacher.get(t).push(g);
+      teacherNames(g).forEach(function (t) {
+        if (!groupsByTeacher.has(t)) groupsByTeacher.set(t, []);
+        groupsByTeacher.get(t).push(g);
+      });
     });
     groupsByTeacher.forEach(function (list) {
       list.sort(function (a, b) {
-        return a.subject.localeCompare(b.subject) || a.name.localeCompare(b.name);
+        return cmp(a.level, b.level) || cmp(a.subject, b.subject) || cmp(a.name, b.name);
       });
     });
-    var teachers = Array.from(groupsByTeacher.keys()).sort(function (a, b) { return a.localeCompare(b); });
+    var teachers = Array.from(groupsByTeacher.keys()).sort(cmp);
 
     return {
       studentsById: studentsById,
@@ -1328,6 +1589,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     GROUP_HEADERS: GROUP_HEADERS,
     MEMBERSHIP_HEADERS: MEMBERSHIP_HEADERS,
     STUDENT_FIELDS: STUDENT_FIELDS,
+    IMPORT_FIELDS: IMPORT_FIELDS,
     GROUP_FIELDS: GROUP_FIELDS,
     MEMBERSHIP_FIELDS: MEMBERSHIP_FIELDS,
     norm: norm,
@@ -1349,12 +1611,25 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     studentSearchText: studentSearchText,
     applyLevelUpdate: applyLevelUpdate,
     findNewestMatch: findNewestMatch,
+    isSlotHeader: isSlotHeader,
+    slotColumns: slotColumns,
+    hasSubjectSlots: hasSubjectSlots,
+    parseAllocation: parseAllocation,
+    discoverClasses: discoverClasses,
+    matchers: matchers,
+    matchersToString: matchersToString,
     derivePattern: derivePattern,
     findByName: findByName,
     resolveSource: resolveSource,
     groupHasRule: groupHasRule,
     matchesRule: matchesRule,
     autoFillGroup: autoFillGroup,
+    TEACHER_SEP: TEACHER_SEP,
+    parseTeachers: parseTeachers,
+    teacherNames: teacherNames,
+    teacherLabel: teacherLabel,
+    groupLevel: groupLevel,
+    groupsByLevelFor: groupsByLevelFor,
   };
 })();
 
@@ -1646,7 +1921,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     }).join('');
     $('printSheet').innerHTML = '<div class="card"><h2>' +
       esc((group.name || group.code) + (group.subject ? ' — ' + group.subject : '')) + '</h2>' +
-      '<p class="sub">' + (group.teacher ? 'Teacher: ' + esc(group.teacher) + ' · ' : '') +
+      '<p class="sub">' + (S.teacherNames(group).length ? 'Teacher: ' + esc(S.teacherNames(group).join(', ')) + ' · ' : '') +
       members.length + ' student' + (members.length === 1 ? '' : 's') + ' · Printed ' + esc(today) + '</p>' +
       '<table class="list"><thead><tr><th style="width:34px">#</th><th>Name</th><th>Class</th><th>ID</th><th>Remarks</th></tr></thead>' +
       '<tbody>' + (rows || '<tr><td colspan="5">No students in this group.</td></tr>') + '</tbody></table></div>';
@@ -1675,6 +1950,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     $('warningsList').innerHTML = warnings.slice(0, 30).map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') +
       (warnings.length > 30 ? '<li>… and ' + (warnings.length - 30) + ' more</li>' : '');
 
+    fillOptions($('studentLevelFilter'), uniqueValues('level'), 'All levels');
     fillOptions($('studentClassFilter'), uniqueValues('class'), 'All classes');
     fillOptions($('studentPgFilter'), uniqueValues('pg'), 'All PG');
     fillOptions($('memClassFilter'), uniqueValues('class'), 'All classes');
@@ -1706,6 +1982,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var subjects = Array.from(new Set(model.groups.map(function (g) { return g.subject; }).filter(Boolean))).sort(S.cmp);
     $('subjectList').innerHTML = subjects.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('');
     $('teacherList').innerHTML = ix.teachers.map(function (t) { return '<option value="' + esc(t) + '">'; }).join('');
+    $('levelList').innerHTML = uniqueValues('level').map(function (l) { return '<option value="' + esc(l) + '">'; }).join('');
   }
 
   /* ================= tabs ================= */
@@ -1757,6 +2034,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   var sortDir = 1;
 
   $('studentSearch').addEventListener('input', renderStudents);
+  $('studentLevelFilter').addEventListener('change', renderStudents);
   $('studentClassFilter').addEventListener('change', renderStudents);
   $('studentPgFilter').addEventListener('change', renderStudents);
   $('studentOriginFilter').addEventListener('change', renderStudents);
@@ -1795,9 +2073,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   function filteredStudents() {
     var q = $('studentSearch').value.trim().toLowerCase();
     var cls = $('studentClassFilter').value;
+    var lvl = $('studentLevelFilter').value;
     var pg = $('studentPgFilter').value;
     var origin = $('studentOriginFilter').value;
     return model.students.filter(function (s) {
+      if (lvl && s.level !== lvl) return false;
       if (cls && s.class !== cls) return false;
       if (pg && s.pg !== pg) return false;
       if (origin === 'added' && s.origin !== S.ORIGIN_ADDED) return false;
@@ -1836,6 +2116,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       '<th class="' + sortCls('id') + '" data-key="id">ID</th>' +
       '<th class="' + sortCls('name') + '" data-key="name">Name</th>' +
       '<th class="' + sortCls('class') + '" data-key="class">Class</th>' +
+      '<th class="' + sortCls('level') + '" data-key="level">Level</th>' +
       '<th class="' + sortCls('gender') + '" data-key="gender">Gender</th>' +
       '<th class="' + sortCls('pg') + '" data-key="pg">PG</th>' +
       keys.map(function (k) {
@@ -1853,7 +2134,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         '<td class="checkcol"><input type="checkbox" class="rowcheck" tabindex="-1"' + (sel ? ' checked' : '') + '></td>' +
         '<td>' + esc(s.id) + '</td><td>' + esc(s.name) +
         (s.origin === S.ORIGIN_ADDED ? ' <span class="badge added" title="Added in this app — not in the school\'s file">added</span>' : '') +
-        '</td><td>' + esc(s.class) + '</td>' +
+        '</td><td>' + esc(s.class) + '</td><td>' + esc(s.level) + '</td>' +
         '<td>' + esc(s.gender) + '</td><td>' + esc(s.pg) + '</td>' +
         keys.map(function (k) {
           return '<td class="subj">' + esc((s.subjects && s.subjects[k]) || '') + '</td>';
@@ -1967,6 +2248,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     $('sfId').value = student ? student.id : '';
     $('sfName').value = student ? student.name : '';
     $('sfClass').value = student ? student.class : '';
+    $('sfLevel').value = student ? student.level : '';
     $('sfGender').value = student ? student.gender : '';
     $('sfPg').value = student ? student.pg : '';
     $('sfSubjects').innerHTML = (model.subjectKeys || []).map(function (k, i) {
@@ -2000,6 +2282,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var existing = editingStudentId === null ? null : ix.studentsById.get(editingStudentId);
     var rec = {
       id: id, name: S.norm($('sfName').value), class: S.norm($('sfClass').value),
+      level: S.norm($('sfLevel').value),
       gender: S.norm($('sfGender').value), pg: S.norm($('sfPg').value),
       origin: existing ? existing.origin : S.ORIGIN_ADDED,
       subjects: subjects,
@@ -2036,16 +2319,51 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   }
 
   function groupOptionLabel(g) {
-    return (g.name || g.code) + (g.subject ? ' — ' + g.subject : '') + (g.teacher ? ' (' + g.teacher + ')' : '');
+    var t = S.teacherNames(g);
+    return (g.name || g.code) + (g.subject ? ' — ' + g.subject : '') + (t.length ? ' (' + t.join(', ') + ')' : '');
   }
 
   function ruleSummary(g) {
     if (!S.groupHasRule(g)) return '';
-    var parts = [];
-    if (g.autoKey) parts.push(g.autoValue || g.autoKey + ' (any)');
+    var parts = S.matchers(g).map(function (m) { return m.value || m.key + ' (any)'; });
+    if (g.autoLevel) parts.push('level ' + g.autoLevel);
+    if (g.autoPg) parts.push(g.autoPg);
     if (g.autoClasses) parts.push('classes ' + g.autoClasses);
     return parts.join(' · ');
   }
+
+  /* Ministry-format files name the teaching class inside each subject cell
+   * ("English Language - G2 - K200"), so every distinct allocation already IS
+   * a class. Offer them ready-made rather than making the admin write rules. */
+  $('discoverBtn').addEventListener('click', function () {
+    var levels = uniqueValues('level');
+    var found = S.discoverClasses(model.students, levels.length === 1 ? levels[0] : '');
+    var fresh = found.filter(function (g) {
+      return !model.groups.some(function (e) {
+        return S.normKey(e.code) === S.normKey(g.code) ||
+          S.matchersToString(S.matchers(e)) === g.autoMatch;
+      });
+    });
+    if (!found.length) {
+      alert('No subject allocations found in the student data yet — import a school file first.');
+      return;
+    }
+    if (!fresh.length) { toast('All ' + found.length + ' classes in the data already exist'); return; }
+    var preview = fresh.slice(0, 12).map(function (g) {
+      return '  ' + g.code + '  ' + g.name + '  (' + g.n + ')';
+    }).join('\n');
+    if (!confirm('Found ' + fresh.length + ' teaching class(es) in the student data:\n\n' + preview +
+      (fresh.length > 12 ? '\n  … and ' + (fresh.length - 12) + ' more' : '') +
+      '\n\nCreate them and allocate students automatically?\nYou can then tag teachers to each one.')) return;
+    var placed = 0;
+    fresh.forEach(function (g) {
+      delete g.n;
+      model.groups.push(g);
+      placed += S.autoFillGroup(model, g);
+    });
+    markDirty();
+    toast(fresh.length + ' classes created, ' + placed + ' student allocations — now tag teachers to them');
+  });
 
   $('groupSearch').addEventListener('input', renderGroups);
   $('addGroupBtn').addEventListener('click', function () { pendingBulkAdd = false; openGroupDialog(null); });
@@ -2053,14 +2371,16 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   function renderGroups() {
     var q = $('groupSearch').value.trim().toLowerCase();
     var rows = sortedGroups().filter(function (g) {
-      return !q || (g.code + ' ' + g.name + ' ' + g.subject + ' ' + g.teacher).toLowerCase().indexOf(q) !== -1;
+      return !q || (g.code + ' ' + g.name + ' ' + g.subject + ' ' + g.level + ' ' +
+        S.teacherNames(g).join(' ')).toLowerCase().indexOf(q) !== -1;
     });
     var tbody = $('groupsTable').querySelector('tbody');
     tbody.innerHTML = rows.map(function (g) {
       var n = (ix.membersByGroup.get(g.code) || []).length;
       return '<tr data-code="' + esc(g.code) + '">' +
         '<td>' + esc(g.code) + '</td><td>' + esc(g.name) + '</td><td>' + esc(g.subject) + '</td>' +
-        '<td>' + esc(g.teacher) + '</td><td class="tags">' + esc(ruleSummary(g)) + '</td><td>' + n + '</td>' +
+        '<td>' + esc(S.teacherNames(g).join(', ')) + '</td><td>' + esc(g.level) + '</td>' +
+        '<td class="tags">' + esc(ruleSummary(g)) + '</td><td>' + n + '</td>' +
         '<td class="actions"><button class="linklike" data-act="edit">Edit</button>' +
         '<button class="linklike danger" data-act="del">Delete</button></td></tr>';
     }).join('');
@@ -2111,46 +2431,111 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   }
 
   function suggestGroupIdentity() {
-    var key = $('gfAutoKey').value;
-    var val = $('gfAutoValue').value;
+    var first = dialogCriteria[0] || { key: '', value: '' };
+    var key = first.key;
+    var val = first.value;
+    var lvl = S.norm($('gfLevel').value);
+    var pg = S.norm($('gfAutoPg').value);
     var cls = S.norm($('gfAutoClasses').value).split(/[,;]+/)[0] || '';
     var base = val || key;
     if (!base) return;
+    var qualifier = cls || pg || '';
+    var label = (lvl ? 'S' + lvl + ' ' : '') + base + (qualifier ? ' ' + qualifier : '');
     if (!$('gfCode').dataset.userEdited) {
-      $('gfCode').value = (base + (cls ? '-' + cls : '')).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      $('gfCode').value = label.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
     }
-    if (!$('gfName').dataset.userEdited) {
-      $('gfName').value = base + (cls ? ' ' + cls : '');
-    }
-    if (!$('gfSubject').dataset.userEdited && key) {
-      $('gfSubject').value = key;
-    }
+    if (!$('gfName').dataset.userEdited) $('gfName').value = label;
+    if (!$('gfSubject').dataset.userEdited && key) $('gfSubject').value = key;
   }
 
   $('gfAutoKey').addEventListener('change', function () {
     fillAutoValueSelect($('gfAutoKey').value, '');
-    suggestGroupIdentity();
   });
-  $('gfAutoValue').addEventListener('change', suggestGroupIdentity);
   $('gfAutoClasses').addEventListener('input', suggestGroupIdentity);
+  $('gfLevel').addEventListener('input', suggestGroupIdentity);
+  $('gfAutoPg').addEventListener('input', suggestGroupIdentity);
   ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
     $(id).addEventListener('input', function () { $(id).dataset.userEdited = '1'; });
   });
 
+  /* Teachers are tagged as chips — several may share one class, the way the
+   * setup grid ticks more than one teacher per row. */
+  var dialogTeachers = [];
+  var dialogCriteria = [];
+
+  function renderCriteria() {
+    $('gfCriteria').innerHTML = dialogCriteria.length
+      ? '<div class="chips">' + dialogCriteria.map(function (c, i) {
+          return '<span class="chip">' + esc(c.key + (c.value ? ' = ' + c.value : ' (any)')) +
+            '<button type="button" data-i="' + i + '" title="Remove">\u00d7</button></span>';
+        }).join('') + '</div>'
+      : '<p class="hint" style="margin:0">Any student, unless narrowed below.</p>';
+  }
+  $('gfCriteria').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-i]');
+    if (!b) return;
+    dialogCriteria.splice(parseInt(b.dataset.i, 10), 1);
+    renderCriteria();
+    suggestGroupIdentity();
+  });
+  $('gfCritAdd').addEventListener('click', function () {
+    var key = $('gfAutoKey').value;
+    if (!key) return;
+    var value = $('gfAutoValue').value;
+    dialogCriteria = dialogCriteria.filter(function (c) { return S.normKey(c.key) !== S.normKey(key); });
+    dialogCriteria.push({ key: key, value: value });
+    renderCriteria();
+    suggestGroupIdentity();
+  });
+
+  function renderTeacherChips() {
+    $('gfTeacherChips').innerHTML = dialogTeachers.map(function (t, i) {
+      return '<span class="chip">' + esc(t) + '<button type="button" data-i="' + i +
+        '" title="Remove ' + esc(t) + '">×</button></span>';
+    }).join('');
+  }
+  $('gfTeacherChips').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-i]');
+    if (!btn) return;
+    dialogTeachers.splice(parseInt(btn.dataset.i, 10), 1);
+    renderTeacherChips();
+  });
+  function addDialogTeacher() {
+    var name = S.norm($('gfTeacher').value);
+    if (!name) return;
+    if (!dialogTeachers.some(function (t) { return S.normKey(t) === S.normKey(name); })) {
+      dialogTeachers.push(name);
+    }
+    $('gfTeacher').value = '';
+    renderTeacherChips();
+    $('gfTeacher').focus();
+  }
+  $('gfTeacherAdd').addEventListener('click', addDialogTeacher);
+  $('gfTeacher').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' || ev.key === ',') { ev.preventDefault(); addDialogTeacher(); }
+  });
+
   function openGroupDialog(group) {
     editingGroupCode = group ? group.code : null;
-    $('groupDialogTitle').textContent = group ? 'Edit group' :
-      (pendingBulkAdd ? 'New group for ' + selectedIds.size + ' selected student(s)' : 'Add group');
+    $('groupDialogTitle').textContent = group ? 'Edit class' :
+      (pendingBulkAdd ? 'New class for ' + selectedIds.size + ' selected student(s)' : 'Add class');
     $('gfCode').value = group ? group.code : '';
     $('gfName').value = group ? group.name : '';
     $('gfSubject').value = group ? group.subject : '';
-    $('gfTeacher').value = group ? group.teacher : '';
+    dialogTeachers = group ? S.teacherNames(group).slice() : [];
+    $('gfTeacher').value = '';
+    renderTeacherChips();
+    $('gfLevel').value = group ? (group.level || '') : '';
     $('gfAutoKey').innerHTML = '<option value="">(none — members added by hand)</option>' +
       (model.subjectKeys || []).map(function (k) {
         return '<option value="' + esc(k) + '">' + esc(k) + '</option>';
       }).join('');
-    $('gfAutoKey').value = group ? (group.autoKey || '') : '';
-    fillAutoValueSelect($('gfAutoKey').value, group ? group.autoValue : '');
+    dialogCriteria = group ? S.matchers(group) : [];
+    renderCriteria();
+    $('gfAutoKey').value = '';
+    fillAutoValueSelect('', '');
+    $('gfAutoLevel').value = group ? (group.autoLevel || '') : '';
+    $('gfAutoPg').value = group ? (group.autoPg || '') : '';
     $('gfAutoClasses').value = group ? (group.autoClasses || '') : '';
     ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
       if (group) $(id).dataset.userEdited = '1';       // never rewrite an existing group's identity
@@ -2163,10 +2548,13 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   $('groupForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     var code = S.norm($('gfCode').value);
+    addDialogTeacher();   // pick up a name typed but not yet added
     var rec = {
       code: code, name: S.norm($('gfName').value), subject: S.norm($('gfSubject').value),
-      teacher: S.norm($('gfTeacher').value),
-      autoKey: $('gfAutoKey').value, autoValue: $('gfAutoValue').value,
+      teachers: dialogTeachers.slice(), level: S.norm($('gfLevel').value),
+      autoMatch: S.matchersToString(dialogCriteria),
+      autoLevel: S.norm($('gfAutoLevel').value),
+      autoPg: S.norm($('gfAutoPg').value),
       autoClasses: S.norm($('gfAutoClasses').value),
     };
     if (!code) return;
@@ -2585,38 +2973,52 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     wb.SheetNames.forEach(function (name) {
       var rows = S.sheetRows(wb.Sheets[name]);
       var hr = S.detectHeaderRow(rows);
-      var m = S.mapHeaders(rows[hr] || [], S.STUDENT_FIELDS);
+      var m = S.mapHeaders(rows[hr] || [], S.IMPORT_FIELDS);
       var score = Object.keys(m).length + ('name' in m ? 2 : 0) +
         Math.min(Math.max(rows.length - hr - 1, 0), 50) / 100;
       if (score > bestScore) { bestScore = score; bestSheet = name; bestRows = rows; }
     });
     var hr = S.detectHeaderRow(bestRows || []);
     var headers = (bestRows || [])[hr] || [];
-    var guess = S.mapHeaders(headers, S.STUDENT_FIELDS);
+    var guess = S.mapHeaders(headers, S.IMPORT_FIELDS);
     if (!('name' in guess) || !('class' in guess)) {
       alert('Could not recognise Name and Class columns in "' + file.name + '" (sheet "' + bestSheet +
         '").\nUse Import… to map the columns by hand.');
       return;
     }
     var mappedIdx = Object.keys(guess).map(function (k) { return guess[k]; });
+    var slotCols = S.slotColumns(headers);
     var subjectCols = [];
-    headers.forEach(function (h, ci) {
-      var label = S.norm(h);
-      if (!label || mappedIdx.indexOf(ci) !== -1) return;
-      if (/psle|remark|^no$|^s\/?n$|^serial/i.test(label)) return;
-      subjectCols.push({ index: ci, header: label });
-    });
+    if (!S.hasSubjectSlots(headers)) {
+      headers.forEach(function (h, ci) {
+        var label = S.norm(h);
+        if (!label || mappedIdx.indexOf(ci) !== -1) return;
+        if (/psle|remark|^no$|^s\/?n$|^serial/i.test(label)) return;
+        subjectCols.push({ index: ci, header: label });
+      });
+      slotCols = [];
+    }
     var res = S.importStudents(bestRows, {
       headerRow: hr,
       cols: {
         id: null, name: guess.name, class: guess.class,
+        level: 'level' in guess ? guess.level : null,
         gender: 'gender' in guess ? guess.gender : null,
         pg: 'pg' in guess ? guess.pg : null,
+        reg: 'reg' in guess ? guess.reg : null,
       },
       subjectCols: subjectCols,
+      slotCols: slotCols,
     });
     if (!res.students.length) { alert('No usable student rows found in "' + file.name + '".'); return; }
     var importedKeys = subjectCols.map(function (c) { return S.norm(c.header); });
+    if (slotCols.length) {
+      var slotKeys = {};
+      res.students.forEach(function (st) {
+        Object.keys(st.subjects).forEach(function (k) { slotKeys[k] = true; });
+      });
+      importedKeys = importedKeys.concat(Object.keys(slotKeys));
+    }
     var classes = Array.from(new Set(res.students.map(function (s) { return s.class; }).filter(Boolean))).sort(S.cmp);
     if (!confirm('Update level "' + src.level + '" from:\n' + file.name + ' (sheet "' + bestSheet + '")\n\n' +
       res.students.length + ' students in classes ' + classes.join(', ') + '.\n' +
@@ -2691,7 +3093,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   $('impSheet').addEventListener('change', loadImportSheet);
   $('impHeaderRow').addEventListener('change', fillImportMapping);
-  ['impId', 'impName', 'impClass', 'impGender', 'impPg'].forEach(function (id) {
+  ['impId', 'impName', 'impClass', 'impLevel', 'impGender', 'impPg'].forEach(function (id) {
     $(id).addEventListener('change', updateImportHints);
   });
 
@@ -2714,11 +3116,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var options = ['<option value="">— none —</option>'].concat(headers.map(function (h, i) {
       return '<option value="' + i + '">' + esc(S.norm(h) || '(column ' + (i + 1) + ')') + '</option>';
     })).join('');
-    ['impId', 'impName', 'impClass', 'impGender', 'impPg'].forEach(function (id) { $(id).innerHTML = options; });
-    var guess = S.mapHeaders(headers, S.STUDENT_FIELDS);
+    ['impId', 'impName', 'impClass', 'impLevel', 'impGender', 'impPg'].forEach(function (id) { $(id).innerHTML = options; });
+    var guess = S.mapHeaders(headers, S.IMPORT_FIELDS);
     if ('id' in guess) $('impId').value = guess.id;
     if ('name' in guess) $('impName').value = guess.name;
     if ('class' in guess) $('impClass').value = guess.class;
+    if ('level' in guess) $('impLevel').value = guess.level;
     if ('gender' in guess) $('impGender').value = guess.gender;
     if ('pg' in guess) $('impPg').value = guess.pg;
     renderTagCols();
@@ -2726,7 +3129,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   }
 
   function mappedIndexes() {
-    return ['impId', 'impName', 'impClass', 'impGender', 'impPg'].map(function (id) {
+    return ['impId', 'impName', 'impClass', 'impLevel', 'impGender', 'impPg'].map(function (id) {
       return $(id).value === '' ? -1 : parseInt($(id).value, 10);
     });
   }
@@ -2781,6 +3184,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         id: $('impId').value === '' ? null : parseInt($('impId').value, 10),
         name: parseInt($('impName').value, 10),
         class: $('impClass').value === '' ? null : parseInt($('impClass').value, 10),
+        level: $('impLevel').value === '' ? null : parseInt($('impLevel').value, 10),
         gender: $('impGender').value === '' ? null : parseInt($('impGender').value, 10),
         pg: $('impPg').value === '' ? null : parseInt($('impPg').value, 10),
       },

@@ -27,6 +27,18 @@
   table.list.selectable tbody { user-select: none; cursor: pointer; }
   .rowcheck { pointer-events: none; }
   .hint { font-size: 13px; color: var(--muted); margin: 4px 0 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .chips:empty { display: none; }
+  .chips .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--accent-soft); color: var(--accent);
+    border-radius: 999px; padding: 3px 6px 3px 12px; font-size: 13px; font-weight: 600;
+  }
+  .chips .chip button {
+    border: none; background: none; box-shadow: none; color: inherit;
+    font-size: 15px; line-height: 1; padding: 0 4px; cursor: pointer;
+  }
+  .chips .chip button:hover { color: var(--red); background: none; }
 </style>
 </head>
 <body>
@@ -101,6 +113,7 @@
     <section id="tab-students">
       <div class="toolbar">
         <input type="search" id="studentSearch" placeholder="Search name, class, ID or tag (e.g. MA G3)" style="min-width:260px">
+        <select id="studentLevelFilter"><option value="">All levels</option></select>
         <select id="studentClassFilter"><option value="">All classes</option></select>
         <select id="studentPgFilter"><option value="">All PG</option></select>
         <select id="studentOriginFilter">
@@ -131,11 +144,12 @@
       <div class="toolbar">
         <input type="search" id="groupSearch" placeholder="Search group, subject or teacher" style="min-width:220px">
         <span class="spacer"></span>
-        <button class="primary" id="addGroupBtn">Add group</button>
+        <button id="discoverBtn">Find classes in the data</button>
+        <button class="primary" id="addGroupBtn">Add class</button>
       </div>
       <div class="card">
         <table class="list" id="groupsTable">
-          <thead><tr><th>Code</th><th>Group name</th><th>Subject</th><th>Teacher</th><th>Auto-fill</th><th>Members</th><th></th></tr></thead>
+          <thead><tr><th>Code</th><th>Class name</th><th>Subject</th><th>Teachers</th><th>Level</th><th>Auto-fill</th><th>Members</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
         <p class="empty" id="groupsEmpty" hidden>No teaching groups yet — use <strong>Add group</strong>.</p>
@@ -233,6 +247,7 @@
       <label for="sfId">Student ID *</label><input type="text" id="sfId" required>
       <label for="sfName">Name *</label><input type="text" id="sfName" required>
       <label for="sfClass">Class</label><input type="text" id="sfClass" list="classList">
+      <label for="sfLevel">Level</label><input type="text" id="sfLevel" list="levelList">
       <label for="sfGender">Gender</label><input type="text" id="sfGender" list="genderList">
       <label for="sfPg">PG</label><input type="text" id="sfPg" list="pgList">
       <p class="hint" id="sfAddedNote" style="grid-column: 1 / -1; margin: 0" hidden>
@@ -250,14 +265,32 @@
   <dialog id="groupDialog">
     <h2 id="groupDialogTitle">Add group</h2>
     <form class="fields" id="groupForm">
-      <label for="gfTeacher">Teacher</label><input type="text" id="gfTeacher" list="teacherList" placeholder="e.g. Mrs Wong">
-      <label for="gfAutoKey">Subject taken</label><select id="gfAutoKey"></select>
-      <label for="gfAutoValue">Band / value</label><select id="gfAutoValue" disabled></select>
-      <label for="gfAutoClasses">Limit to classes</label><input type="text" id="gfAutoClasses" placeholder="e.g. 1R or 1R1, 1R3 (blank = all)">
-      <p class="hint" style="grid-column: 1 / -1; margin: 0">Matching students are allocated automatically
-        when the group is created, and new students join it after each school-file update. You can still
-        add or remove members by hand afterwards — manual removals are only revisited if you press
-        “Auto-fill” yourself.</p>
+      <label for="gfTeacher">Teachers</label>
+      <div>
+        <div class="chips" id="gfTeacherChips"></div>
+        <div style="display:flex; gap:8px">
+          <input type="text" id="gfTeacher" list="teacherList" placeholder="Type a name and press Enter" style="flex:1">
+          <button type="button" id="gfTeacherAdd">Add</button>
+        </div>
+      </div>
+      <label for="gfLevel">Level (label)</label><input type="text" id="gfLevel" list="levelList" placeholder="groups this class on the teacher page">
+      <label for="gfAutoLevel">Only this level</label><input type="text" id="gfAutoLevel" list="levelList" placeholder="blank = any level">
+      <label>Must be taking</label>
+      <div>
+        <div id="gfCriteria"></div>
+        <div style="display:flex; gap:8px; margin-top:6px">
+          <select id="gfAutoKey" style="flex:1"></select>
+          <select id="gfAutoValue" style="flex:1" disabled></select>
+          <button type="button" id="gfCritAdd">Add</button>
+        </div>
+      </div>
+      <label for="gfAutoPg">PG</label><input type="text" id="gfAutoPg" list="pgList" placeholder="e.g. PG3 (blank = any)">
+      <label for="gfAutoClasses">Limit to classes</label><input type="text" id="gfAutoClasses" placeholder="e.g. 3S or 3S1, 3S3 (blank = all)">
+      <p class="hint" style="grid-column: 1 / -1; margin: 0">Level, column value, PG and classes work together
+        like the setup grid in your workbook — every box you fill in narrows the class, blanks mean “any”.
+        Matching students are allocated automatically when the class is created, and new students join it
+        after each school-file update. You can still add or remove members by hand afterwards — manual
+        removals are only revisited if you press “Auto-fill” yourself.</p>
       <label for="gfCode">Group code *</label><input type="text" id="gfCode" required placeholder="e.g. EL-G3">
       <label for="gfName">Group name</label><input type="text" id="gfName" placeholder="e.g. English G3">
       <label for="gfSubject">Subject label</label><input type="text" id="gfSubject" list="subjectList" placeholder="shown on the teacher page">
@@ -314,6 +347,7 @@
         <label for="impName">Name column *</label><select id="impName"></select>
         <label for="impClass">Class column</label><select id="impClass"></select>
         <label for="impGender">Gender column</label><select id="impGender"></select>
+        <label for="impLevel">Level column</label><select id="impLevel"></select>
         <label for="impPg">PG column</label><select id="impPg"></select>
         <label for="impId">Student ID column</label><select id="impId"></select>
       </div>
@@ -333,6 +367,7 @@
     </div>
   </dialog>
 
+  <datalist id="levelList"></datalist>
   <datalist id="classList"></datalist>
   <datalist id="subjectList"></datalist>
   <datalist id="teacherList"></datalist>
@@ -631,7 +666,7 @@
     }).join('');
     $('printSheet').innerHTML = '<div class="card"><h2>' +
       esc((group.name || group.code) + (group.subject ? ' — ' + group.subject : '')) + '</h2>' +
-      '<p class="sub">' + (group.teacher ? 'Teacher: ' + esc(group.teacher) + ' · ' : '') +
+      '<p class="sub">' + (S.teacherNames(group).length ? 'Teacher: ' + esc(S.teacherNames(group).join(', ')) + ' · ' : '') +
       members.length + ' student' + (members.length === 1 ? '' : 's') + ' · Printed ' + esc(today) + '</p>' +
       '<table class="list"><thead><tr><th style="width:34px">#</th><th>Name</th><th>Class</th><th>ID</th><th>Remarks</th></tr></thead>' +
       '<tbody>' + (rows || '<tr><td colspan="5">No students in this group.</td></tr>') + '</tbody></table></div>';
@@ -660,6 +695,7 @@
     $('warningsList').innerHTML = warnings.slice(0, 30).map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') +
       (warnings.length > 30 ? '<li>… and ' + (warnings.length - 30) + ' more</li>' : '');
 
+    fillOptions($('studentLevelFilter'), uniqueValues('level'), 'All levels');
     fillOptions($('studentClassFilter'), uniqueValues('class'), 'All classes');
     fillOptions($('studentPgFilter'), uniqueValues('pg'), 'All PG');
     fillOptions($('memClassFilter'), uniqueValues('class'), 'All classes');
@@ -691,6 +727,7 @@
     var subjects = Array.from(new Set(model.groups.map(function (g) { return g.subject; }).filter(Boolean))).sort(S.cmp);
     $('subjectList').innerHTML = subjects.map(function (s) { return '<option value="' + esc(s) + '">'; }).join('');
     $('teacherList').innerHTML = ix.teachers.map(function (t) { return '<option value="' + esc(t) + '">'; }).join('');
+    $('levelList').innerHTML = uniqueValues('level').map(function (l) { return '<option value="' + esc(l) + '">'; }).join('');
   }
 
   /* ================= tabs ================= */
@@ -742,6 +779,7 @@
   var sortDir = 1;
 
   $('studentSearch').addEventListener('input', renderStudents);
+  $('studentLevelFilter').addEventListener('change', renderStudents);
   $('studentClassFilter').addEventListener('change', renderStudents);
   $('studentPgFilter').addEventListener('change', renderStudents);
   $('studentOriginFilter').addEventListener('change', renderStudents);
@@ -780,9 +818,11 @@
   function filteredStudents() {
     var q = $('studentSearch').value.trim().toLowerCase();
     var cls = $('studentClassFilter').value;
+    var lvl = $('studentLevelFilter').value;
     var pg = $('studentPgFilter').value;
     var origin = $('studentOriginFilter').value;
     return model.students.filter(function (s) {
+      if (lvl && s.level !== lvl) return false;
       if (cls && s.class !== cls) return false;
       if (pg && s.pg !== pg) return false;
       if (origin === 'added' && s.origin !== S.ORIGIN_ADDED) return false;
@@ -821,6 +861,7 @@
       '<th class="' + sortCls('id') + '" data-key="id">ID</th>' +
       '<th class="' + sortCls('name') + '" data-key="name">Name</th>' +
       '<th class="' + sortCls('class') + '" data-key="class">Class</th>' +
+      '<th class="' + sortCls('level') + '" data-key="level">Level</th>' +
       '<th class="' + sortCls('gender') + '" data-key="gender">Gender</th>' +
       '<th class="' + sortCls('pg') + '" data-key="pg">PG</th>' +
       keys.map(function (k) {
@@ -838,7 +879,7 @@
         '<td class="checkcol"><input type="checkbox" class="rowcheck" tabindex="-1"' + (sel ? ' checked' : '') + '></td>' +
         '<td>' + esc(s.id) + '</td><td>' + esc(s.name) +
         (s.origin === S.ORIGIN_ADDED ? ' <span class="badge added" title="Added in this app — not in the school\'s file">added</span>' : '') +
-        '</td><td>' + esc(s.class) + '</td>' +
+        '</td><td>' + esc(s.class) + '</td><td>' + esc(s.level) + '</td>' +
         '<td>' + esc(s.gender) + '</td><td>' + esc(s.pg) + '</td>' +
         keys.map(function (k) {
           return '<td class="subj">' + esc((s.subjects && s.subjects[k]) || '') + '</td>';
@@ -952,6 +993,7 @@
     $('sfId').value = student ? student.id : '';
     $('sfName').value = student ? student.name : '';
     $('sfClass').value = student ? student.class : '';
+    $('sfLevel').value = student ? student.level : '';
     $('sfGender').value = student ? student.gender : '';
     $('sfPg').value = student ? student.pg : '';
     $('sfSubjects').innerHTML = (model.subjectKeys || []).map(function (k, i) {
@@ -985,6 +1027,7 @@
     var existing = editingStudentId === null ? null : ix.studentsById.get(editingStudentId);
     var rec = {
       id: id, name: S.norm($('sfName').value), class: S.norm($('sfClass').value),
+      level: S.norm($('sfLevel').value),
       gender: S.norm($('sfGender').value), pg: S.norm($('sfPg').value),
       origin: existing ? existing.origin : S.ORIGIN_ADDED,
       subjects: subjects,
@@ -1021,16 +1064,51 @@
   }
 
   function groupOptionLabel(g) {
-    return (g.name || g.code) + (g.subject ? ' — ' + g.subject : '') + (g.teacher ? ' (' + g.teacher + ')' : '');
+    var t = S.teacherNames(g);
+    return (g.name || g.code) + (g.subject ? ' — ' + g.subject : '') + (t.length ? ' (' + t.join(', ') + ')' : '');
   }
 
   function ruleSummary(g) {
     if (!S.groupHasRule(g)) return '';
-    var parts = [];
-    if (g.autoKey) parts.push(g.autoValue || g.autoKey + ' (any)');
+    var parts = S.matchers(g).map(function (m) { return m.value || m.key + ' (any)'; });
+    if (g.autoLevel) parts.push('level ' + g.autoLevel);
+    if (g.autoPg) parts.push(g.autoPg);
     if (g.autoClasses) parts.push('classes ' + g.autoClasses);
     return parts.join(' · ');
   }
+
+  /* Ministry-format files name the teaching class inside each subject cell
+   * ("English Language - G2 - K200"), so every distinct allocation already IS
+   * a class. Offer them ready-made rather than making the admin write rules. */
+  $('discoverBtn').addEventListener('click', function () {
+    var levels = uniqueValues('level');
+    var found = S.discoverClasses(model.students, levels.length === 1 ? levels[0] : '');
+    var fresh = found.filter(function (g) {
+      return !model.groups.some(function (e) {
+        return S.normKey(e.code) === S.normKey(g.code) ||
+          S.matchersToString(S.matchers(e)) === g.autoMatch;
+      });
+    });
+    if (!found.length) {
+      alert('No subject allocations found in the student data yet — import a school file first.');
+      return;
+    }
+    if (!fresh.length) { toast('All ' + found.length + ' classes in the data already exist'); return; }
+    var preview = fresh.slice(0, 12).map(function (g) {
+      return '  ' + g.code + '  ' + g.name + '  (' + g.n + ')';
+    }).join('\n');
+    if (!confirm('Found ' + fresh.length + ' teaching class(es) in the student data:\n\n' + preview +
+      (fresh.length > 12 ? '\n  … and ' + (fresh.length - 12) + ' more' : '') +
+      '\n\nCreate them and allocate students automatically?\nYou can then tag teachers to each one.')) return;
+    var placed = 0;
+    fresh.forEach(function (g) {
+      delete g.n;
+      model.groups.push(g);
+      placed += S.autoFillGroup(model, g);
+    });
+    markDirty();
+    toast(fresh.length + ' classes created, ' + placed + ' student allocations — now tag teachers to them');
+  });
 
   $('groupSearch').addEventListener('input', renderGroups);
   $('addGroupBtn').addEventListener('click', function () { pendingBulkAdd = false; openGroupDialog(null); });
@@ -1038,14 +1116,16 @@
   function renderGroups() {
     var q = $('groupSearch').value.trim().toLowerCase();
     var rows = sortedGroups().filter(function (g) {
-      return !q || (g.code + ' ' + g.name + ' ' + g.subject + ' ' + g.teacher).toLowerCase().indexOf(q) !== -1;
+      return !q || (g.code + ' ' + g.name + ' ' + g.subject + ' ' + g.level + ' ' +
+        S.teacherNames(g).join(' ')).toLowerCase().indexOf(q) !== -1;
     });
     var tbody = $('groupsTable').querySelector('tbody');
     tbody.innerHTML = rows.map(function (g) {
       var n = (ix.membersByGroup.get(g.code) || []).length;
       return '<tr data-code="' + esc(g.code) + '">' +
         '<td>' + esc(g.code) + '</td><td>' + esc(g.name) + '</td><td>' + esc(g.subject) + '</td>' +
-        '<td>' + esc(g.teacher) + '</td><td class="tags">' + esc(ruleSummary(g)) + '</td><td>' + n + '</td>' +
+        '<td>' + esc(S.teacherNames(g).join(', ')) + '</td><td>' + esc(g.level) + '</td>' +
+        '<td class="tags">' + esc(ruleSummary(g)) + '</td><td>' + n + '</td>' +
         '<td class="actions"><button class="linklike" data-act="edit">Edit</button>' +
         '<button class="linklike danger" data-act="del">Delete</button></td></tr>';
     }).join('');
@@ -1096,46 +1176,111 @@
   }
 
   function suggestGroupIdentity() {
-    var key = $('gfAutoKey').value;
-    var val = $('gfAutoValue').value;
+    var first = dialogCriteria[0] || { key: '', value: '' };
+    var key = first.key;
+    var val = first.value;
+    var lvl = S.norm($('gfLevel').value);
+    var pg = S.norm($('gfAutoPg').value);
     var cls = S.norm($('gfAutoClasses').value).split(/[,;]+/)[0] || '';
     var base = val || key;
     if (!base) return;
+    var qualifier = cls || pg || '';
+    var label = (lvl ? 'S' + lvl + ' ' : '') + base + (qualifier ? ' ' + qualifier : '');
     if (!$('gfCode').dataset.userEdited) {
-      $('gfCode').value = (base + (cls ? '-' + cls : '')).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      $('gfCode').value = label.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
     }
-    if (!$('gfName').dataset.userEdited) {
-      $('gfName').value = base + (cls ? ' ' + cls : '');
-    }
-    if (!$('gfSubject').dataset.userEdited && key) {
-      $('gfSubject').value = key;
-    }
+    if (!$('gfName').dataset.userEdited) $('gfName').value = label;
+    if (!$('gfSubject').dataset.userEdited && key) $('gfSubject').value = key;
   }
 
   $('gfAutoKey').addEventListener('change', function () {
     fillAutoValueSelect($('gfAutoKey').value, '');
-    suggestGroupIdentity();
   });
-  $('gfAutoValue').addEventListener('change', suggestGroupIdentity);
   $('gfAutoClasses').addEventListener('input', suggestGroupIdentity);
+  $('gfLevel').addEventListener('input', suggestGroupIdentity);
+  $('gfAutoPg').addEventListener('input', suggestGroupIdentity);
   ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
     $(id).addEventListener('input', function () { $(id).dataset.userEdited = '1'; });
   });
 
+  /* Teachers are tagged as chips — several may share one class, the way the
+   * setup grid ticks more than one teacher per row. */
+  var dialogTeachers = [];
+  var dialogCriteria = [];
+
+  function renderCriteria() {
+    $('gfCriteria').innerHTML = dialogCriteria.length
+      ? '<div class="chips">' + dialogCriteria.map(function (c, i) {
+          return '<span class="chip">' + esc(c.key + (c.value ? ' = ' + c.value : ' (any)')) +
+            '<button type="button" data-i="' + i + '" title="Remove">\u00d7</button></span>';
+        }).join('') + '</div>'
+      : '<p class="hint" style="margin:0">Any student, unless narrowed below.</p>';
+  }
+  $('gfCriteria').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-i]');
+    if (!b) return;
+    dialogCriteria.splice(parseInt(b.dataset.i, 10), 1);
+    renderCriteria();
+    suggestGroupIdentity();
+  });
+  $('gfCritAdd').addEventListener('click', function () {
+    var key = $('gfAutoKey').value;
+    if (!key) return;
+    var value = $('gfAutoValue').value;
+    dialogCriteria = dialogCriteria.filter(function (c) { return S.normKey(c.key) !== S.normKey(key); });
+    dialogCriteria.push({ key: key, value: value });
+    renderCriteria();
+    suggestGroupIdentity();
+  });
+
+  function renderTeacherChips() {
+    $('gfTeacherChips').innerHTML = dialogTeachers.map(function (t, i) {
+      return '<span class="chip">' + esc(t) + '<button type="button" data-i="' + i +
+        '" title="Remove ' + esc(t) + '">×</button></span>';
+    }).join('');
+  }
+  $('gfTeacherChips').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-i]');
+    if (!btn) return;
+    dialogTeachers.splice(parseInt(btn.dataset.i, 10), 1);
+    renderTeacherChips();
+  });
+  function addDialogTeacher() {
+    var name = S.norm($('gfTeacher').value);
+    if (!name) return;
+    if (!dialogTeachers.some(function (t) { return S.normKey(t) === S.normKey(name); })) {
+      dialogTeachers.push(name);
+    }
+    $('gfTeacher').value = '';
+    renderTeacherChips();
+    $('gfTeacher').focus();
+  }
+  $('gfTeacherAdd').addEventListener('click', addDialogTeacher);
+  $('gfTeacher').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' || ev.key === ',') { ev.preventDefault(); addDialogTeacher(); }
+  });
+
   function openGroupDialog(group) {
     editingGroupCode = group ? group.code : null;
-    $('groupDialogTitle').textContent = group ? 'Edit group' :
-      (pendingBulkAdd ? 'New group for ' + selectedIds.size + ' selected student(s)' : 'Add group');
+    $('groupDialogTitle').textContent = group ? 'Edit class' :
+      (pendingBulkAdd ? 'New class for ' + selectedIds.size + ' selected student(s)' : 'Add class');
     $('gfCode').value = group ? group.code : '';
     $('gfName').value = group ? group.name : '';
     $('gfSubject').value = group ? group.subject : '';
-    $('gfTeacher').value = group ? group.teacher : '';
+    dialogTeachers = group ? S.teacherNames(group).slice() : [];
+    $('gfTeacher').value = '';
+    renderTeacherChips();
+    $('gfLevel').value = group ? (group.level || '') : '';
     $('gfAutoKey').innerHTML = '<option value="">(none — members added by hand)</option>' +
       (model.subjectKeys || []).map(function (k) {
         return '<option value="' + esc(k) + '">' + esc(k) + '</option>';
       }).join('');
-    $('gfAutoKey').value = group ? (group.autoKey || '') : '';
-    fillAutoValueSelect($('gfAutoKey').value, group ? group.autoValue : '');
+    dialogCriteria = group ? S.matchers(group) : [];
+    renderCriteria();
+    $('gfAutoKey').value = '';
+    fillAutoValueSelect('', '');
+    $('gfAutoLevel').value = group ? (group.autoLevel || '') : '';
+    $('gfAutoPg').value = group ? (group.autoPg || '') : '';
     $('gfAutoClasses').value = group ? (group.autoClasses || '') : '';
     ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
       if (group) $(id).dataset.userEdited = '1';       // never rewrite an existing group's identity
@@ -1148,10 +1293,13 @@
   $('groupForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     var code = S.norm($('gfCode').value);
+    addDialogTeacher();   // pick up a name typed but not yet added
     var rec = {
       code: code, name: S.norm($('gfName').value), subject: S.norm($('gfSubject').value),
-      teacher: S.norm($('gfTeacher').value),
-      autoKey: $('gfAutoKey').value, autoValue: $('gfAutoValue').value,
+      teachers: dialogTeachers.slice(), level: S.norm($('gfLevel').value),
+      autoMatch: S.matchersToString(dialogCriteria),
+      autoLevel: S.norm($('gfAutoLevel').value),
+      autoPg: S.norm($('gfAutoPg').value),
       autoClasses: S.norm($('gfAutoClasses').value),
     };
     if (!code) return;
@@ -1570,38 +1718,52 @@
     wb.SheetNames.forEach(function (name) {
       var rows = S.sheetRows(wb.Sheets[name]);
       var hr = S.detectHeaderRow(rows);
-      var m = S.mapHeaders(rows[hr] || [], S.STUDENT_FIELDS);
+      var m = S.mapHeaders(rows[hr] || [], S.IMPORT_FIELDS);
       var score = Object.keys(m).length + ('name' in m ? 2 : 0) +
         Math.min(Math.max(rows.length - hr - 1, 0), 50) / 100;
       if (score > bestScore) { bestScore = score; bestSheet = name; bestRows = rows; }
     });
     var hr = S.detectHeaderRow(bestRows || []);
     var headers = (bestRows || [])[hr] || [];
-    var guess = S.mapHeaders(headers, S.STUDENT_FIELDS);
+    var guess = S.mapHeaders(headers, S.IMPORT_FIELDS);
     if (!('name' in guess) || !('class' in guess)) {
       alert('Could not recognise Name and Class columns in "' + file.name + '" (sheet "' + bestSheet +
         '").\nUse Import… to map the columns by hand.');
       return;
     }
     var mappedIdx = Object.keys(guess).map(function (k) { return guess[k]; });
+    var slotCols = S.slotColumns(headers);
     var subjectCols = [];
-    headers.forEach(function (h, ci) {
-      var label = S.norm(h);
-      if (!label || mappedIdx.indexOf(ci) !== -1) return;
-      if (/psle|remark|^no$|^s\/?n$|^serial/i.test(label)) return;
-      subjectCols.push({ index: ci, header: label });
-    });
+    if (!S.hasSubjectSlots(headers)) {
+      headers.forEach(function (h, ci) {
+        var label = S.norm(h);
+        if (!label || mappedIdx.indexOf(ci) !== -1) return;
+        if (/psle|remark|^no$|^s\/?n$|^serial/i.test(label)) return;
+        subjectCols.push({ index: ci, header: label });
+      });
+      slotCols = [];
+    }
     var res = S.importStudents(bestRows, {
       headerRow: hr,
       cols: {
         id: null, name: guess.name, class: guess.class,
+        level: 'level' in guess ? guess.level : null,
         gender: 'gender' in guess ? guess.gender : null,
         pg: 'pg' in guess ? guess.pg : null,
+        reg: 'reg' in guess ? guess.reg : null,
       },
       subjectCols: subjectCols,
+      slotCols: slotCols,
     });
     if (!res.students.length) { alert('No usable student rows found in "' + file.name + '".'); return; }
     var importedKeys = subjectCols.map(function (c) { return S.norm(c.header); });
+    if (slotCols.length) {
+      var slotKeys = {};
+      res.students.forEach(function (st) {
+        Object.keys(st.subjects).forEach(function (k) { slotKeys[k] = true; });
+      });
+      importedKeys = importedKeys.concat(Object.keys(slotKeys));
+    }
     var classes = Array.from(new Set(res.students.map(function (s) { return s.class; }).filter(Boolean))).sort(S.cmp);
     if (!confirm('Update level "' + src.level + '" from:\n' + file.name + ' (sheet "' + bestSheet + '")\n\n' +
       res.students.length + ' students in classes ' + classes.join(', ') + '.\n' +
@@ -1676,7 +1838,7 @@
 
   $('impSheet').addEventListener('change', loadImportSheet);
   $('impHeaderRow').addEventListener('change', fillImportMapping);
-  ['impId', 'impName', 'impClass', 'impGender', 'impPg'].forEach(function (id) {
+  ['impId', 'impName', 'impClass', 'impLevel', 'impGender', 'impPg'].forEach(function (id) {
     $(id).addEventListener('change', updateImportHints);
   });
 
@@ -1699,11 +1861,12 @@
     var options = ['<option value="">— none —</option>'].concat(headers.map(function (h, i) {
       return '<option value="' + i + '">' + esc(S.norm(h) || '(column ' + (i + 1) + ')') + '</option>';
     })).join('');
-    ['impId', 'impName', 'impClass', 'impGender', 'impPg'].forEach(function (id) { $(id).innerHTML = options; });
-    var guess = S.mapHeaders(headers, S.STUDENT_FIELDS);
+    ['impId', 'impName', 'impClass', 'impLevel', 'impGender', 'impPg'].forEach(function (id) { $(id).innerHTML = options; });
+    var guess = S.mapHeaders(headers, S.IMPORT_FIELDS);
     if ('id' in guess) $('impId').value = guess.id;
     if ('name' in guess) $('impName').value = guess.name;
     if ('class' in guess) $('impClass').value = guess.class;
+    if ('level' in guess) $('impLevel').value = guess.level;
     if ('gender' in guess) $('impGender').value = guess.gender;
     if ('pg' in guess) $('impPg').value = guess.pg;
     renderTagCols();
@@ -1711,7 +1874,7 @@
   }
 
   function mappedIndexes() {
-    return ['impId', 'impName', 'impClass', 'impGender', 'impPg'].map(function (id) {
+    return ['impId', 'impName', 'impClass', 'impLevel', 'impGender', 'impPg'].map(function (id) {
       return $(id).value === '' ? -1 : parseInt($(id).value, 10);
     });
   }
@@ -1766,6 +1929,7 @@
         id: $('impId').value === '' ? null : parseInt($('impId').value, 10),
         name: parseInt($('impName').value, 10),
         class: $('impClass').value === '' ? null : parseInt($('impClass').value, 10),
+        level: $('impLevel').value === '' ? null : parseInt($('impLevel').value, 10),
         gender: $('impGender').value === '' ? null : parseInt($('impGender').value, 10),
         pg: $('impPg').value === '' ? null : parseInt($('impPg').value, 10),
       },

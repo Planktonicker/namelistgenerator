@@ -41,8 +41,12 @@ edits go through `admin.html`, the two can never drift apart.
 
 1. Copy `dist/namelist.html` and `dist/admin.html` into the shared folder.
 2. Open `admin.html` in Chrome/Edge → **Open data folder…** → pick that folder → **Allow**.
-3. No `namelist.xlsx` yet? Choose **Import a raw document…** and point it at your
-   existing student list (Excel/CSV). The importer:
+3. The folder is empty, so the app asks the only question that matters:
+   **Choose the level files (Sec 1–5)…**. Pick the school's folder once, then it
+   asks *"Which file is the Sec 1 namelist?"*, imports it, and moves on to Sec 2,
+   and so on — Cancel stops the walkthrough at any point and the School files tab
+   shows which levels still need a file. The alternatives below are tucked behind
+   *Other ways to start*, for a one-off import or an empty list. That importer:
    - finds the real header row automatically, even below titles/dates;
    - auto-matches Name / Class / Gender / PG columns (correct them in the dialog if needed);
    - generates student IDs from class + row order (`1R1-01`, `1R1-02`, …) when the
@@ -174,6 +178,7 @@ tools/gen-sample.cjs     deterministic sample data → sample/
 test/roundtrip.test.cjs  schema round-trip + validation tests
 test/conflict.browser.mjs  save/conflict/backup path against a fake filesystem
 test/allocation-format.browser.mjs  ministry-format import -> discover -> teach
+test/setup-flow.browser.mjs  first run asks which file is each level
 ```
 
 Requires only Node (no npm packages):
@@ -191,6 +196,8 @@ browser test that needs Playwright installed:
 PLAYWRIGHT_CHROMIUM=/path/to/chromium node test/conflict.browser.mjs
 PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \
   node test/allocation-format.browser.mjs
+PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \
+  node test/setup-flow.browser.mjs
 ```
 
 ### Source file layouts

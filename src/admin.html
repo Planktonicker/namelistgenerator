@@ -73,15 +73,21 @@
   <!-- ============ first run: no xlsx yet ============ -->
   <section id="setupScreen" hidden>
     <div class="card">
-      <h2>No <code>namelist.xlsx</code> in this folder yet</h2>
-      <p>Folder: <span class="badge" id="setupFolderName"></span></p>
-      <p>You can start from your existing raw document (an Excel or CSV with your students),
-        or start with an empty list. Nothing is written until you press <strong>Save</strong>.</p>
-      <div class="toolbar">
-        <button class="primary" id="setupImportBtn">Import a raw document…</button>
-        <button id="setupEmptyBtn">Start with an empty list</button>
-        <button id="setupBackBtn">Choose a different folder</button>
-      </div>
+      <h2>Set up this folder</h2>
+      <p>Folder: <span class="badge" id="setupFolderName"></span> — no <code>namelist.xlsx</code> here yet.</p>
+      <p>Tell the app which file in the school's folder is each level's namelist, Sec 1 to Sec 5.
+        The files can be named anything, they are only ever <strong>read</strong>, and your choice
+        is shared with every other admin.</p>
+      <p><button class="primary bigbtn" id="setupLevelsBtn">Choose the level files (Sec 1–5)…</button></p>
+      <p class="muted small">Nothing is written until you press <strong>Save</strong>.</p>
+      <details>
+        <summary class="small">Other ways to start</summary>
+        <div class="toolbar" style="margin-top:10px">
+          <button id="setupImportBtn">Import one document…</button>
+          <button id="setupEmptyBtn">Start with an empty list</button>
+          <button id="setupBackBtn">Choose a different folder</button>
+        </div>
+      </details>
     </div>
   </section>
 
@@ -314,7 +320,7 @@
   </dialog>
 
   <dialog id="pickFileDialog">
-    <h2>Choose the namelist file for <span id="pickLevelName"></span></h2>
+    <h2>Which file is the <span id="pickLevelName"></span> namelist?</h2>
     <p class="small muted">Files in <span id="pickFolderName"></span>. Newest first. The file is only read,
       never changed.</p>
     <p><input type="search" id="pickSearch" placeholder="Filter by name" style="width:100%"></p>
@@ -578,6 +584,41 @@
   });
   $('setupImportBtn').addEventListener('click', function () { openImportDialog(); });
 
+  /* The usual first task is not "import a document" but "say which file is
+   * each level", so that is the one button on the setup screen. */
+  $('setupLevelsBtn').addEventListener('click', async function () {
+    model = S.emptyModel();
+    loadWarnings = [];
+    loadedLastModified = null;
+    addDefaultLevels();
+    setDirty(true);
+    enterMain();
+    await switchToTab('sources');
+    if (!srcDirHandle) await connectSourceFolder();
+    guidedSetup = true;
+    promptForNextLevelFile();
+  });
+
+  function addDefaultLevels() {
+    ['Sec 1', 'Sec 2', 'Sec 3', 'Sec 4', 'Sec 5'].forEach(function (level) {
+      if (model.sources.some(function (s) { return S.normKey(s.level) === S.normKey(level); })) return;
+      model.sources.push({ level: level, file: '', pattern: '', lastFile: '', lastImported: '' });
+    });
+  }
+
+  /* Walk the admin through the levels: open the picker for the first one
+   * that still has no file. */
+  function promptForNextLevelFile() {
+    if (!srcDirHandle || !guidedSetup) return;
+    var next = model.sources.findIndex(function (s) { return !S.norm(s.file); });
+    if (next === -1) {
+      guidedSetup = false;
+      toast('All levels have a file — press Save when you are done');
+      return;
+    }
+    openPickFileDialog(next);
+  }
+
   $('reloadBtn').addEventListener('click', async function () {
     if (!dirHandle) return;
     if (dirty && !confirm('Discard your unsaved changes and reload from the file?')) return;
@@ -732,18 +773,22 @@
 
   /* ================= tabs ================= */
 
-  document.querySelectorAll('.tabs button').forEach(function (btn) {
-    btn.addEventListener('click', async function () {
-      currentTab = btn.dataset.tab;
-      document.querySelectorAll('.tabs button').forEach(function (b) { b.classList.toggle('active', b === btn); });
-      ['students', 'groups', 'memberships', 'sources'].forEach(function (t) { $('tab-' + t).hidden = t !== currentTab; });
-      refresh();
-      // Opening School files: re-read the folder so a file saved by the
-      // office a moment ago is already visible.
-      if (currentTab === 'sources' && srcDirHandle) {
-        await rescanSourceFolder();
-      }
+  async function switchToTab(name) {
+    currentTab = name;
+    document.querySelectorAll('.tabs button').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.tab === name);
     });
+    ['students', 'groups', 'memberships', 'sources'].forEach(function (t) {
+      $('tab-' + t).hidden = t !== name;
+    });
+    refresh();
+    // Opening School files: re-read the folder so a file saved by the office
+    // a moment ago is already visible.
+    if (name === 'sources' && srcDirHandle) await rescanSourceFolder();
+  }
+
+  document.querySelectorAll('.tabs button').forEach(function (btn) {
+    btn.addEventListener('click', function () { switchToTab(btn.dataset.tab); });
   });
 
   /* ================= row selection helper ================= */
@@ -1465,12 +1510,9 @@
   $('sourceCancelBtn').addEventListener('click', function () { $('sourceDialog').close(); });
 
   $('addSecLevelsBtn').addEventListener('click', function () {
-    var added = 0;
-    ['Sec 1', 'Sec 2', 'Sec 3', 'Sec 4', 'Sec 5'].forEach(function (level) {
-      if (model.sources.some(function (s) { return S.normKey(s.level) === S.normKey(level); })) return;
-      model.sources.push({ level: level, file: '', pattern: '', lastFile: '', lastImported: '' });
-      added++;
-    });
+    var before = model.sources.length;
+    addDefaultLevels();
+    var added = model.sources.length - before;
     if (!added) { toast('Sec 1–5 are already listed'); return; }
     markDirty();
     toast(added + ' level' + (added === 1 ? '' : 's') + ' added — now pick each one\'s file');
@@ -1503,8 +1545,12 @@
   /* ---- choosing which file in the folder is this level's namelist ---- */
 
   var pickingIndex = null;
+  var guidedSetup = false;   // walking the admin through every level in turn
 
-  $('pickCancelBtn').addEventListener('click', function () { $('pickFileDialog').close(); });
+  $('pickCancelBtn').addEventListener('click', function () {
+    guidedSetup = false;   // the admin decided to stop; the table shows what is left
+    $('pickFileDialog').close();
+  });
   $('pickSearch').addEventListener('input', renderPickTable);
 
   async function openPickFileDialog(index) {
@@ -1550,13 +1596,13 @@
     pickingIndex = null;
     markDirty();
     var entry = S.findByName(srcFiles, name);
-    if (entry) runLevelUpdate(index, entry);
+    var done = entry ? runLevelUpdate(index, entry) : Promise.resolve();
+    Promise.resolve(done).then(promptForNextLevelFile);
   });
 
   /* Always requested read-only: the browser itself then refuses any write
    * into the school's folder, whatever this page's code does. */
-  $('srcFolderBtn').addEventListener('click', async function () {
-    if (srcDirHandle) { await rescanSourceFolder(); toast('Folder rescanned'); return; }
+  async function connectSourceFolder() {
     var handle = srcDirPending;
     if (handle) {
       // Remembered folder: a permission prompt is all that is needed.
@@ -1565,10 +1611,16 @@
     }
     if (!handle) {
       try { handle = await window.showDirectoryPicker({ mode: 'read' }); }
-      catch (e) { return; } // user cancelled
+      catch (e) { return false; } // user cancelled
       rememberHandle('sourceDir', handle);
     }
     await scanSourceFolder(handle);
+    return true;
+  }
+
+  $('srcFolderBtn').addEventListener('click', async function () {
+    if (srcDirHandle) { await rescanSourceFolder(); toast('Folder rescanned'); return; }
+    await connectSourceFolder();
   });
 
   async function scanSourceFolder(handle) {

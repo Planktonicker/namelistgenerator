@@ -169,6 +169,12 @@ Each copy of `admin.html` remembers its own data folder, so the new year's copy
 opens asking which folder to use rather than quietly saving into last year's.
 The first time you open it, choose the new folder.
 
+If you ever open a folder that has the pages but no `namelist.xlsx`, the setup
+screen offers **Use an existing namelist.xlsx…** — point it at the old folder's
+workbook and press Save, and this folder gets its own copy. If the workbook is
+lost but a `data.js` is still there, **Rebuild from the data.js here** brings the
+students and classes back (the School files settings have to be redone).
+
 Keeping last year's `namelist.xlsx` and re-pointing the levels at new files also
 works — students are matched by name and moved to their new class and level —
 but the teaching classes from last year would then need clearing out by hand.

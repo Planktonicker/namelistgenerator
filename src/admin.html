@@ -134,7 +134,13 @@
         The files can be named anything, they are only ever <strong>read</strong>, and your choice
         is shared with every other admin.</p>
       <p><button class="primary bigbtn" id="setupLevelsBtn">Choose the level files (Sec 1–5)…</button></p>
-      <p class="muted small">Nothing is written until you press <strong>Save</strong>.</p>
+      <p class="muted small">Nothing is written until you press <strong>Save</strong> — and that
+        creates <code>namelist.xlsx</code> and <code>data.js</code> right here.</p>
+      <div class="notice" id="setupCarryOn" hidden>
+        <span id="setupCarryOnText"></span>
+        <button id="setupAdoptBtn">Use an existing namelist.xlsx…</button>
+        <button id="setupRecoverBtn" hidden>Rebuild from the data.js here</button>
+      </div>
       <details>
         <summary class="small">Other ways to start</summary>
         <div class="toolbar" style="margin-top:10px">
@@ -143,6 +149,7 @@
           <button id="setupBackBtn">Choose a different folder</button>
         </div>
       </details>
+      <input type="file" id="setupAdoptInput" accept=".xlsx,.xlsm,.xls" hidden>
     </div>
   </section>
 
@@ -802,9 +809,12 @@
       // touched (the app only writes namelist.xlsx, data.js and backups/),
       // but the app should live in its own folder.
       var foreign = [];
+      var strayDataJs = false;
       try {
         for await (var entry of dirHandle.values()) {
-          if (entry.kind === 'file' && /\.(xlsx|xls|xlsm|csv)$/i.test(entry.name) && !/^~\$/.test(entry.name)) {
+          if (entry.kind !== 'file') continue;
+          if (/^data\.js$/i.test(entry.name)) strayDataJs = true;
+          if (/\.(xlsx|xls|xlsm|csv)$/i.test(entry.name) && !/^~\$/.test(entry.name)) {
             foreign.push(entry.name);
           }
         }
@@ -818,6 +828,14 @@
           'Cancel — choose a different folder');
         if (!ok) { show('startScreen'); return; }
       }
+      /* The folder has the pages but not the data — the usual result of copying
+       * the app somewhere new. Offer to carry the data over rather than making
+       * the admin start again. */
+      $('setupCarryOnText').textContent = strayDataJs
+        ? 'This folder has a data.js from a previous save but no namelist.xlsx.'
+        : 'Carrying on from another folder? Point the app at that folder\u2019s namelist.xlsx and it will be saved here.';
+      $('setupRecoverBtn').hidden = !strayDataJs;
+      $('setupCarryOn').hidden = false;
       show('setupScreen');
       return;
     }
@@ -1000,6 +1018,74 @@
     enterMain();
   });
   $('setupImportBtn').addEventListener('click', function () { openImportDialog(); });
+
+  /* ---- carrying data over from another folder ---- */
+
+  $('setupAdoptBtn').addEventListener('click', function () { $('setupAdoptInput').click(); });
+  $('setupAdoptInput').addEventListener('change', async function () {
+    var file = $('setupAdoptInput').files[0];
+    $('setupAdoptInput').value = '';
+    if (!file) return;
+    try {
+      var wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      var res = S.workbookToModel(wb);
+      if (!res.model.students.length && !res.model.groups.length) {
+        alert('"' + file.name + '" has no students or classes in it — is it the right file?');
+        return;
+      }
+      model = res.model;
+      loadWarnings = res.warnings;
+      /* The file it came from is not the file we save to, so there is no
+       * version to compare against: the first Save writes a fresh copy here. */
+      fileHandle = null;
+      loadedLastModified = null;
+      setDirty(true);
+      enterMain();
+      toast('Carried over ' + model.students.length + ' students and ' + model.groups.length +
+        ' classes — press Save to write namelist.xlsx into this folder');
+    } catch (err) {
+      alert('Could not read "' + file.name + '": ' + err.message);
+    }
+  });
+
+  /* data.js holds what the teacher page needs — enough to rebuild the editor's
+   * own file when the workbook has been lost, minus the school-file settings. */
+  $('setupRecoverBtn').addEventListener('click', async function () {
+    try {
+      var handle = await dirHandle.getFileHandle('data.js');
+      var text = await (await handle.getFile()).text();
+      var win = {};
+      new Function('window', text)(win);
+      var data = win.NAMELIST_DATA;
+      if (!data || !data.students) throw new Error('no namelist data in the file');
+      model = S.emptyModel();
+      model.students = data.students;
+      model.groups = data.groups || [];
+      model.memberships = data.memberships || [];
+      model.subjectKeys = data.subjectKeys || [];
+      model.groups.forEach(function (g) {
+        g.teachers = S.teacherNames(g);
+        g.teachers.forEach(function (t) {
+          if (!model.teachers.some(function (e) { return S.normKey(e) === S.normKey(t); })) {
+            model.teachers.push(t);
+          }
+        });
+        var label = S.norm(g.subject);
+        if (label && !model.subjectLabels.some(function (e) { return S.normKey(e) === S.normKey(label); })) {
+          model.subjectLabels.push(label);
+        }
+      });
+      loadWarnings = ['Rebuilt from data.js — the School files tab is empty, so point each level ' +
+        'at its file again before relying on the automatic updates.'];
+      fileHandle = null;
+      loadedLastModified = null;
+      setDirty(true);
+      enterMain();
+      toast('Rebuilt ' + model.students.length + ' students from data.js — press Save');
+    } catch (err) {
+      alert('Could not rebuild from data.js: ' + err.message);
+    }
+  });
 
   /* The usual first task is not "import a document" but "say which file is
    * each level", so that is the one button on the setup screen. */

@@ -127,6 +127,19 @@ publish was more than a fortnight ago.
 the first time the start screen offers **Reconnect to “…”** — a single
 permission click instead of navigating the shared drive again.
 
+**A folder with the pages but no data.** Opening a folder that has no
+`namelist.xlsx` is the setup screen, which says plainly that saving will create
+`namelist.xlsx` and `data.js` right there, and offers two ways to carry on
+rather than starting again:
+
+- **Use an existing namelist.xlsx…** — point at the old folder's workbook. It is
+  read, never written, and the first **Save** writes a fresh copy into *this*
+  folder, data.js and all.
+- **Rebuild from the data.js here** — offered when the folder still has a
+  `data.js` from a previous save but the workbook has been lost. Students,
+  classes and memberships come back; the School files settings do not, so the
+  levels have to be pointed at their files again, and the app says so.
+
 **Each copy of the app remembers its own folder.** Browsers keep folder handles
 for the whole `file://` origin, so a second copy of `admin.html` — a new year's
 folder, a test copy, a colleague's drive — used to open, reconnect to the
@@ -264,6 +277,7 @@ test/auto-update.browser.mjs  opening the editor refreshes levels by itself
 test/class-dialog.browser.mjs  teacher roster + building a class from criteria
 test/edit-class.browser.mjs    editing a class re-applies its rule; members untick
 test/coverage-changes.browser.mjs  coverage gaps, the change report, pasted staff
+test/carry-over.browser.mjs    an empty folder: carry data over, or rebuild from data.js
 test/teacher-page.browser.mjs  teacher dropdown, class chips, the All classes tab
 test/add-student.browser.mjs   level-first add-student dialog
 ```
@@ -284,6 +298,7 @@ PLAYWRIGHT_CHROMIUM=/path/to/chromium node test/conflict.browser.mjs
 PLAYWRIGHT_CHROMIUM=... node test/class-dialog.browser.mjs
 PLAYWRIGHT_CHROMIUM=... node test/edit-class.browser.mjs
 PLAYWRIGHT_CHROMIUM=... node test/coverage-changes.browser.mjs
+PLAYWRIGHT_CHROMIUM=... node test/carry-over.browser.mjs
 PLAYWRIGHT_CHROMIUM=... node test/teacher-page.browser.mjs
 PLAYWRIGHT_CHROMIUM=... node test/add-student.browser.mjs
 PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \

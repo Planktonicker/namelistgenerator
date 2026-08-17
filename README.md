@@ -399,20 +399,21 @@ possible, with a count on every option and a running total underneath. Nothing
 you don't need is on screen:
 
 It is a **mind map**, not a form. Every option is a node with its student count
-on it; clicking one grows the next branch to the right of that very node, joined
+on it; clicking one hangs the next branch directly under that very node, joined
 by a curve. The path you have taken is navy, the branches not taken are faint,
-and the map pans to follow the branch you just opened.
+and the map scrolls to follow the branch you just opened.
 
 ```
-LEVEL          SUBJECT              GROUP            TG / SG
-[Every level]  [Any subject]
-[Sec 1  159]   [EL      203]
-[Sec 4  203]───[MA      203]
-       ╲       [Hum/CPA 203]
-        ╲      [DT       57]
-         ╲     [POA      83]───[POA     57]
-                              ╲[POA G2  26]───[SG1 37]
-                                             ╲[SG4 34]───[More filters…]
+LEVEL    [Every level]  [Sec 1 159]  [Sec 4 203]
+                                          │
+SUBJECT  [Any subject] [EL 203] [MA 203] [MTL 203] [Hum/CPA 203] [DT 57]
+         [Sci PC 61]   [POA 83] [Sci CB 83] [Art 19] [AM 39] [NFS 50] …
+                          │
+GROUP            [POA 57]  [POA G2 26]
+                                 │
+TG / SG   [SG1 37] [SG2 28] [SG3 28] [SG4 34] [SG5 38] [SG6 38]
+                                        │
+MORE                            More filters…
 ```
 
 Each branch is drawn only from what the answers to its left leave possible: pick

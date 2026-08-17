@@ -390,17 +390,18 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   }
   .graph-canvas { position: relative; min-width: 100%; min-height: 120px; }
   .graph-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
-  .graph-row {
-    position: absolute; z-index: 1; display: flex; flex-direction: column; gap: 7px;
-  }
+  .graph-row { position: absolute; z-index: 1; }
   .graph-row.just-open { animation: branch .22s cubic-bezier(.2, .8, .3, 1); }
-  @keyframes branch { from { opacity: 0; transform: translateX(-14px) scale(.96); } }
+  @keyframes branch { from { opacity: 0; transform: translateY(-12px) scale(.96); } }
   .graph-key {
+    position: absolute; bottom: 100%; left: 2px; margin-bottom: 3px;
     font-size: 10px; font-weight: 700; letter-spacing: .07em;
-    text-transform: uppercase; color: var(--muted); margin-bottom: 1px;
+    text-transform: uppercase; color: var(--muted);
   }
-  .graph-row .ticks { flex-direction: column; align-items: stretch; gap: 7px; }
-  .graph-row .ticks label { width: 100%; justify-content: space-between; white-space: nowrap; }
+  /* A branch is a row of nodes under the node that opened it; a wide branch
+   * wraps onto a second line rather than running off the map. */
+  .graph-row .ticks { flex-direction: row; flex-wrap: wrap; gap: 8px; max-width: 620px; }
+  .graph-row .ticks label { white-space: nowrap; }
   #gfMembers td:first-child { width: 28px; }
   #gfMembers tr.out td:not(:first-child) { text-decoration: line-through; color: var(--muted); }
   .warn-row { display: flex; align-items: baseline; gap: 8px; }
@@ -3787,20 +3788,20 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
    * which node above it is chosen. */
   var MAP_COLS = ['gfLevelRow', 'gfSubjectRow', 'gfValueRow', 'gfTgRow',
     'gfClassRow', 'gfPgRow', 'gfMoreRow'];
-  var COL_GAP = 58;         // horizontal space for the connecting curve
-  var PAD = 10;
+  var ROW_GAP = 46;         // vertical space for the connecting curve
+  var PAD = 12;
 
   function anchorOf(col) {
     return col.querySelector('label.on') || col.querySelector('label') ||
       col.querySelector('button');
   }
 
-  /* Where a node sits inside the canvas: columns are the offset parents. */
-  function nodeBox(col, el) {
+  /* Where a node sits inside the canvas: rows are the offset parents. */
+  function nodeBox(row, el) {
     return {
-      left: col.offsetLeft + el.offsetLeft,
-      right: col.offsetLeft + el.offsetLeft + el.offsetWidth,
-      mid: col.offsetTop + el.offsetTop + el.offsetHeight / 2,
+      cx: row.offsetLeft + el.offsetLeft + el.offsetWidth / 2,
+      top: row.offsetTop + el.offsetTop,
+      bottom: row.offsetTop + el.offsetTop + el.offsetHeight,
     };
   }
 
@@ -3808,34 +3809,37 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var canvas = $('gfCanvas');
     if (!canvas || !$('groupDialog').open) return;
     var visible = MAP_COLS.filter(function (id) { return !$(id).hidden; });
-    var x = PAD;
-    var bottom = 0;
+    var y = PAD + 14;          // room above the first row for its caption
+    var right = 0;
     var prev = null;
     visible.forEach(function (id) {
-      var col = $(id);
-      col.style.left = x + 'px';
-      col.style.top = '0px';                 // measure at a known origin first
-      var h = col.offsetHeight;
-      var top = PAD;
+      var row = $(id);
+      row.style.left = '0px';
+      row.style.top = '0px';                  // measure at a known origin first
+      var w = row.offsetWidth;
+      var h = row.offsetHeight;
+      var left = PAD;
       if (prev) {
-        var a = anchorOf(prev.col);
-        if (a) top = Math.max(PAD, nodeBox(prev.col, a).mid - h / 2);
+        var a = anchorOf(prev);
+        // The branch hangs under the node that opened it.
+        if (a) left = Math.max(PAD, nodeBox(prev, a).cx - w / 2);
       }
-      col.style.top = top + 'px';
-      bottom = Math.max(bottom, top + h);
-      prev = { col: col };
-      x += col.offsetWidth + COL_GAP;
+      row.style.left = left + 'px';
+      row.style.top = y + 'px';
+      right = Math.max(right, left + w);
+      y += h + ROW_GAP;
+      prev = row;
     });
-    canvas.style.width = Math.max(x, 320) + 'px';
-    canvas.style.height = (bottom + PAD) + 'px';
+    canvas.style.width = Math.max(right + PAD, 320) + 'px';
+    canvas.style.height = (y - ROW_GAP + PAD) + 'px';
     drawEdges(visible);
     // Keep the branch that just opened in view.
     var last = visible.length ? $(visible[visible.length - 1]) : null;
     if (last && last.classList.contains('just-open')) {
       var view = $('gfGraph');
       view.scrollTo({
-        left: Math.max(0, last.offsetLeft + last.offsetWidth - view.clientWidth + 40),
-        top: Math.max(0, last.offsetTop + last.offsetHeight / 2 - view.clientHeight / 2),
+        top: Math.max(0, last.offsetTop + last.offsetHeight - view.clientHeight + 30),
+        left: Math.max(0, last.offsetLeft + last.offsetWidth / 2 - view.clientWidth / 2),
         behavior: 'smooth',
       });
     }
@@ -3859,14 +3863,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       Array.prototype.forEach.call(childCol.querySelectorAll('label, button'), function (child) {
         var to = nodeBox(childCol, child);
         var on = child.classList.contains('on');
-        var dx = Math.max(24, (to.left - from.right) * 0.55);
-        parts.push('<path d="M' + from.right + ' ' + from.mid +
-          ' C' + (from.right + dx) + ' ' + from.mid +
-          ' ' + (to.left - dx) + ' ' + to.mid + ' ' + to.left + ' ' + to.mid +
+        var dy = Math.max(18, (to.top - from.bottom) * 0.6);
+        parts.push('<path d="M' + from.cx + ' ' + from.bottom +
+          ' C' + from.cx + ' ' + (from.bottom + dy) +
+          ' ' + to.cx + ' ' + (to.top - dy) + ' ' + to.cx + ' ' + to.top +
           '" fill="none" stroke="' + (on ? 'var(--accent)' : '#c8cfdd') +
           '" stroke-width="' + (on ? 2.2 : 1) + '" opacity="' + (on ? 1 : 0.5) + '"/>');
       });
-      parts.push('<circle cx="' + from.right + '" cy="' + from.mid +
+      parts.push('<circle cx="' + from.cx + '" cy="' + from.bottom +
         '" r="4" fill="var(--accent)"/>');
     }
     svg.innerHTML = parts.join('');

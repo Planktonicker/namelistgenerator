@@ -58,7 +58,8 @@ test('header aliases, subject columns, and messy input are tolerated', () => {
   assert.strictEqual(model.students.length, 2);
   assert.deepStrictEqual(model.subjectKeys, ['EL', 'MT']);
   assert.deepStrictEqual(model.students[0],
-    { id: 's001', name: 'Alice Tan', class: '1R1', level: '1', gender: 'F', pg: '3', origin: 'file', sourceName: 'Alice Tan', subjects: { EL: 'EL G3', MT: 'CL G2' } });
+    { id: 's001', name: 'Alice Tan', class: '1R1', level: '1', gender: 'F', pg: '3', tg: '',
+      origin: 'file', sourceName: 'Alice Tan', subjects: { EL: 'EL G3', MT: 'CL G2' } });
   assert.deepStrictEqual(model.students[1].subjects, { EL: 'EL G2' });
   assert.ok(warnings.some((w) => w.includes('row 5')), 'expected a skipped-row warning');
 });
@@ -85,15 +86,18 @@ test('importStudents: auto-IDs, subject columns, skipped rows', () => {
   ];
   const res = S.importStudents(rows, {
     headerRow: 1,
-    cols: { id: null, name: 1, class: 2, gender: 3, pg: 4, level: null },
-    subjectCols: [{ index: 5, header: 'TG' }, { index: 6, header: 'EL' }, { index: 7, header: 'MT' }],
+    cols: { id: null, name: 1, class: 2, gender: 3, pg: 4, tg: 5, level: null },
+    subjectCols: [{ index: 6, header: 'EL' }, { index: 7, header: 'MT' }],
   });
   assert.strictEqual(res.students.length, 3);
   assert.deepStrictEqual(res.students.map((s) => s.id), ['1R1-01', '1R1-02', '1R2-01']);
-  assert.deepStrictEqual(res.students[0].subjects, { TG: 'TG1', EL: 'EL G3', MT: 'CL G2' });
-  assert.deepStrictEqual(res.students[1].subjects, { TG: 'TG2', EL: 'EL G2' }); // empty cell omitted
+  // the tutorial/subject group is a field of its own, not a subject column
+  assert.deepStrictEqual(res.students.map((s) => s.tg), ['TG1', 'TG2', 'TG1']);
+  assert.deepStrictEqual(res.students[0].subjects, { EL: 'EL G3', MT: 'CL G2' });
+  assert.deepStrictEqual(res.students[1].subjects, { EL: 'EL G2' }); // empty cell omitted
   assert.deepStrictEqual(res.students[2],
-    { id: '1R2-01', name: 'Carol', class: '1R2', level: '', gender: 'F', pg: '1', origin: 'file', sourceName: 'Carol', subjects: { TG: 'TG1', EL: 'EL G1', MT: 'ML G1' } });
+    { id: '1R2-01', name: 'Carol', class: '1R2', level: '', gender: 'F', pg: '1', tg: 'TG1',
+      origin: 'file', sourceName: 'Carol', subjects: { EL: 'EL G1', MT: 'ML G1' } });
   assert.strictEqual(res.warnings.length, 1);
   assert.ok(res.warnings[0].includes('no name'));
 });
@@ -543,6 +547,44 @@ test('columns that are not allocations are flagged, not made into classes', () =
   const codeless = S.discoverClasses(
     [{ id: '1', name: 'A', class: '1R1', subjects: { 'Humanities (SS, Literature in English)': 'G3' } }], '');
   assert.strictEqual(codeless[0].code, 'HUMANITIES-G3');
+});
+
+test('TG/SG is a field of its own, and old files are lifted onto it', () => {
+  // an older namelist.xlsx: the tutorial group is just another subject column
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'Origin', 'SourceName', 'SG', 'HIST'],
+    ['s1', 'Alice', '1R1', 'Sec 1', 'F', '3', 'file', '', 'SG 3', 'HIST G3'],
+    ['s2', 'Bob', '1R2', 'Sec 1', 'M', '3', 'file', '', 'sg3', 'HIST G3'],
+    ['s3', 'Cara', '1R3', 'Sec 1', 'F', '3', 'file', '', 'SG4', 'HIST G3'],
+  ]), 'Students');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['GroupCode', 'GroupName', 'Subject', 'Teachers', 'Level', 'AutoMatch', 'AutoPG', 'AutoClasses'],
+    ['H3', 'History SG3', 'HIST', 'Mrs Wong', 'Sec 1', 'HIST=HIST G3; SG=SG3', '', ''],
+  ]), 'Groups');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['StudentID', 'GroupCode']]), 'Memberships');
+  const { model } = S.workbookToModel(wb);
+
+  // the column is gone from the subject list and lives on the student
+  assert.deepStrictEqual(model.subjectKeys, ['HIST']);
+  assert.deepStrictEqual(model.students.map((s) => s.tg), ['SG3', 'SG3', 'SG4']);
+  assert.deepStrictEqual(model.students[0].subjects, { HIST: 'HIST G3' });
+
+  // the rule that pointed at the column now points at the field
+  assert.strictEqual(model.groups[0].autoMatch, 'HIST=HIST G3');
+  assert.strictEqual(model.groups[0].autoTg, 'SG3');
+  assert.strictEqual(S.autoFillGroup(model, model.groups[0]), 2);   // Alice + Bob, not Cara
+
+  // a subject group spans form classes, which is the whole point
+  const codes = model.memberships.map((m) => m.studentId);
+  assert.deepStrictEqual(codes, ['s1', 's2']);
+
+  // and it survives the next save/load
+  const back = S.workbookToModel(S.modelToWorkbook(model)).model;
+  assert.deepStrictEqual(back.students.map((s) => s.tg), ['SG3', 'SG3', 'SG4']);
+  assert.strictEqual(back.groups[0].autoTg, 'SG3');
+  assert.strictEqual(S.normTg('sg 3'), 'SG3');
+  assert.strictEqual(S.normTg('TG-2'), 'TG2');
 });
 
 console.log(passed + ' tests passed');

@@ -147,6 +147,7 @@
         <select id="studentLevelFilter"><option value="">All levels</option></select>
         <select id="studentClassFilter"><option value="">All classes</option></select>
         <select id="studentPgFilter"><option value="">All PG</option></select>
+        <select id="studentTgFilter" hidden><option value="">All TG/SG</option></select>
         <select id="studentOriginFilter">
           <option value="">All students</option>
           <option value="added">Added here only</option>
@@ -212,6 +213,7 @@
             <input type="search" id="memSearch" placeholder="Search or tag (e.g. EL G2)" style="flex:1; min-width:150px">
             <select id="memClassFilter"><option value="">All classes</option></select>
             <select id="memPgFilter"><option value="">All PG</option></select>
+            <select id="memTgFilter" hidden><option value="">All TG/SG</option></select>
           </div>
           <p class="hint">Click rows (Shift for a range), then add — or add everything that matches the filter.</p>
           <div class="toolbar">
@@ -220,7 +222,7 @@
           </div>
           <div class="scrolly">
             <table class="list selectable" id="memCandidates">
-              <thead><tr><th class="checkcol"></th><th>Name</th><th>Class</th><th>PG</th><th>Subjects</th></tr></thead>
+              <thead><tr><th class="checkcol"></th><th>Name</th><th>Class</th><th>PG</th><th>TG/SG</th><th>Subjects</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -348,6 +350,12 @@
         <div class="ticks" id="gfPgTicks"></div>
         <p class="hint" style="margin:4px 0 0">Nothing ticked means any posting group.</p>
       </div>
+      <label id="gfTgLabel">TG / SG</label>
+      <div id="gfTgRow">
+        <div class="ticks" id="gfTgTicks"></div>
+        <p class="hint" style="margin:4px 0 0">Tutorial / subject group — a teaching group that need not
+          follow the form class (SG3 can span 1R1–1R6).</p>
+      </div>
       <label>Limit to classes</label>
       <div>
         <div class="ticks" id="gfClassTicks"></div>
@@ -379,13 +387,19 @@
 
   <dialog id="teacherClassesDialog">
     <h2>Classes for <span id="tcName"></span></h2>
-    <p class="small muted">Tick every class this teacher takes. Unticking removes their name from it;
-      the class and its students stay.</p>
+    <p class="small muted">Pick the subject, then tick the classes this teacher takes. Unticking removes
+      their name from a class; the class and its students stay.</p>
     <form class="fields" id="teacherClassesForm">
-      <label for="tcSearch">Find</label>
-      <input type="search" id="tcSearch" placeholder="Search by class, subject or level">
+      <label for="tcSubject">Subject</label>
+      <div style="display:flex; gap:8px">
+        <select id="tcSubject" style="flex:1"></select>
+        <select id="tcLevel" style="flex:0 0 150px"></select>
+      </div>
       <label>Classes</label>
-      <div><div class="ticks" id="tcTicks" style="max-height:300px"></div></div>
+      <div>
+        <div class="ticks" id="tcTicks" style="max-height:320px"></div>
+        <p class="hint" style="margin:6px 0 0" id="tcChosenNote"></p>
+      </div>
       <div class="actions">
         <button type="button" id="tcCancelBtn">Cancel</button>
         <button type="submit" class="primary">OK</button>
@@ -416,6 +430,7 @@
       <label for="mapClass">Class</label><select id="mapClass"></select>
       <label for="mapGender">Gender</label><select id="mapGender"></select>
       <label for="mapPg">PG</label><select id="mapPg"></select>
+      <label for="mapTg">TG / SG</label><select id="mapTg"></select>
       <label for="mapReg">Register no.</label><select id="mapReg"></select>
     </div>
     <p style="margin:14px 0 4px"><strong class="small">Subject / group columns to keep</strong>
@@ -936,6 +951,12 @@
     fillOptions($('studentLevelFilter'), uniqueValues('level'), 'All levels');
     fillOptions($('studentClassFilter'), uniqueValues('class'), 'All classes');
     fillOptions($('studentPgFilter'), uniqueValues('pg'), 'All PG');
+    var tgs = uniqueValues('tg');
+    fillOptions($('studentTgFilter'), tgs, 'All TG/SG');
+    fillOptions($('memTgFilter'), tgs, 'All TG/SG');
+    // Schools that don't use tutorial groups never see the control.
+    $('studentTgFilter').hidden = !tgs.length;
+    $('memTgFilter').hidden = !tgs.length;
     fillOptions($('memClassFilter'), uniqueValues('class'), 'All classes');
     fillOptions($('memPgFilter'), uniqueValues('pg'), 'All PG');
     fillDatalists();
@@ -988,6 +1009,11 @@
     if (action && action.run) action.run(issue);
     refresh();
   });
+
+  /* Only schools that use tutorial/subject groups see the TG column at all. */
+  function hasTg() {
+    return model.students.some(function (s) { return S.norm(s.tg); });
+  }
 
   function uniqueValues(field) {
     var read = field === 'pg'
@@ -1069,6 +1095,7 @@
   $('studentLevelFilter').addEventListener('change', renderStudents);
   $('studentClassFilter').addEventListener('change', renderStudents);
   $('studentPgFilter').addEventListener('change', renderStudents);
+  $('studentTgFilter').addEventListener('change', renderStudents);
   $('studentOriginFilter').addEventListener('change', renderStudents);
   $('addStudentBtn').addEventListener('click', function () { openStudentDialog(null); });
 
@@ -1107,11 +1134,13 @@
     var cls = $('studentClassFilter').value;
     var lvl = $('studentLevelFilter').value;
     var pg = $('studentPgFilter').value;
+    var tg = $('studentTgFilter').value;
     var origin = $('studentOriginFilter').value;
     return model.students.filter(function (s) {
       if (lvl && s.level !== lvl) return false;
       if (cls && s.class !== cls) return false;
       if (pg && s.pg !== pg) return false;
+      if (tg && S.normTg(s.tg) !== S.normTg(tg)) return false;
       if (origin === 'added' && s.origin !== S.ORIGIN_ADDED) return false;
       if (origin === 'file' && s.origin === S.ORIGIN_ADDED) return false;
       if (q && S.studentSearchText(s, model.subjectKeys).indexOf(q) === -1) return false;
@@ -1151,6 +1180,7 @@
       '<th class="' + sortCls('level') + '" data-key="level">Level</th>' +
       '<th class="' + sortCls('gender') + '" data-key="gender">Gender</th>' +
       '<th class="' + sortCls('pg') + '" data-key="pg">PG</th>' +
+      (hasTg() ? '<th class="' + sortCls('tg') + '" data-key="tg">TG/SG</th>' : '') +
       keys.map(function (k) {
         return '<th class="' + sortCls('s:' + k) + '" data-key="s:' + esc(k) + '">' + esc(k) + '</th>';
       }).join('') +
@@ -1171,6 +1201,7 @@
             '. Your version is kept on every update.">edited</span>' : '') +
         '</td><td>' + esc(s.class) + '</td><td>' + esc(s.level) + '</td>' +
         '<td>' + esc(s.gender) + '</td><td>' + esc(s.pg) + '</td>' +
+        (hasTg() ? '<td>' + esc(s.tg || '') + '</td>' : '') +
         keys.map(function (k) {
           return '<td class="subj">' + esc((s.subjects && s.subjects[k]) || '') + '</td>';
         }).join('') +
@@ -1392,8 +1423,11 @@
 
   function ruleSummary(g) {
     if (!S.groupHasRule(g)) return '';
-    var parts = S.matchers(g).map(function (m) { return m.value || m.key + ' (any)'; });
-    if (g.autoPg) parts.push(g.autoPg);
+    var parts = S.matchers(g).map(function (m) {
+      return m.values.length ? m.values.join(' or ') : m.key + ' (any)';
+    });
+    if (g.autoPg) parts.push('PG ' + g.autoPg);
+    if (g.autoTg) parts.push(g.autoTg);
     if (g.autoClasses) parts.push('classes ' + g.autoClasses);
     return parts.join(' · ');
   }
@@ -1577,6 +1611,21 @@
     }), dialogPgs, function () { suggestGroupIdentity(); updateMatchCount(); });
   }
 
+  function renderTgTicks() {
+    var values = uniqueValues('tg');
+    $('gfTgRow').hidden = !values.length;
+    $('gfTgLabel').hidden = !values.length;
+    if (!values.length) { dialogTgs = []; return; }
+    var counts = {};
+    model.students.forEach(function (s) {
+      var v = S.normTg(s.tg);
+      if (v) counts[v] = (counts[v] || 0) + 1;
+    });
+    renderTicks($('gfTgTicks'), values.map(function (v) {
+      return { value: v, label: v, n: counts[v] };
+    }), dialogTgs, function () { suggestGroupIdentity(); updateMatchCount(); });
+  }
+
   function renderClassTicks() {
     var counts = {};
     model.students.forEach(function (s) {
@@ -1596,7 +1645,7 @@
     var cls = dialogClasses.join('/');
     var base = val || key;
     if (!base) return;
-    var qualifier = cls || (pg ? 'PG' + pg : '');
+    var qualifier = dialogTgs.join('/') || cls || (pg ? 'PG' + pg : '');
     // A level already reads "Sec 1"; only a bare number wants the S prefix.
     var lead = /^\d+$/.test(lvl) ? 'S' + lvl : lvl;
     var label = (lead ? lead + ' ' : '') + base + (qualifier ? ' ' + qualifier : '');
@@ -1625,6 +1674,7 @@
   var dialogTeachers = [];
   var dialogCriteria = [];   // [{ key, values: [] }] — columns ANDed, ticks ORed
   var dialogPgs = [];
+  var dialogTgs = [];
 
   /* The rule exactly as the boxes are ticked right now. */
   function dialogRule() {
@@ -1633,6 +1683,7 @@
       level: S.norm($('gfLevel').value),
       autoMatch: S.matchersToString(dialogCriteria),
       autoPg: dialogPgs.join(', '),
+      autoTg: dialogTgs.join(', '),
       autoClasses: dialogClasses.join(', '),
     };
   }
@@ -1776,6 +1827,7 @@
       }).join('');
     dialogCriteria = group ? S.matchers(group) : [];
     dialogPgs = group ? S.splitList(group.autoPg) : [];
+    dialogTgs = group ? S.splitList(group.autoTg) : [];
     dialogClasses = group ? S.splitList(group.autoClasses) : [];
     dialogRemoved = new Set();
     // Open on the column the class is already built around, so its ticks show.
@@ -1784,6 +1836,7 @@
     if ($('gfAutoKey').value !== (live ? live.key : '')) $('gfAutoKey').value = '';
     renderValueTicks();
     renderPgTicks();
+    renderTgTicks();
     renderClassTicks();
     renderCriteria();
     ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
@@ -1804,6 +1857,7 @@
       teachers: dialogTeachers.slice(), level: S.norm($('gfLevel').value),
       autoMatch: S.matchersToString(dialogCriteria),
       autoPg: dialogPgs.join(', '),
+      autoTg: dialogTgs.join(', '),
       autoClasses: dialogClasses.join(', '),
     };
     if (!code) return;
@@ -1817,7 +1871,7 @@
     /* A changed rule is a new intention, so re-apply it — otherwise editing a
      * class to fix its criteria appears to do nothing. */
     var ruleChanged = !previous || [
-      'autoMatch', 'autoPg', 'autoClasses', 'level',
+      'autoMatch', 'autoPg', 'autoTg', 'autoClasses', 'level',
     ].some(function (f) { return S.norm(previous[f]) !== S.norm(rec[f]); });
     if (isNew) {
       model.groups.push(rec);
@@ -1881,6 +1935,7 @@
   $('memSearch').addEventListener('input', renderMemberships);
   $('memClassFilter').addEventListener('change', renderMemberships);
   $('memPgFilter').addEventListener('change', renderMemberships);
+  $('memTgFilter').addEventListener('change', renderMemberships);
 
   function selectedGroupCode() {
     return $('memGroupSelect').value;
@@ -1911,10 +1966,12 @@
     var q = $('memSearch').value.trim().toLowerCase();
     var cls = $('memClassFilter').value;
     var pg = $('memPgFilter').value;
+    var tg = $('memTgFilter').value;
     return model.students.filter(function (s) {
       if (inGroup[s.id]) return false;
       if (cls && s.class !== cls) return false;
       if (pg && s.pg !== pg) return false;
+      if (tg && S.normTg(s.tg) !== S.normTg(tg)) return false;
       if (q && S.studentSearchText(s, model.subjectKeys).indexOf(q) === -1) return false;
       return true;
     }).sort(S.byClassThenName);
@@ -1955,6 +2012,7 @@
       return '<tr data-id="' + esc(s.id) + '"' + (isSel ? ' class="selected"' : '') + '>' +
         '<td class="checkcol"><input type="checkbox" class="rowcheck" tabindex="-1"' + (isSel ? ' checked' : '') + '></td>' +
         '<td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.pg) + '</td>' +
+        '<td>' + esc(s.tg || '') + '</td>' +
         '<td class="tags">' + esc(S.subjectSummary(s, model.subjectKeys)) + '</td></tr>';
     }).join('');
     $('memCandMore').hidden = candidates.length <= MEM_CAND_CAP;
@@ -2119,34 +2177,68 @@
   var tcTeacher = null;
   var tcChosen = [];
 
+  /* The subject a class teaches, falling back to its name so a class without a
+   * subject label still lands in a sensible bucket. */
+  function groupSubject(g) {
+    return S.norm(g.subject) || S.norm(g.name) || g.code;
+  }
+
   function tcRows() {
-    var q = $('tcSearch').value.trim().toLowerCase();
+    var subject = $('tcSubject').value;
+    var level = $('tcLevel').value;
     return sortedGroups().filter(function (g) {
-      return !q || (g.code + ' ' + g.name + ' ' + g.subject + ' ' + g.level).toLowerCase().indexOf(q) !== -1;
+      if (subject && S.normKey(groupSubject(g)) !== S.normKey(subject)) return false;
+      if (level && S.normKey(g.level) !== S.normKey(level)) return false;
+      return true;
     });
   }
 
   function renderTcTicks() {
-    renderTicks($('tcTicks'), tcRows().map(function (g) {
+    var rows = tcRows();
+    renderTicks($('tcTicks'), rows.map(function (g) {
       return {
         value: g.code,
         label: (g.name || g.code) + (g.level ? ' · ' + g.level : ''),
         n: (ix.membersByGroup.get(g.code) || []).length,
       };
-    }), tcChosen, function () {});
+    }), tcChosen, renderTcNote);
+    renderTcNote();
+  }
+
+  function renderTcNote() {
+    var names = tcChosen.map(function (code) {
+      var g = ix.groupsByCode.get(code);
+      return g ? (g.name || g.code) : code;
+    });
+    $('tcChosenNote').textContent = names.length
+      ? 'Teaching ' + names.length + ': ' + names.join(', ')
+      : 'No classes ticked yet.';
   }
 
   function openTeacherClasses(name) {
     tcTeacher = name;
     tcChosen = (ix.groupsByTeacher.get(name) || []).map(function (g) { return g.code; });
     $('tcName').textContent = name;
-    $('tcSearch').value = '';
+    var subjects = Array.from(new Set(model.groups.map(groupSubject).filter(Boolean))).sort(S.cmp);
+    $('tcSubject').innerHTML = '<option value="">— every subject —</option>' + subjects.map(function (v) {
+      return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+    }).join('');
+    var levels = Array.from(new Set(model.groups.map(function (g) { return S.norm(g.level); })
+      .filter(Boolean))).sort(S.cmp);
+    $('tcLevel').innerHTML = '<option value="">— every level —</option>' + levels.map(function (v) {
+      return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+    }).join('');
+    $('tcLevel').hidden = levels.length < 2;
+    // Open on the subject they already teach, if that is unambiguous.
+    var mine = Array.from(new Set((ix.groupsByTeacher.get(name) || []).map(groupSubject)));
+    $('tcSubject').value = mine.length === 1 && subjects.indexOf(mine[0]) !== -1 ? mine[0] : '';
     renderTcTicks();
     $('teacherClassesDialog').showModal();
-    $('tcSearch').focus();
+    $('tcSubject').focus();
   }
 
-  $('tcSearch').addEventListener('input', renderTcTicks);
+  $('tcSubject').addEventListener('change', renderTcTicks);
+  $('tcLevel').addEventListener('change', renderTcTicks);
   $('tcCancelBtn').addEventListener('click', function () { $('teacherClassesDialog').close(); });
   $('teacherClassesForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
@@ -2492,7 +2584,7 @@
         ': ' + esc(preview || '(blank)') + '</option>';
     }).join('');
     [['mapName', 'name'], ['mapClass', 'class'], ['mapGender', 'gender'],
-      ['mapPg', 'pg'], ['mapReg', 'reg']].forEach(function (pair) {
+      ['mapPg', 'pg'], ['mapTg', 'tg'], ['mapReg', 'reg']].forEach(function (pair) {
       $(pair[0]).innerHTML = mapSelectOptions(headers, p.cols[pair[1]]);
     });
 
@@ -2539,6 +2631,7 @@
     p.cols.class = $('mapClass').value;
     p.cols.gender = $('mapGender').value;
     p.cols.pg = $('mapPg').value;
+    p.cols.tg = $('mapTg').value;
     p.cols.reg = $('mapReg').value;
     p.subjects = [];
     p.rename = {};

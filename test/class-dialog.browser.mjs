@@ -70,20 +70,21 @@ check('PG is a tick list, with no PG2-style labels',
 check('classes are ticked, not typed',
   (await page.locator('#gfClassTicks label').count()) > 0 &&
   (await page.locator('#gfClassTicks').innerText()).includes('1R1'));
-check('TG is offered as a criterion column',
-  (await page.locator('#gfAutoKey option').allInnerTexts()).includes('TG'));
+check('TG/SG is its own tick row, not a subject column',
+  (await page.locator('#gfAutoKey option').allInnerTexts()).every((t) => !/^(TG|SG)$/.test(t)) &&
+  (await page.locator('#gfTgTicks label').count()) > 0,
+  (await page.locator('#gfTgTicks').innerText()).replace(/\s+/g, ' '));
 
 // build the class the screenshot was attempting: HIST G3 students in TG2
 await page.selectOption('#gfTeacher', 'Cheng Xin Ze');
 await page.click('#gfTeacherAdd');
 await page.selectOption('#gfAutoKey', 'HIST');
 await page.locator('#gfValueTicks label', { hasText: 'HIST G3' }).first().click();
-await page.selectOption('#gfAutoKey', 'TG');
-await page.locator('#gfValueTicks label', { hasText: 'TG2' }).first().click();
-check('two criteria can be combined',
-  (await page.locator('#gfCriteria .chip').count()) === 1 &&
-  (await page.locator('#gfCriteria').innerText()).includes('HIST G3'),
-  (await page.locator('#gfCriteria').innerText()).replace(/\s+/g, ' '));
+await page.locator('#gfTgTicks label').filter({ hasText: /^SG2\b/ }).first().click();
+check('a subject group and a subject band combine',
+  (await page.locator('#gfTgTicks label.on').count()) === 1 &&
+  (await page.locator('#gfValueTicks label.on').count()) === 1,
+  await page.locator('#gfMatchCount').innerText());
 await page.locator('#gfClassTicks label', { hasText: '1R1' }).first().click();
 check('the live count reflects every tick',
   /\d+ students match this right now/.test(await page.locator('#gfMatchCount').innerText()),
@@ -98,7 +99,7 @@ check('the class was created and auto-filled', !!mine, mine);
 check('only the teacher I picked is on it', !!mine && !/Sarah|Priyanka|Kenneth/.test(mine), mine);
 await page.selectOption('#memGroupSelect', { label: mine });
 const n = parseInt(await page.locator('#memCount').innerText(), 10);
-check('only HIST G3 + TG2 + 1R1 students were selected (' + n + ')', n > 0 && n < 26);
+check('only HIST G3 + SG2 + 1R1 students were selected (' + n + ')', n > 0 && n < 26);
 // and a member can be edited out afterwards
 await page.locator('#memTable tbody tr').first().locator('button[data-act="remove"]').click();
 check('a student can be removed by hand afterwards',
@@ -119,7 +120,17 @@ await page.locator('#teachersTable tbody tr', { hasText: 'Mdm Rahim' })
 await page.waitForSelector('#teacherClassesDialog[open]');
 check('a teacher can be given classes from their row',
   (await page.locator('#tcTicks label').count()) > 0);
+const allClasses = await page.locator('#tcTicks label').count();
+await page.selectOption('#tcSubject', 'English Language');
+const englishOnly = await page.locator('#tcTicks label').count();
+check('the subject dropdown narrows the list to that subject',
+  englishOnly > 0 && englishOnly < allClasses &&
+  (await page.locator('#tcTicks').innerText()).indexOf('Mathematics') === -1,
+  englishOnly + ' of ' + allClasses);
 await page.locator('#tcTicks label').first().click();
+check('what they will teach is spelled out before OK',
+  (await page.locator('#tcChosenNote').innerText()).startsWith('Teaching 1'),
+  await page.locator('#tcChosenNote').innerText());
 await page.click('#teacherClassesForm button[type="submit"]');
 await page.waitForTimeout(300);
 check('the class now lists that teacher too',
@@ -135,6 +146,20 @@ const bothCount = await page.locator('#gfMatchCount').innerText();
 await page.click('#groupForm button[type="submit"]');
 await page.waitForTimeout(400);
 check('ticking a second group in the same column widens the class', /[1-9]/.test(bothCount), bothCount);
+
+// a subject group is not a form class: SG2 alone must span 1R1-1R6
+await page.locator('.tabs button[data-tab="groups"]').click();
+await page.click('#addGroupBtn');
+await page.locator('#gfTgTicks label').filter({ hasText: /^SG2\b/ }).first().click();
+await page.fill('#gfCode', 'SG2-ONLY');
+await page.click('#groupForm button[type="submit"]');
+await page.waitForTimeout(400);
+await page.locator('.tabs button[data-tab="memberships"]').click();
+await page.selectOption('#memGroupSelect', 'SG2-ONLY');
+const sgClasses = new Set((await page.locator('#memTable tbody tr').allInnerTexts())
+  .map((t) => t.split('\t')[2]));
+check('a subject group cuts across form classes',
+  sgClasses.size > 1, Array.from(sgClasses).join(','));
 
 check('renaming a teacher updates their classes',
   (await page.locator('#groupsTable').innerText()).includes('Mr Cheng Xin Ze'));

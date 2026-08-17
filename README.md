@@ -290,6 +290,26 @@ Two smaller knobs in that dialog handle the rest:
 - **Store as** renames a column, which is how a level whose file says `SCII`
   merges into the `SCI` used everywhere else instead of becoming a second column.
 
+### Tutorial groups / subject groups (TG, SG)
+
+Some levels split a subject into teaching groups that are **not** the form
+class: SG1–SG6 across 1R1–1R6, or TG1/TG2 within a level. The app treats TG and
+SG as the same thing — one field on the student, shown as **TG/SG**:
+
+- a `TG`, `SG`, `Tutorial Group` or `Subject Group` column in the school's file
+  is picked up automatically (correct it in the column review if a file names it
+  something else);
+- it appears as a column and a filter in Students and Group members, is
+  searchable, and is its own tick row when you build a class;
+- it prints on the teacher's namelist whenever the class has one;
+- levels whose files have no such column are unaffected — the control stays
+  hidden.
+
+An existing `namelist.xlsx` where TG came in as an ordinary subject column is
+converted on load: the value moves onto the student, the column disappears from
+the subject list, and any class rule that pointed at it is rewritten to the new
+field. Nothing needs to be redone by hand.
+
 ### Source file layouts
 
 Two shapes of school file are recognised automatically.
@@ -333,7 +353,10 @@ you build a class rather than retyped — no more two spellings of one person.
 Press **+** to add a name straight into the list; click any name to change it
 (the app asks you to confirm before saving, since **renaming one updates every
 class it is tagged to**). **Classes…** on a teacher's row hands them their
-classes after the fact — tick the ones they take, untick to drop their name.
+classes after the fact: pick the **subject** (and level, if there is more than
+one), and every class of that subject is listed with a tick box and its size —
+tick what they take, untick to drop their name. It opens on the subject they
+already teach, and says what they will be teaching before you press OK.
 A class can be taught by several teachers; each of them sees it under their own
 name, with the others noted as co-teachers.
 
@@ -345,6 +368,7 @@ a running count of how many students the ticks currently cover:
 | **Level** | groups the class under that heading on the teacher page, *and* keeps it to that level's students |
 | **Must be taking** | pick a column, tick its groups — several ticks in one column mean "either" (`HIST G3` or `HIST G2`), and a second column narrows further (`TG = TG2`) |
 | **PG** | tick one or more posting groups (always 1, 2, 3 — a file that writes `PG2` is read as `2`) |
+| **TG / SG** | tick tutorial / subject groups — the teaching group a student sits in, which need not follow the form class (SG3 can span 1R1–1R6). Hidden for schools whose files have no such column |
 | **Limit to classes** | tick the form classes |
 | **Members** | everyone currently on the namelist, each with a tick — untick anyone who should not be there |
 

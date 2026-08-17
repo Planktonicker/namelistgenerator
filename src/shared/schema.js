@@ -27,9 +27,10 @@
   var ORIGIN_FILE = 'file';
   var ORIGIN_ADDED = 'added';
 
-  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'Origin', 'SourceName'];
+  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'TG',
+    'Origin', 'SourceName'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teachers', 'Level',
-    'AutoMatch', 'AutoPG', 'AutoClasses'];
+    'AutoMatch', 'AutoPG', 'AutoTG', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
   var TEACHER_HEADERS = ['Name'];
   var SOURCE_HEADERS = ['Level', 'SourceFile', 'FilePattern', 'LastFile', 'LastImported', 'Mapping'];
@@ -41,6 +42,10 @@
     level: ['level', 'yearlevel', 'year'],
     gender: ['gender', 'sex'],
     pg: ['pg', 'postinggroup', 'stream'],
+    /* Tutorial group and subject group are the same thing under two names:
+     * the teaching group a student sits in for a subject, which need not be
+     * their form class (SG1–SG6 across 1R1–1R6). */
+    tg: ['tg', 'sg', 'tutorialgroup', 'tutgroup', 'subjectgroup', 'subjgroup', 'sgroup'],
     origin: ['origin'],
     sourceName: ['sourcename'],
   };
@@ -62,6 +67,7 @@
     autoKey: ['autosubject'],      // pre-multi-criteria files
     autoValue: ['autovalue'],
     autoPg: ['autopg'],
+    autoTg: ['autotg', 'autosg'],
     autoClasses: ['autoclasses'],
   };
 
@@ -122,6 +128,21 @@
     if (m) return m[1];
     if (/^\d+$/.test(t)) return String(parseInt(t, 10));
     return t;
+  }
+
+  /* Tutorial/subject groups are written SG3, "SG 3", tg3, sometimes bare 3.
+   * Spacing and case are noise; the label the school uses is not, so only the
+   * former is normalised. */
+  function normTg(v) {
+    var t = norm(v).replace(/\s+/g, '');
+    var m = /^([A-Za-z]{1,3})[-.]?(\d+[A-Za-z]?)$/.exec(t);
+    if (m) return m[1].toUpperCase() + m[2].toUpperCase();
+    return t.toUpperCase();
+  }
+
+  /* Does this column hold tutorial/subject groups rather than a subject? */
+  function isTgHeader(h) {
+    return /^(tg|sg|tutorial\s*group|subject\s*group|subj\s*group)\b/i.test(norm(h));
   }
 
   /* "1, 2" -> ['1','2']; used for the fields the class dialog now ticks
@@ -229,11 +250,13 @@
     for (var r = 1; r < rows.length; r++) {
       var row = rows[r];
       if (!row || isBlankRow(row)) continue;
-      var rec = { id: '', name: '', class: '', level: '', gender: '', pg: '', origin: '', sourceName: '', subjects: {} };
+      var rec = { id: '', name: '', class: '', level: '', gender: '', pg: '', tg: '',
+        origin: '', sourceName: '', subjects: {} };
       Object.keys(STUDENT_FIELDS).forEach(function (f) {
         rec[f] = f in idx ? norm(row[idx[f]]) : '';
       });
       rec.pg = normPg(rec.pg);
+      rec.tg = normTg(rec.tg);
       // Files written before the Origin column existed: assume the students
       // came from the school file (the pre-existing behaviour).
       if (rec.origin !== ORIGIN_ADDED) rec.origin = ORIGIN_FILE;
@@ -279,6 +302,7 @@
         delete g.autoLevel;
       });
     } else warnings.push('Sheet "Groups" not found.');
+    liftTutorialGroups(model);
     if (memberships) model.memberships = readTable(memberships, MEMBERSHIP_FIELDS, ['studentId', 'groupCode'], 'Memberships', warnings);
     else warnings.push('Sheet "Memberships" not found.');
     var sources = findSheet(wb, 'Sources');   // optional sheet — older files lack it
@@ -298,6 +322,34 @@
     return { model: model, warnings: warnings.concat(validateModel(model)) };
   }
 
+  /* Files written before TG/SG was a field of its own kept it as just another
+   * subject column. Lift it onto the student, drop the column, and rewrite any
+   * class rule that pointed at it — so an existing namelist.xlsx keeps working
+   * and ends up with one representation, not two. */
+  function liftTutorialGroups(model) {
+    var moved = (model.subjectKeys || []).filter(isTgHeader);
+    var touched = 0;
+    model.students.forEach(function (s) {
+      moved.forEach(function (k) {
+        var v = s.subjects && s.subjects[k];
+        if (v && !norm(s.tg)) { s.tg = normTg(v); touched++; }
+        if (s.subjects) delete s.subjects[k];
+      });
+    });
+    model.subjectKeys = model.subjectKeys.filter(function (k) { return !isTgHeader(k); });
+    model.groups.forEach(function (g) {
+      var keep = [];
+      var tgs = splitList(g.autoTg);
+      matchers(g).forEach(function (m) {
+        if (isTgHeader(m.key)) tgs = tgs.concat(m.values);
+        else keep.push(m);
+      });
+      g.autoMatch = matchersToString(keep);
+      g.autoTg = tgs.map(normTg).filter(function (t, i, all) { return t && all.indexOf(t) === i; }).join(', ');
+    });
+    return touched;
+  }
+
   function modelToWorkbook(model) {
     var X = xlsx();
     var wb = X.utils.book_new();
@@ -305,20 +357,21 @@
 
     var keys = model.subjectKeys || [];
     ws = X.utils.aoa_to_sheet([STUDENT_HEADERS.concat(keys)].concat(model.students.map(function (s) {
-      return [s.id, s.name, s.class, s.level, s.gender, s.pg, s.origin || ORIGIN_FILE,
+      return [s.id, s.name, s.class, s.level, s.gender, s.pg, s.tg, s.origin || ORIGIN_FILE,
         s.sourceName === s.name ? '' : s.sourceName]
         .concat(keys.map(function (k) { return (s.subjects && s.subjects[k]) || ''; }));
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 5 }, { wch: 8 }, { wch: 28 }]
+    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 5 },
+      { wch: 6 }, { wch: 8 }, { wch: 28 }]
       .concat(keys.map(function () { return { wch: 12 }; }));
     X.utils.book_append_sheet(wb, ws, 'Students');
 
     ws = X.utils.aoa_to_sheet([GROUP_HEADERS].concat(model.groups.map(function (g) {
       return [g.code, g.name, g.subject, teacherLabel(g), g.level,
-        matchersToString(matchers(g)), g.autoPg, g.autoClasses];
+        matchersToString(matchers(g)), g.autoPg, g.autoTg, g.autoClasses];
     })));
     ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 18 }, { wch: 34 }, { wch: 14 },
-      { wch: 40 }, { wch: 8 }, { wch: 14 }];
+      { wch: 40 }, { wch: 8 }, { wch: 10 }, { wch: 14 }];
     X.utils.book_append_sheet(wb, ws, 'Groups');
 
     ws = X.utils.aoa_to_sheet([MEMBERSHIP_HEADERS].concat(model.memberships.map(function (m) {
@@ -818,6 +871,7 @@
         id: id, name: name, class: cls,
         level: cell(row, 'level'),
         gender: cell(row, 'gender'), pg: normPg(cell(row, 'pg')),
+        tg: normTg(cell(row, 'tg')),
         origin: ORIGIN_FILE, sourceName: name, subjects: subjects,
       });
     }
@@ -932,6 +986,7 @@
         if (imp.level) m.level = imp.level;
         if (imp.gender) m.gender = imp.gender;
         if (imp.pg) m.pg = imp.pg;
+        if (imp.tg) m.tg = imp.tg;
         m.subjects = m.subjects || {};
         importedKeys.forEach(function (k) {
           if (imp.subjects[k]) m.subjects[k] = imp.subjects[k];
@@ -942,7 +997,7 @@
         var newId = freeId(imp.class);
         model.students.push({
           id: newId, name: imp.name, class: imp.class, level: imp.level,
-          gender: imp.gender, pg: imp.pg, origin: ORIGIN_FILE,
+          gender: imp.gender, pg: imp.pg, tg: imp.tg || '', origin: ORIGIN_FILE,
           sourceName: imp.sourceName || imp.name, subjects: imp.subjects,
         });
         addedIds.push(newId);
@@ -1009,7 +1064,7 @@
       if (s.id === loserId) loser = s;
     });
     if (!keeper || !loser || keeper === loser) return null;
-    ['class', 'level', 'gender', 'pg', 'sourceName'].forEach(function (f) {
+    ['class', 'level', 'gender', 'pg', 'tg', 'sourceName'].forEach(function (f) {
       if (!norm(keeper[f]) && norm(loser[f])) keeper[f] = loser[f];
     });
     keeper.subjects = keeper.subjects || {};
@@ -1091,7 +1146,7 @@
 
   function groupHasRule(group) {
     return !!(matchers(group).length || norm(group.autoClasses) ||
-      norm(group.autoPg) || norm(group.level));
+      norm(group.autoPg) || norm(group.autoTg) || norm(group.level));
   }
 
   function matchesRule(student, group) {
@@ -1102,6 +1157,11 @@
      * must not mean being dropped from every namelist. */
     var level = norm(group.level);
     if (level && norm(student.level) && normKey(student.level) !== normKey(level)) return false;
+    var tgs = splitList(group.autoTg);
+    if (tgs.length) {
+      var stg = normTg(student.tg);
+      if (!tgs.some(function (t) { return normTg(t) === stg; })) return false;
+    }
     var pgs = splitList(group.autoPg);
     if (pgs.length) {
       var spg = normKey(normPg(student.pg));
@@ -1233,7 +1293,7 @@
 
   function studentSearchText(student, keys) {
     return (student.name + ' ' + student.class + ' ' + student.id + ' ' +
-      student.pg + ' ' + subjectSummary(student, keys)).toLowerCase();
+      student.pg + ' ' + (student.tg || '') + ' ' + subjectSummary(student, keys)).toLowerCase();
   }
 
   /* Lookup structures shared by both pages. `data` is a model or NAMELIST_DATA. */
@@ -1297,6 +1357,8 @@
     norm: norm,
     normKey: normKey,
     normPg: normPg,
+    normTg: normTg,
+    isTgHeader: isTgHeader,
     splitList: splitList,
     emptyModel: emptyModel,
     mapHeaders: mapHeaders,

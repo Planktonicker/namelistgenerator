@@ -32,7 +32,7 @@ const BAND_GROUPS = [
 
 function buildSampleModel() {
   const model = S.emptyModel();
-  model.subjectKeys = ['TG', 'EL', 'MT', 'HMT', 'MA', 'SCI', 'HIST', 'GEOG', 'LIT'];
+  model.subjectKeys = ['EL', 'MT', 'HMT', 'MA', 'SCI', 'HIST', 'GEOG', 'LIT'];
   model.teachers = [...new Set([...EL_TEACHERS, ...MA_TEACHERS, ...BAND_GROUPS.flatMap((g) => g.teachers)])].sort();
   model.sources = [
     {
@@ -45,19 +45,19 @@ function buildSampleModel() {
     model.groups.push({
       code: 'EL-' + cls, name: 'English ' + cls, subject: 'English Language',
       teachers: [EL_TEACHERS[c]], level: '1',
-      autoMatch: 'EL=', autoPg: '', autoClasses: cls,
+      autoMatch: 'EL=', autoPg: '', autoTg: '', autoClasses: cls,
     });
     model.groups.push({
       code: 'MA-' + cls, name: 'Mathematics ' + cls, subject: 'Mathematics',
       teachers: [MA_TEACHERS[c]], level: '1',
-      autoMatch: 'MA=', autoPg: '', autoClasses: cls,
+      autoMatch: 'MA=', autoPg: '', autoTg: '', autoClasses: cls,
     });
   });
   BAND_GROUPS.forEach((g) => {
     model.groups.push({
       code: g.code, name: g.name, subject: g.subject,
       teachers: g.teachers, level: '1',
-      autoMatch: g.key + '=' + g.value, autoPg: '', autoClasses: '',
+      autoMatch: g.key + '=' + g.value, autoPg: '', autoTg: '', autoClasses: '',
     });
   });
 
@@ -69,8 +69,9 @@ function buildSampleModel() {
       const gender = n % 2 ? 'M' : 'F';
       const pg = String([1, 2, 3, 3][n % 4]);
       const g = 'G' + pg;
+      // Subject groups run across the form classes: SG1-SG6, not 1R1-1R6.
+      const tg = 'SG' + ((n % 6) + 1);
       const subjects = {
-        TG: 'TG' + ((n % 2) + 1),
         EL: 'EL ' + g,
         MT: MT_LANGS[n % 3] + ' ' + g,
         MA: 'MA ' + g,
@@ -80,7 +81,8 @@ function buildSampleModel() {
         LIT: 'LIT ' + g,
       };
       if (n % 7 === 0) subjects.HMT = n % 3 === 0 ? 'CHINESE' : 'MALAY';
-      const student = { id, name, class: cls, level: '1', gender, pg, origin: S.ORIGIN_FILE, sourceName: name, subjects };
+      const student = { id, name, class: cls, level: '1', gender, pg, tg,
+        origin: S.ORIGIN_FILE, sourceName: name, subjects };
       model.students.push(student);
 
       model.memberships.push({ studentId: id, groupCode: 'EL-' + cls });

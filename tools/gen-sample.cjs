@@ -36,7 +36,7 @@ function buildSampleModel() {
   model.sources = [
     {
       level: 'Sec 1', file: 'Sec 1 Subject Allocation_14 Jan.xlsx',
-      pattern: 'Sec 1 Subject Allocation', lastFile: '', lastImported: '',
+      pattern: 'Sec 1 Subject Allocation', lastFile: '', lastImported: '', mapping: '',
     },
   ];
 

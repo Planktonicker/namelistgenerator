@@ -31,7 +31,7 @@
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teachers', 'Level',
     'AutoMatch', 'AutoLevel', 'AutoPG', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
-  var SOURCE_HEADERS = ['Level', 'SourceFile', 'FilePattern', 'LastFile', 'LastImported'];
+  var SOURCE_HEADERS = ['Level', 'SourceFile', 'FilePattern', 'LastFile', 'LastImported', 'Mapping'];
 
   var STUDENT_FIELDS = {
     id: ['studentid', 'id', 'studentno', 'indexno', 'regno', 'nric'],
@@ -92,6 +92,7 @@
     pattern: ['filepattern', 'pattern'],
     lastFile: ['lastfile'],
     lastImported: ['lastimported'],
+    mapping: ['mapping'],
   };
 
   function xlsx() {
@@ -111,14 +112,31 @@
     return { students: [], groups: [], memberships: [], subjectKeys: [], sources: [] };
   }
 
-  /* Match a header row against field aliases; returns { field: columnIndex }. */
-  function mapHeaders(headerRow, fields) {
+  /* Match a header row against field aliases; returns { field: columnIndex }.
+   * Exact alias matches win. With `fuzzy`, a header that merely STARTS with an
+   * alias is accepted as a fallback, which is what recognises the year-stamped
+   * headings schools use ("Class 2026"). Never used for the app's own sheets,
+   * where headers are known exactly. */
+  function mapHeaders(headerRow, fields, fuzzy) {
     var keys = headerRow.map(normKey);
     var idx = {};
+    var taken = {};
     Object.keys(fields).forEach(function (field) {
       for (var a = 0; a < fields[field].length; a++) {
         var at = keys.indexOf(fields[field][a]);
-        if (at !== -1) { idx[field] = at; return; }
+        if (at !== -1 && !taken[at]) { idx[field] = at; taken[at] = true; return; }
+      }
+    });
+    if (!fuzzy) return idx;
+    Object.keys(fields).forEach(function (field) {
+      if (field in idx) return;
+      for (var a = 0; a < fields[field].length; a++) {
+        var alias = fields[field][a];
+        for (var i = 0; i < keys.length; i++) {
+          if (!taken[i] && keys[i] && keys[i].indexOf(alias) === 0) {
+            idx[field] = i; taken[i] = true; return;
+          }
+        }
       }
     });
     return idx;
@@ -269,9 +287,9 @@
     X.utils.book_append_sheet(wb, ws, 'Memberships');
 
     ws = X.utils.aoa_to_sheet([SOURCE_HEADERS].concat((model.sources || []).map(function (s) {
-      return [s.level, s.file, s.pattern, s.lastFile, s.lastImported];
+      return [s.level, s.file, s.pattern, s.lastFile, s.lastImported, s.mapping];
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 42 }, { wch: 30 }, { wch: 42 }, { wch: 22 }];
+    ws['!cols'] = [{ wch: 12 }, { wch: 42 }, { wch: 30 }, { wch: 42 }, { wch: 22 }, { wch: 60 }];
     X.utils.book_append_sheet(wb, ws, 'Sources');
 
     return wb;
@@ -382,7 +400,7 @@
    * The code is the teaching class every student in that cell belongs to. */
 
   function isSlotHeader(h) {
-    return /^subject\s*\d+$/i.test(norm(h));
+    return /^sub(?:ject)?\s*\d+$/i.test(norm(h));
   }
 
   function slotColumns(headers) {
@@ -391,27 +409,53 @@
     return out;
   }
 
-  /* Positional layout only when there are several such columns, so a file
-   * with one honest "Subject" column keeps the fixed-column behaviour. */
   function hasSubjectSlots(headers) {
-    return slotColumns(headers).length >= 3;
+    return slotColumns(headers).length > 0;
   }
 
-  /* "English Language - G2 - K200" -> { subject, band, code, value }.
-   * Returns null for anything without a band or a code, which filters out
-   * the stray notes admins leave in spare slot columns. */
-  function parseAllocation(cell) {
+  /* Slot cells come in two dialects:
+   *   coded — "English Language - G2 - K200" (ministry allocation files)
+   *   plain — "Sci CB G3", "DT"              (the school's own grouping lists)
+   * Which one a file speaks is decided by sampling it, because the coded form
+   * lets us reject the stray notes admins park in spare slot columns, while
+   * the plain form must accept a bare "DT". */
+  function slotDialect(rows, slotCols, headerRow) {
+    var coded = 0, total = 0;
+    for (var r = (headerRow || 0) + 1; r < rows.length; r++) {
+      (slotCols || []).forEach(function (c) {
+        var v = norm((rows[r] || [])[c]);
+        if (!v) return;
+        total++;
+        if (/ - /.test(v)) coded++;
+      });
+      if (total > 200) break;
+    }
+    return total && coded >= total / 2 ? 'coded' : 'plain';
+  }
+
+  /* A cell in a slot column -> { subject, band, code, value }, or null if it
+   * is not an allocation at all. */
+  function parseAllocation(cell, dialect) {
     var raw = norm(cell);
     if (!raw) return null;
+    if (dialect === 'plain') {
+      // Free-text notes rather than a subject: questions, sentences.
+      if (/[?]/.test(raw) || raw.length > 40 || raw.split(/\s+/).length > 5) return null;
+      var m = /^(.*?)[\s-]*\b(G[123])$/i.exec(raw);
+      var subject = norm(m ? m[1] : raw);
+      var band = m ? m[2].toUpperCase() : '';
+      if (!subject) return null;
+      return { subject: subject, band: band, code: '', value: band || subject };
+    }
     var parts = raw.split(' - ').map(function (p) { return norm(p); });
     var code = '';
     var band = '';
     if (parts.length > 1 && /^[A-Z]{1,3}\d{2,5}$/i.test(parts[parts.length - 1])) code = parts.pop();
     if (parts.length > 1 && /^G\d$/i.test(parts[parts.length - 1])) band = parts.pop();
-    var subject = parts.join(' - ');
-    if (!subject || (!band && !code)) return null;
+    var subj = parts.join(' - ');
+    if (!subj || (!band && !code)) return null;
     return {
-      subject: subject, band: band, code: code,
+      subject: subj, band: band, code: code,
       value: [band, code].filter(Boolean).join(' - '),
     };
   }
@@ -454,6 +498,144 @@
     return list.sort(function (a, b) { return cmp(a.subject, b.subject) || cmp(a.name, b.name); });
   }
 
+  /* ---- per-level column mapping -------------------------------------
+   * School files drift: a column gets renamed, moved, or added, and each
+   * level's file is laid out differently in the first place. The mapping a
+   * level was imported with is therefore remembered, and remembered by
+   * COLUMN HEADER rather than position — so a column that moves is a
+   * non-event, and only a genuine rename needs the admin's attention.
+   *
+   *   { sheet, headerRow, cols: {name, class, ...}, subjects: [], slots: [],
+   *     rename: { "SCII": "SCI" }, dialect }
+   *
+   * Header names are stored; indexes are resolved against the file each time.
+   */
+  function proposeMapping(wb, saved) {
+    var sheetName = '';
+    var rows = null;
+    if (saved && saved.sheet) {
+      var ws = findSheet(wb, saved.sheet);
+      if (ws) { sheetName = saved.sheet; rows = sheetRows(ws); }
+    }
+    if (!rows) {
+      // Pick whichever sheet looks most like a student list.
+      var bestScore = -1;
+      wb.SheetNames.forEach(function (name) {
+        var r = sheetRows(wb.Sheets[name]);
+        var hr = detectHeaderRow(r);
+        var m = mapHeaders(r[hr] || [], IMPORT_FIELDS, true);
+        var score = Object.keys(m).length + ('name' in m ? 2 : 0) +
+          Math.min(Math.max(r.length - hr - 1, 0), 50) / 100;
+        if (score > bestScore) { bestScore = score; sheetName = name; rows = r; }
+      });
+    }
+    rows = rows || [];
+    var headerRow = saved && saved.headerRow != null && rows[saved.headerRow] &&
+      mapHeaders(rows[saved.headerRow], IMPORT_FIELDS, true).name != null
+      ? saved.headerRow : detectHeaderRow(rows);
+    var headers = (rows[headerRow] || []).map(norm);
+
+    var guess = mapHeaders(headers, IMPORT_FIELDS, true);
+    var cols = {};
+    Object.keys(IMPORT_FIELDS).forEach(function (f) {
+      cols[f] = f in guess ? headers[guess[f]] : '';
+    });
+    var missing = [];
+    if (saved && saved.cols) {
+      // Prefer what the admin settled on, as long as that column still exists.
+      Object.keys(saved.cols).forEach(function (f) {
+        var want = norm(saved.cols[f]);
+        if (!want) { cols[f] = ''; return; }
+        if (headers.some(function (h) { return normKey(h) === normKey(want); })) cols[f] = want;
+        else missing.push(want);
+      });
+    }
+
+    var used = {};
+    Object.keys(cols).forEach(function (f) { if (cols[f]) used[normKey(cols[f])] = true; });
+
+    var slots = [];
+    var subjects = [];
+    headers.forEach(function (h) {
+      if (!h || used[normKey(h)]) return;
+      if (isSlotHeader(h)) slots.push(h);
+      else if (!/psle|remark|^no$|^s\/?n$|^serial/i.test(h)) subjects.push(h);
+    });
+    var added = [];
+    if (saved && saved.subjects) {
+      var keep = {};
+      saved.subjects.forEach(function (x) { keep[normKey(x)] = true; });
+      (saved.ignored || []).forEach(function (x) { keep[normKey(x)] = false; });
+      added = subjects.filter(function (h) { return !(normKey(h) in keep); });
+      subjects = subjects.filter(function (h) {
+        return keep[normKey(h)] !== false && (keep[normKey(h)] || added.indexOf(h) !== -1);
+      });
+      saved.subjects.forEach(function (x) {
+        if (!headers.some(function (h) { return normKey(h) === normKey(x); })) missing.push(x);
+      });
+    }
+
+    return {
+      sheet: sheetName,
+      headerRow: headerRow,
+      headers: headers,
+      rows: rows,
+      cols: cols,
+      subjects: subjects,
+      slots: slots,
+      rename: (saved && saved.rename) || {},
+      dialect: slotDialect(rows, slots.map(function (h) { return headers.indexOf(h); }), headerRow),
+      newColumns: added,          // columns the file has that the mapping did not
+      missingColumns: missing,    // columns the mapping expects that the file lost
+    };
+  }
+
+  /* The durable part of a proposal, for storing on the level. */
+  function mappingToJson(m) {
+    return JSON.stringify({
+      sheet: m.sheet,
+      headerRow: m.headerRow,
+      cols: m.cols,
+      subjects: m.subjects,
+      ignored: (m.headers || []).filter(function (h) {
+        return h && !isSlotHeader(h) && m.subjects.indexOf(h) === -1 &&
+          !Object.keys(m.cols).some(function (f) { return normKey(m.cols[f]) === normKey(h); });
+      }),
+      rename: m.rename,
+    });
+  }
+
+  /* null means "this level has never been mapped", which is what makes the
+   * first import stop and ask. */
+  function mappingFromJson(text) {
+    var t = norm(text);
+    if (!t) return null;
+    try {
+      var o = JSON.parse(t);
+      return o && typeof o === 'object' && o.cols ? o : null;
+    } catch (e) { return null; }
+  }
+
+  /* Turn a proposal into the argument importStudents wants. */
+  function mappingToImport(m) {
+    function at(header) {
+      var want = normKey(header);
+      for (var i = 0; i < m.headers.length; i++) if (normKey(m.headers[i]) === want) return i;
+      return null;
+    }
+    var cols = {};
+    Object.keys(m.cols).forEach(function (f) { cols[f] = m.cols[f] ? at(m.cols[f]) : null; });
+    return {
+      headerRow: m.headerRow,
+      cols: cols,
+      subjectCols: m.subjects.map(function (h) {
+        return { index: at(h), header: norm(m.rename[h] || h) };
+      }).filter(function (c) { return c.index != null; }),
+      slotCols: m.slots.map(at).filter(function (i) { return i != null; }),
+      dialect: m.dialect,
+    };
+  }
+
   /* Find the most plausible header row in the first 15 rows of a sheet
    * (real documents often carry titles/dates above the actual table). */
   function detectHeaderRow(rows) {
@@ -461,7 +643,7 @@
     var bestScore = -1;
     var limit = Math.min(rows.length, 15);
     for (var r = 0; r < limit; r++) {
-      var m = mapHeaders(rows[r] || [], IMPORT_FIELDS);
+      var m = mapHeaders(rows[r] || [], IMPORT_FIELDS, true);
       var score = Object.keys(m).length + ('name' in m ? 2 : 0);
       if (score > bestScore) { bestScore = score; best = r; }
     }
@@ -509,9 +691,9 @@
         var v = norm(row[sc.index]);
         if (v) subjects[norm(sc.header)] = v;
       });
-      // Positional "Subject N" slots: the subject names itself inside the cell.
+      // Positional slots: the subject names itself inside the cell.
       (mapping.slotCols || []).forEach(function (ci) {
-        var a = parseAllocation(row[ci]);
+        var a = parseAllocation(row[ci], mapping.dialect);
         if (!a) return;
         var key = a.subject;
         if (subjects[key] && subjects[key] !== a.value) {
@@ -889,6 +1071,11 @@
     findNewestMatch: findNewestMatch,
     isSlotHeader: isSlotHeader,
     slotColumns: slotColumns,
+    slotDialect: slotDialect,
+    proposeMapping: proposeMapping,
+    mappingToJson: mappingToJson,
+    mappingFromJson: mappingFromJson,
+    mappingToImport: mappingToImport,
     hasSubjectSlots: hasSubjectSlots,
     parseAllocation: parseAllocation,
     discoverClasses: discoverClasses,

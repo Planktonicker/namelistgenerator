@@ -200,6 +200,36 @@ PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \
   node test/setup-flow.browser.mjs
 ```
 
+### Coping with files that keep changing shape
+
+Every level's file is laid out differently, and each one drifts year to year —
+a column renamed, moved, or added; an extra title row; a different name for the
+tutorial/subject group. Three things absorb that without constant fiddling.
+
+**Columns are matched by name, never by position.** A column that moves is a
+non-event. Names are matched loosely too, so `Class`, `Class Name` and
+`Class 2026` all read as the class, and title rows above the real header are
+skipped automatically.
+
+**Each level remembers its own mapping.** The first time you import a level the
+app shows what it worked out — sheet, header row, which column is the name, the
+class, the PG, and which of the remaining columns are subject allocations — and
+you correct anything it got wrong. That mapping is saved in `namelist.xlsx`
+against the level, so it is shared with every admin and reused on every later
+import. Re-importing a level normally asks nothing at all.
+
+**You are only interrupted when something genuinely changed.** If the file
+gains a column, loses one the mapping relied on, or you press **Columns…** on a
+level, the review reopens with the change flagged — new columns are marked
+*new*, and columns the mapping expected but can't find are called out. Anything
+else imports silently.
+
+Two smaller knobs in that dialog handle the rest:
+
+- **Untick** a column to ignore it (free-text remarks, a `Pending` note column).
+- **Store as** renames a column, which is how a level whose file says `SCII`
+  merges into the `SCI` used everywhere else instead of becoming a second column.
+
 ### Source file layouts
 
 Two shapes of school file are recognised automatically.
@@ -210,15 +240,22 @@ Two shapes of school file are recognised automatically.
 |---|---|---|---|---|---|
 | … | 1R1 | 3 | EL G3 | CL G3 | MA G3 |
 
-**Positional subject slots** (the ministry allocation format) — generic
-`Subject 1 … Subject 20` columns, with the subject named inside the cell as
-`Subject - Band - Code`:
+**Positional subject slots** — generic `Subject 1 … Subject 20` or `Sub 5 … Sub 7`
+columns, where the subject is named inside the cell. Two dialects are read, and
+which one a file speaks is worked out by sampling it: `Subject - Band - Code`
+(ministry allocation files) and plain `Sci CB G3` / `DT` (the school's own
+grouping lists). This matters because the same subject sits in `Sub 6` for one
+student and `Sub 7` for another, so reading such columns by position would split
+one class in two:
 
 | Class Name | Reg# | Student Name | Subject 1 | Subject 2 |
 |---|---|---|---|---|
 | 3S1 | 1 | … | English Language - G2 - K200 | Mathematics - G2 - K210 |
 
-For the second shape the app splits each cell into subject, band and class
+A file can mix both: the Sec 3/4 lists have fixed `EL`, `MTL`, `MA`, `HUM`
+columns *and* positional `Sub 5`–`Sub 7` slots, and both are read.
+
+For the positional shape the app splits each cell into subject, band and class
 code, so the students table still shows one readable column per subject
 (*English Language*, *Mathematics*, …) rather than *Subject 1…20*. The code
 (`K200`) identifies the teaching class, so **Find classes in the data** in the

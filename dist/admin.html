@@ -638,6 +638,34 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     </form>
   </dialog>
 
+  <dialog id="mapDialog">
+    <h2>Check the columns for <span id="mapLevelName"></span></h2>
+    <p class="small muted" id="mapFileName"></p>
+    <div id="mapFlags"></div>
+    <div class="import-map">
+      <label for="mapSheet">Sheet</label><select id="mapSheet"></select>
+      <label for="mapHeaderRow">Header row</label><select id="mapHeaderRow"></select>
+      <label for="mapName">Name *</label><select id="mapName"></select>
+      <label for="mapClass">Class</label><select id="mapClass"></select>
+      <label for="mapGender">Gender</label><select id="mapGender"></select>
+      <label for="mapPg">PG</label><select id="mapPg"></select>
+      <label for="mapReg">Register no.</label><select id="mapReg"></select>
+    </div>
+    <p style="margin:14px 0 4px"><strong class="small">Subject / group columns to keep</strong>
+      <span class="muted small">— untick anything that isn't an allocation. Rename to merge a
+      column with one from another level (e.g. <code>SCII</code> → <code>SCI</code>).</span></p>
+    <div class="scrolly" style="max-height:230px"><table class="list" id="mapSubjects">
+      <thead><tr><th class="checkcol"></th><th>Column in the file</th><th>Store as</th><th>Example</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <p class="hint" id="mapSlotNote" hidden></p>
+    <p class="small muted" id="mapPreview"></p>
+    <div class="actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px">
+      <button type="button" id="mapCancelBtn">Cancel</button>
+      <button type="button" class="primary" id="mapGoBtn">Import this level</button>
+    </div>
+  </dialog>
+
   <dialog id="pickFileDialog">
     <h2>Which file is the <span id="pickLevelName"></span> namelist?</h2>
     <p class="small muted">Files in <span id="pickFolderName"></span>. Newest first. The file is only read,
@@ -761,7 +789,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teachers', 'Level',
     'AutoMatch', 'AutoLevel', 'AutoPG', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
-  var SOURCE_HEADERS = ['Level', 'SourceFile', 'FilePattern', 'LastFile', 'LastImported'];
+  var SOURCE_HEADERS = ['Level', 'SourceFile', 'FilePattern', 'LastFile', 'LastImported', 'Mapping'];
 
   var STUDENT_FIELDS = {
     id: ['studentid', 'id', 'studentno', 'indexno', 'regno', 'nric'],
@@ -822,6 +850,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     pattern: ['filepattern', 'pattern'],
     lastFile: ['lastfile'],
     lastImported: ['lastimported'],
+    mapping: ['mapping'],
   };
 
   function xlsx() {
@@ -841,14 +870,31 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     return { students: [], groups: [], memberships: [], subjectKeys: [], sources: [] };
   }
 
-  /* Match a header row against field aliases; returns { field: columnIndex }. */
-  function mapHeaders(headerRow, fields) {
+  /* Match a header row against field aliases; returns { field: columnIndex }.
+   * Exact alias matches win. With `fuzzy`, a header that merely STARTS with an
+   * alias is accepted as a fallback, which is what recognises the year-stamped
+   * headings schools use ("Class 2026"). Never used for the app's own sheets,
+   * where headers are known exactly. */
+  function mapHeaders(headerRow, fields, fuzzy) {
     var keys = headerRow.map(normKey);
     var idx = {};
+    var taken = {};
     Object.keys(fields).forEach(function (field) {
       for (var a = 0; a < fields[field].length; a++) {
         var at = keys.indexOf(fields[field][a]);
-        if (at !== -1) { idx[field] = at; return; }
+        if (at !== -1 && !taken[at]) { idx[field] = at; taken[at] = true; return; }
+      }
+    });
+    if (!fuzzy) return idx;
+    Object.keys(fields).forEach(function (field) {
+      if (field in idx) return;
+      for (var a = 0; a < fields[field].length; a++) {
+        var alias = fields[field][a];
+        for (var i = 0; i < keys.length; i++) {
+          if (!taken[i] && keys[i] && keys[i].indexOf(alias) === 0) {
+            idx[field] = i; taken[i] = true; return;
+          }
+        }
       }
     });
     return idx;
@@ -999,9 +1045,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     X.utils.book_append_sheet(wb, ws, 'Memberships');
 
     ws = X.utils.aoa_to_sheet([SOURCE_HEADERS].concat((model.sources || []).map(function (s) {
-      return [s.level, s.file, s.pattern, s.lastFile, s.lastImported];
+      return [s.level, s.file, s.pattern, s.lastFile, s.lastImported, s.mapping];
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 42 }, { wch: 30 }, { wch: 42 }, { wch: 22 }];
+    ws['!cols'] = [{ wch: 12 }, { wch: 42 }, { wch: 30 }, { wch: 42 }, { wch: 22 }, { wch: 60 }];
     X.utils.book_append_sheet(wb, ws, 'Sources');
 
     return wb;
@@ -1112,7 +1158,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
    * The code is the teaching class every student in that cell belongs to. */
 
   function isSlotHeader(h) {
-    return /^subject\s*\d+$/i.test(norm(h));
+    return /^sub(?:ject)?\s*\d+$/i.test(norm(h));
   }
 
   function slotColumns(headers) {
@@ -1121,27 +1167,53 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     return out;
   }
 
-  /* Positional layout only when there are several such columns, so a file
-   * with one honest "Subject" column keeps the fixed-column behaviour. */
   function hasSubjectSlots(headers) {
-    return slotColumns(headers).length >= 3;
+    return slotColumns(headers).length > 0;
   }
 
-  /* "English Language - G2 - K200" -> { subject, band, code, value }.
-   * Returns null for anything without a band or a code, which filters out
-   * the stray notes admins leave in spare slot columns. */
-  function parseAllocation(cell) {
+  /* Slot cells come in two dialects:
+   *   coded — "English Language - G2 - K200" (ministry allocation files)
+   *   plain — "Sci CB G3", "DT"              (the school's own grouping lists)
+   * Which one a file speaks is decided by sampling it, because the coded form
+   * lets us reject the stray notes admins park in spare slot columns, while
+   * the plain form must accept a bare "DT". */
+  function slotDialect(rows, slotCols, headerRow) {
+    var coded = 0, total = 0;
+    for (var r = (headerRow || 0) + 1; r < rows.length; r++) {
+      (slotCols || []).forEach(function (c) {
+        var v = norm((rows[r] || [])[c]);
+        if (!v) return;
+        total++;
+        if (/ - /.test(v)) coded++;
+      });
+      if (total > 200) break;
+    }
+    return total && coded >= total / 2 ? 'coded' : 'plain';
+  }
+
+  /* A cell in a slot column -> { subject, band, code, value }, or null if it
+   * is not an allocation at all. */
+  function parseAllocation(cell, dialect) {
     var raw = norm(cell);
     if (!raw) return null;
+    if (dialect === 'plain') {
+      // Free-text notes rather than a subject: questions, sentences.
+      if (/[?]/.test(raw) || raw.length > 40 || raw.split(/\s+/).length > 5) return null;
+      var m = /^(.*?)[\s-]*\b(G[123])$/i.exec(raw);
+      var subject = norm(m ? m[1] : raw);
+      var band = m ? m[2].toUpperCase() : '';
+      if (!subject) return null;
+      return { subject: subject, band: band, code: '', value: band || subject };
+    }
     var parts = raw.split(' - ').map(function (p) { return norm(p); });
     var code = '';
     var band = '';
     if (parts.length > 1 && /^[A-Z]{1,3}\d{2,5}$/i.test(parts[parts.length - 1])) code = parts.pop();
     if (parts.length > 1 && /^G\d$/i.test(parts[parts.length - 1])) band = parts.pop();
-    var subject = parts.join(' - ');
-    if (!subject || (!band && !code)) return null;
+    var subj = parts.join(' - ');
+    if (!subj || (!band && !code)) return null;
     return {
-      subject: subject, band: band, code: code,
+      subject: subj, band: band, code: code,
       value: [band, code].filter(Boolean).join(' - '),
     };
   }
@@ -1184,6 +1256,144 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     return list.sort(function (a, b) { return cmp(a.subject, b.subject) || cmp(a.name, b.name); });
   }
 
+  /* ---- per-level column mapping -------------------------------------
+   * School files drift: a column gets renamed, moved, or added, and each
+   * level's file is laid out differently in the first place. The mapping a
+   * level was imported with is therefore remembered, and remembered by
+   * COLUMN HEADER rather than position — so a column that moves is a
+   * non-event, and only a genuine rename needs the admin's attention.
+   *
+   *   { sheet, headerRow, cols: {name, class, ...}, subjects: [], slots: [],
+   *     rename: { "SCII": "SCI" }, dialect }
+   *
+   * Header names are stored; indexes are resolved against the file each time.
+   */
+  function proposeMapping(wb, saved) {
+    var sheetName = '';
+    var rows = null;
+    if (saved && saved.sheet) {
+      var ws = findSheet(wb, saved.sheet);
+      if (ws) { sheetName = saved.sheet; rows = sheetRows(ws); }
+    }
+    if (!rows) {
+      // Pick whichever sheet looks most like a student list.
+      var bestScore = -1;
+      wb.SheetNames.forEach(function (name) {
+        var r = sheetRows(wb.Sheets[name]);
+        var hr = detectHeaderRow(r);
+        var m = mapHeaders(r[hr] || [], IMPORT_FIELDS, true);
+        var score = Object.keys(m).length + ('name' in m ? 2 : 0) +
+          Math.min(Math.max(r.length - hr - 1, 0), 50) / 100;
+        if (score > bestScore) { bestScore = score; sheetName = name; rows = r; }
+      });
+    }
+    rows = rows || [];
+    var headerRow = saved && saved.headerRow != null && rows[saved.headerRow] &&
+      mapHeaders(rows[saved.headerRow], IMPORT_FIELDS, true).name != null
+      ? saved.headerRow : detectHeaderRow(rows);
+    var headers = (rows[headerRow] || []).map(norm);
+
+    var guess = mapHeaders(headers, IMPORT_FIELDS, true);
+    var cols = {};
+    Object.keys(IMPORT_FIELDS).forEach(function (f) {
+      cols[f] = f in guess ? headers[guess[f]] : '';
+    });
+    var missing = [];
+    if (saved && saved.cols) {
+      // Prefer what the admin settled on, as long as that column still exists.
+      Object.keys(saved.cols).forEach(function (f) {
+        var want = norm(saved.cols[f]);
+        if (!want) { cols[f] = ''; return; }
+        if (headers.some(function (h) { return normKey(h) === normKey(want); })) cols[f] = want;
+        else missing.push(want);
+      });
+    }
+
+    var used = {};
+    Object.keys(cols).forEach(function (f) { if (cols[f]) used[normKey(cols[f])] = true; });
+
+    var slots = [];
+    var subjects = [];
+    headers.forEach(function (h) {
+      if (!h || used[normKey(h)]) return;
+      if (isSlotHeader(h)) slots.push(h);
+      else if (!/psle|remark|^no$|^s\/?n$|^serial/i.test(h)) subjects.push(h);
+    });
+    var added = [];
+    if (saved && saved.subjects) {
+      var keep = {};
+      saved.subjects.forEach(function (x) { keep[normKey(x)] = true; });
+      (saved.ignored || []).forEach(function (x) { keep[normKey(x)] = false; });
+      added = subjects.filter(function (h) { return !(normKey(h) in keep); });
+      subjects = subjects.filter(function (h) {
+        return keep[normKey(h)] !== false && (keep[normKey(h)] || added.indexOf(h) !== -1);
+      });
+      saved.subjects.forEach(function (x) {
+        if (!headers.some(function (h) { return normKey(h) === normKey(x); })) missing.push(x);
+      });
+    }
+
+    return {
+      sheet: sheetName,
+      headerRow: headerRow,
+      headers: headers,
+      rows: rows,
+      cols: cols,
+      subjects: subjects,
+      slots: slots,
+      rename: (saved && saved.rename) || {},
+      dialect: slotDialect(rows, slots.map(function (h) { return headers.indexOf(h); }), headerRow),
+      newColumns: added,          // columns the file has that the mapping did not
+      missingColumns: missing,    // columns the mapping expects that the file lost
+    };
+  }
+
+  /* The durable part of a proposal, for storing on the level. */
+  function mappingToJson(m) {
+    return JSON.stringify({
+      sheet: m.sheet,
+      headerRow: m.headerRow,
+      cols: m.cols,
+      subjects: m.subjects,
+      ignored: (m.headers || []).filter(function (h) {
+        return h && !isSlotHeader(h) && m.subjects.indexOf(h) === -1 &&
+          !Object.keys(m.cols).some(function (f) { return normKey(m.cols[f]) === normKey(h); });
+      }),
+      rename: m.rename,
+    });
+  }
+
+  /* null means "this level has never been mapped", which is what makes the
+   * first import stop and ask. */
+  function mappingFromJson(text) {
+    var t = norm(text);
+    if (!t) return null;
+    try {
+      var o = JSON.parse(t);
+      return o && typeof o === 'object' && o.cols ? o : null;
+    } catch (e) { return null; }
+  }
+
+  /* Turn a proposal into the argument importStudents wants. */
+  function mappingToImport(m) {
+    function at(header) {
+      var want = normKey(header);
+      for (var i = 0; i < m.headers.length; i++) if (normKey(m.headers[i]) === want) return i;
+      return null;
+    }
+    var cols = {};
+    Object.keys(m.cols).forEach(function (f) { cols[f] = m.cols[f] ? at(m.cols[f]) : null; });
+    return {
+      headerRow: m.headerRow,
+      cols: cols,
+      subjectCols: m.subjects.map(function (h) {
+        return { index: at(h), header: norm(m.rename[h] || h) };
+      }).filter(function (c) { return c.index != null; }),
+      slotCols: m.slots.map(at).filter(function (i) { return i != null; }),
+      dialect: m.dialect,
+    };
+  }
+
   /* Find the most plausible header row in the first 15 rows of a sheet
    * (real documents often carry titles/dates above the actual table). */
   function detectHeaderRow(rows) {
@@ -1191,7 +1401,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var bestScore = -1;
     var limit = Math.min(rows.length, 15);
     for (var r = 0; r < limit; r++) {
-      var m = mapHeaders(rows[r] || [], IMPORT_FIELDS);
+      var m = mapHeaders(rows[r] || [], IMPORT_FIELDS, true);
       var score = Object.keys(m).length + ('name' in m ? 2 : 0);
       if (score > bestScore) { bestScore = score; best = r; }
     }
@@ -1239,9 +1449,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         var v = norm(row[sc.index]);
         if (v) subjects[norm(sc.header)] = v;
       });
-      // Positional "Subject N" slots: the subject names itself inside the cell.
+      // Positional slots: the subject names itself inside the cell.
       (mapping.slotCols || []).forEach(function (ci) {
-        var a = parseAllocation(row[ci]);
+        var a = parseAllocation(row[ci], mapping.dialect);
         if (!a) return;
         var key = a.subject;
         if (subjects[key] && subjects[key] !== a.value) {
@@ -1619,6 +1829,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     findNewestMatch: findNewestMatch,
     isSlotHeader: isSlotHeader,
     slotColumns: slotColumns,
+    slotDialect: slotDialect,
+    proposeMapping: proposeMapping,
+    mappingToJson: mappingToJson,
+    mappingFromJson: mappingFromJson,
+    mappingToImport: mappingToImport,
     hasSubjectSlots: hasSubjectSlots,
     parseAllocation: parseAllocation,
     discoverClasses: discoverClasses,
@@ -1857,7 +2072,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   function addDefaultLevels() {
     ['Sec 1', 'Sec 2', 'Sec 3', 'Sec 4', 'Sec 5'].forEach(function (level) {
       if (model.sources.some(function (s) { return S.normKey(s.level) === S.normKey(level); })) return;
-      model.sources.push({ level: level, file: '', pattern: '', lastFile: '', lastImported: '' });
+      model.sources.push({ level: level, file: '', pattern: '', lastFile: '', lastImported: '', mapping: '' });
     });
   }
 
@@ -2790,7 +3005,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (prev) {
       prev.level = level;
     } else {
-      model.sources.push({ level: level, file: '', pattern: '', lastFile: '', lastImported: '' });
+      model.sources.push({ level: level, file: '', pattern: '', lastFile: '', lastImported: '', mapping: '' });
     }
     $('sourceDialog').close();
     markDirty();
@@ -2951,6 +3166,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         '<td>' + statusCell + '</td><td>' + lastCell + '</td>' +
         '<td class="actions">' + actions +
         '<button class="linklike" data-act="pick">Choose file…</button>' +
+        (src.file ? '<button class="linklike" data-act="cols">Columns…</button>' : '') +
         '<button class="linklike" data-act="edit">Rename</button>' +
         '<button class="linklike danger" data-act="del">Delete</button></td></tr>';
     }).join('');
@@ -2979,6 +3195,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var act = btn.dataset.act;
     if (act === 'edit') openSourceDialog(i);
     if (act === 'pick') openPickFileDialog(i);
+    if (act === 'cols') {
+      var st2 = sourceStates[i];
+      if (st2 && st2.file) await runLevelUpdate(i, st2.file, { review: true });
+      else alert('Connect the school files folder first, so the file can be read.');
+    }
     if (act === 'del') {
       if (!confirm('Remove level "' + src.level + '" from this list? (Students are not affected.)')) return;
       model.sources.splice(i, 1);
@@ -3012,76 +3233,171 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     pendingUpdateIndex = null;
   });
 
-  /* `entry` is either a folder listing entry (with .handle) or a File. */
-  async function runLevelUpdate(index, entry) {
+  /* ---- reviewing a level's column mapping ---- */
+
+  var mapState = null;   // { index, file, wb, proposal }
+
+  function mapSelectOptions(headers, current) {
+    return '<option value="">— none —</option>' + headers.map(function (h) {
+      return '<option value="' + esc(h) + '"' +
+        (S.normKey(h) === S.normKey(current || '') ? ' selected' : '') + '>' + esc(h) + '</option>';
+    }).join('');
+  }
+
+  function openMapDialog(index, file, wb, proposal) {
+    mapState = { index: index, file: file, wb: wb, proposal: proposal };
+    $('mapLevelName').textContent = model.sources[index].level;
+    $('mapFileName').textContent = file.name;
+    $('mapSheet').innerHTML = wb.SheetNames.map(function (n) {
+      return '<option value="' + esc(n) + '"' + (n === proposal.sheet ? ' selected' : '') + '>' + esc(n) + '</option>';
+    }).join('');
+    renderMapBody();
+    $('mapDialog').showModal();
+  }
+
+  function renderMapBody() {
+    var p = mapState.proposal;
+    var headers = p.headers;
+    $('mapHeaderRow').innerHTML = p.rows.slice(0, 15).map(function (row, r) {
+      var preview = row.filter(function (c) { return S.norm(c); }).slice(0, 6).join(', ').slice(0, 60);
+      return '<option value="' + r + '"' + (r === p.headerRow ? ' selected' : '') + '>Row ' + (r + 1) +
+        ': ' + esc(preview || '(blank)') + '</option>';
+    }).join('');
+    [['mapName', 'name'], ['mapClass', 'class'], ['mapGender', 'gender'],
+      ['mapPg', 'pg'], ['mapReg', 'reg']].forEach(function (pair) {
+      $(pair[0]).innerHTML = mapSelectOptions(headers, p.cols[pair[1]]);
+    });
+
+    var used = {};
+    Object.keys(p.cols).forEach(function (f) { if (p.cols[f]) used[S.normKey(p.cols[f])] = true; });
+    var firstData = (p.rows[p.headerRow + 1] || []);
+    var candidates = headers.filter(function (h) {
+      return h && !used[S.normKey(h)] && !S.isSlotHeader(h);
+    });
+    $('mapSubjects').querySelector('tbody').innerHTML = candidates.map(function (h) {
+      var on = p.subjects.indexOf(h) !== -1;
+      var isNew = p.newColumns.indexOf(h) !== -1;
+      return '<tr><td class="checkcol"><input type="checkbox" data-h="' + esc(h) + '"' + (on ? ' checked' : '') + '></td>' +
+        '<td>' + esc(h) + (isNew ? ' <span class="badge added">new</span>' : '') + '</td>' +
+        '<td><input type="text" class="mapRename" data-h="' + esc(h) + '" value="' +
+        esc(p.rename[h] || '') + '" placeholder="' + esc(h) + '" style="width:130px"></td>' +
+        '<td class="tags">' + esc(S.norm(firstData[headers.indexOf(h)])) + '</td></tr>';
+    }).join('');
+
+    $('mapSlotNote').hidden = !p.slots.length;
+    $('mapSlotNote').textContent = p.slots.length
+      ? 'Columns ' + p.slots.join(', ') + ' hold whichever subject a student takes, so they are read ' +
+        'by subject name rather than by column — a subject that sits in Sub 6 for one student and ' +
+        'Sub 7 for another still lands in one place.'
+      : '';
+
+    var flags = [];
+    if (p.missingColumns.length) {
+      flags.push('<div class="warnings"><strong>Columns this level used before are not in this file:</strong> ' +
+        esc(p.missingColumns.join(', ')) + ' — check the picks below.</div>');
+    }
+    if (p.newColumns.length) {
+      flags.push('<div class="notice">New column(s) since last time: <strong>' +
+        esc(p.newColumns.join(', ')) + '</strong>.</div>');
+    }
+    $('mapFlags').innerHTML = flags.join('');
+    $('mapPreview').textContent = Math.max(0, p.rows.length - p.headerRow - 1) +
+      ' data row(s) below the header.';
+  }
+
+  function readMapDialog() {
+    var p = mapState.proposal;
+    p.cols.name = $('mapName').value;
+    p.cols.class = $('mapClass').value;
+    p.cols.gender = $('mapGender').value;
+    p.cols.pg = $('mapPg').value;
+    p.cols.reg = $('mapReg').value;
+    p.subjects = [];
+    p.rename = {};
+    $('mapSubjects').querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+      if (cb.checked) p.subjects.push(cb.dataset.h);
+    });
+    $('mapSubjects').querySelectorAll('.mapRename').forEach(function (inp) {
+      var v = S.norm(inp.value);
+      if (v && S.normKey(v) !== S.normKey(inp.dataset.h)) p.rename[inp.dataset.h] = v;
+    });
+    return p;
+  }
+
+  $('mapSheet').addEventListener('change', function () {
+    mapState.proposal = S.proposeMapping(mapState.wb, { sheet: $('mapSheet').value });
+    renderMapBody();
+  });
+  $('mapHeaderRow').addEventListener('change', function () {
+    var p = mapState.proposal;
+    mapState.proposal = S.proposeMapping(mapState.wb,
+      { sheet: p.sheet, headerRow: parseInt($('mapHeaderRow').value, 10) });
+    mapState.proposal.headerRow = parseInt($('mapHeaderRow').value, 10);
+    renderMapBody();
+  });
+  $('mapCancelBtn').addEventListener('click', function () {
+    mapState = null;
+    $('mapDialog').close();
+  });
+  $('mapGoBtn').addEventListener('click', function () {
+    var st = mapState;
+    var p = readMapDialog();
+    if (!p.cols.name) { alert('Please choose the Name column.'); return; }
+    $('mapDialog').close();
+    mapState = null;
+    model.sources[st.index].mapping = S.mappingToJson(p);
+    applyLevelImport(st.index, st.file, p);
+  });
+
+  /* `entry` is either a folder listing entry (with .handle) or a File.
+   * The level's remembered mapping is applied silently when it still fits the
+   * file; anything unexpected (first import, a renamed or new column) opens
+   * the review dialog instead of guessing. */
+  async function runLevelUpdate(index, entry, opts) {
     var src = model.sources[index];
     var file = entry && entry.handle ? await entry.handle.getFile() : entry;
     var wb;
     try { wb = XLSX.read(await file.arrayBuffer(), { type: 'array' }); }
     catch (err) { alert('Could not read "' + file.name + '": ' + err.message); return; }
 
-    // Pick the sheet that looks most like a student list.
-    var bestRows = null, bestSheet = '', bestScore = -1;
-    wb.SheetNames.forEach(function (name) {
-      var rows = S.sheetRows(wb.Sheets[name]);
-      var hr = S.detectHeaderRow(rows);
-      var m = S.mapHeaders(rows[hr] || [], S.IMPORT_FIELDS);
-      var score = Object.keys(m).length + ('name' in m ? 2 : 0) +
-        Math.min(Math.max(rows.length - hr - 1, 0), 50) / 100;
-      if (score > bestScore) { bestScore = score; bestSheet = name; bestRows = rows; }
-    });
-    var hr = S.detectHeaderRow(bestRows || []);
-    var headers = (bestRows || [])[hr] || [];
-    var guess = S.mapHeaders(headers, S.IMPORT_FIELDS);
-    if (!('name' in guess) || !('class' in guess)) {
-      alert('Could not recognise Name and Class columns in "' + file.name + '" (sheet "' + bestSheet +
-        '").\nUse Import… to map the columns by hand.');
+    var saved = S.mappingFromJson(src.mapping);
+    var proposal = S.proposeMapping(wb, saved);
+    var needsReview = (opts && opts.review) || !saved ||
+      proposal.missingColumns.length || proposal.newColumns.length || !proposal.cols.name;
+    if (needsReview) {
+      openMapDialog(index, file, wb, proposal);
       return;
     }
-    var mappedIdx = Object.keys(guess).map(function (k) { return guess[k]; });
-    var slotCols = S.slotColumns(headers);
-    var subjectCols = [];
-    if (!S.hasSubjectSlots(headers)) {
-      headers.forEach(function (h, ci) {
-        var label = S.norm(h);
-        if (!label || mappedIdx.indexOf(ci) !== -1) return;
-        if (/psle|remark|^no$|^s\/?n$|^serial/i.test(label)) return;
-        subjectCols.push({ index: ci, header: label });
-      });
-      slotCols = [];
+    applyLevelImport(index, file, proposal);
+  }
+
+  function applyLevelImport(index, file, proposal) {
+    var src = model.sources[index];
+    var res = S.importStudents(proposal.rows, S.mappingToImport(proposal));
+    if (!res.students.length) {
+      alert('No usable student rows found in "' + file.name + '" — check the columns.');
+      return;
     }
-    var res = S.importStudents(bestRows, {
-      headerRow: hr,
-      cols: {
-        id: null, name: guess.name, class: guess.class,
-        level: 'level' in guess ? guess.level : null,
-        gender: 'gender' in guess ? guess.gender : null,
-        pg: 'pg' in guess ? guess.pg : null,
-        reg: 'reg' in guess ? guess.reg : null,
-      },
-      subjectCols: subjectCols,
-      slotCols: slotCols,
+    var importedKeys = {};
+    res.students.forEach(function (st) {
+      Object.keys(st.subjects).forEach(function (k) { importedKeys[k] = true; });
     });
-    if (!res.students.length) { alert('No usable student rows found in "' + file.name + '".'); return; }
-    var importedKeys = subjectCols.map(function (c) { return S.norm(c.header); });
-    if (slotCols.length) {
-      var slotKeys = {};
-      res.students.forEach(function (st) {
-        Object.keys(st.subjects).forEach(function (k) { slotKeys[k] = true; });
-      });
-      importedKeys = importedKeys.concat(Object.keys(slotKeys));
-    }
+    var keys = Object.keys(importedKeys);
     var classes = Array.from(new Set(res.students.map(function (s) { return s.class; }).filter(Boolean))).sort(S.cmp);
-    if (!confirm('Update level "' + src.level + '" from:\n' + file.name + ' (sheet "' + bestSheet + '")\n\n' +
-      res.students.length + ' students in classes ' + classes.join(', ') + '.\n' +
-      'Students are matched by name, so their groups are kept. Only these classes are touched.\n' +
+
+    // The file rarely says which level it is, so stamp the level being updated.
+    res.students.forEach(function (s) { if (!s.level) s.level = src.level; });
+
+    if (!confirm('Update "' + src.level + '" from:\n' + file.name + ' (sheet "' + proposal.sheet + '")\n\n' +
+      res.students.length + ' students' + (classes.length ? ' in ' + classes.join(', ') : '') + '.\n' +
+      'Students are matched by name, so their classes and teachers are kept.\n' +
       'Students you added in this app are kept regardless. This file is only read, never changed.\n\nProceed?')) return;
 
-    var report = S.applyLevelUpdate(model, res.students, importedKeys);
+    var report = S.applyLevelUpdate(model, res.students, keys);
     if (report.missingIds.length) {
       var names = report.missingLabels.slice(0, 12).join('\n') + (report.missingLabels.length > 12 ? '\n…' : '');
       if (confirm(report.missingIds.length + ' student(s) are no longer in the file:\n' + names +
-        '\n\nOK — remove them (and their group memberships)\nCancel — keep them for now')) {
+        '\n\nOK — remove them (and their class memberships)\nCancel — keep them for now')) {
         deleteStudents(report.missingIds);
       }
     }

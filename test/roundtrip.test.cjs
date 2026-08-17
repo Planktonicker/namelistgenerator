@@ -59,7 +59,8 @@ test('header aliases, subject columns, and messy input are tolerated', () => {
   assert.deepStrictEqual(model.subjectKeys, ['EL', 'MT']);
   assert.deepStrictEqual(model.students[0],
     { id: 's001', name: 'Alice Tan', class: '1R1', level: '1', gender: 'F', pg: '3', tg: '', sn: '',
-      origin: 'file', sourceName: 'Alice Tan', subjects: { EL: 'EL G3', MT: 'CL G2' } });
+      origin: 'file', sourceName: 'Alice Tan', status: '',
+      subjects: { EL: 'EL G3', MT: 'CL G2' } });
   assert.deepStrictEqual(model.students[1].subjects, { EL: 'EL G2' });
   assert.ok(warnings.some((w) => w.includes('row 5')), 'expected a skipped-row warning');
 });
@@ -741,6 +742,78 @@ test('subject-based banding: the PG fills in a band the label leaves out', () =>
 
   // a student with no PG and no band in the cell keeps the label as written
   assert.strictEqual(S.allocationLabel({ pg: '', subjects: { HUM: 'SS/Hist' } }, 'HUM'), 'SS/Hist');
+});
+
+test('a teacher\'s request survives being emailed, and is only read once', () => {
+  const items = [
+    { teacher: 'Mrs Wong', action: 'add', group: 'K300', name: 'JASON LIM', reason: 'joined' },
+    { teacher: 'Mrs Wong', action: 'remove', group: 'K300', name: 'TAN WEI MING',
+      studentId: '1R5-03', reason: 'shared class — not my half' },
+  ];
+  items.forEach((i) => { i.id = S.requestId(i); });
+  const text = S.requestsToText(items, 'Mrs Wong', '2026-08-17T02:42:00.000Z',
+    (code) => 'Sec 1 HIST G3 (' + code + ')');
+
+  // the human part comes first, and says what is being asked
+  assert.ok(text.indexOf('ADD     JASON LIM') < text.indexOf('NLREQ1'));
+  assert.ok(text.includes('Sec 1 HIST G3 (K300)'));
+
+  // quoted, hard-wrapped and CRLF'd — what a mail client does to it
+  const mangled = text.split('\n').map((l) => '> ' + l).join('\r\n');
+  const read = S.parseRequestText(mangled);
+  assert.strictEqual(read.error, undefined);
+  assert.strictEqual(read.items.length, 2);
+  assert.strictEqual(read.items[1].name, 'TAN WEI MING');
+  assert.strictEqual(read.items[1].reason, 'shared class — not my half');
+
+  // the same suggestion always has the same id, so re-sending adds nothing
+  const model = S.emptyModel();
+  assert.deepStrictEqual(S.mergeRequests(model, read.items), { added: 2, repeat: 0, decided: 0 });
+  assert.deepStrictEqual(S.mergeRequests(model, S.parseRequestText(text).items),
+    { added: 0, repeat: 2, decided: 0 });
+  assert.strictEqual(model.requests.length, 2);
+
+  // and one already settled does not come back as waiting
+  model.requests[0].status = 'done';
+  assert.strictEqual(S.openRequests(model).length, 1);
+  assert.deepStrictEqual(S.mergeRequests(model, read.items), { added: 0, repeat: 1, decided: 1 });
+
+  assert.ok(S.parseRequestText('just some words').error.includes('NLREQ1'));
+  assert.ok(S.parseRequestText('NLREQ1\nnot-base64-at-all!!\nNLEND').error.includes('damaged'));
+});
+
+test('a student who has left is held out of every class, refresh included', () => {
+  const model = S.emptyModel();
+  const mk = (id, status) => ({ id, name: id, class: '1R5', level: 'Sec 1', gender: 'M', pg: '3',
+    tg: '', sn: '', origin: 'file', sourceName: id, status, subjects: { HIST: 'HIST G3' } });
+  model.students = [mk('HERE', ''), mk('LEFT', 'left')];
+  model.subjectKeys = ['HIST'];
+  model.groups = [{ code: 'H1', name: 'HIST G3', subject: 'History', teachers: [],
+    level: 'Sec 1', autoMatch: 'HIST=HIST G3', autoPg: '', autoTg: '', autoClasses: '' }];
+
+  assert.strictEqual(S.autoFillGroup(model, model.groups[0]), 1);
+  assert.deepStrictEqual(model.memberships, [{ studentId: 'HERE', groupCode: 'H1' }]);
+  assert.strictEqual(S.hasLeft(model.students[1]), true);
+
+  // no class exists for them, so nothing is reported as a gap either
+  assert.deepStrictEqual(S.coverageGaps(model), []);
+  assert.ok(!S.validateModel(model).some((w) => w.includes('LEFT')));
+
+  // the school's file still lists them; refreshing must not undo the decision
+  const imported = model.students.map((s) => ({ name: s.name, class: s.class, level: s.level,
+    gender: s.gender, pg: s.pg, tg: '', sn: '', subjects: { HIST: 'HIST G3' } }));
+  S.applyLevelUpdate(model, imported, ['HIST']);
+  model.groups.forEach((g) => S.autoFillGroup(model, g));
+  assert.strictEqual(model.students.filter((s) => s.id === 'LEFT')[0].status, 'left');
+  assert.strictEqual(model.memberships.filter((m) => m.studentId === 'LEFT').length, 0);
+
+  // and a class discovered from the data is not sized by people who have gone
+  assert.strictEqual(S.discoverClasses(model.students, 'Sec 1')[0].n, 1);
+
+  // round-trips through the workbook
+  const back = S.workbookToModel(S.modelToWorkbook(model)).model;
+  assert.strictEqual(back.students.filter((s) => s.id === 'LEFT')[0].status, 'left');
+  assert.strictEqual(back.students.filter((s) => s.id === 'HERE')[0].status, '');
 });
 
 console.log(passed + ' tests passed');

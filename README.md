@@ -263,7 +263,8 @@ wall — the app works fine with read-only access to that folder.
   Remarks column for marking. The second tab, **All classes**, lists every class in
   the school with filters for level, subject and teacher — useful when covering a
   colleague — and its search box also accepts a student's name, which brings back
-  the classes that student is in.
+  the classes that student is in. **Suggest a change** on any namelist collects
+  additions and removals to send to the admin, who decides.
 - **Admins:** open `admin.html` → pick the folder (Chrome asks once per session) →
   edit → **Save**. The moment you save, every teacher who reopens the page sees the
   update. Any group's namelist can also be printed from the Group members tab.
@@ -614,6 +615,67 @@ checked against the office's list line by line; a student added in the app, who
 has no S/N of their own, falls back to their row number. **Note** is left blank
 to write in.
 
+### Suggestions from teachers
+
+The teachers are the ones who know that half a class is a colleague's, or that a
+boy has been coming to lessons for a fortnight without appearing on the list. The
+teacher page is read-only, and stays that way — what it gains is a way to *ask*.
+
+**On the teacher page.** Every namelist has a **Suggest a change** button. With it
+on, each row gets *Not in my class*, and a box under the table takes a full name
+to add, with an optional reason. Nothing on the page changes: the suggestions
+collect in a tray at the top of the page, where they can be removed again before
+being sent.
+
+**Getting it to the admin.** Teachers usually have read-only permission on the
+shared folder — deliberately — so a suggestion travels as text. **Review and
+send…** shows the whole message and offers three ways out:
+
+- **Copy for email** — the normal route. Paste into an email or Teams.
+- **Save as a file** — a `.txt` in their Downloads folder, to attach.
+- **Save into the namelist folder** — writes into `requests\`, which only works
+  where IT has made that one folder writable for teachers. Where it does, the
+  admin never has to be emailed at all: the editor reads that folder on opening.
+
+The message is readable at the top, so anyone can see what is being asked, and
+carries the same content as a base64 block at the bottom. That block is what the
+editor reads, and it survives being quoted, hard-wrapped and forwarded — which
+plain JSON does not, because a line break inside a name would break it.
+
+**On the admin page.** A **Requests** tab, with a red count when something is
+waiting. Requests arrive by *Paste a request…*, *Open a request file…*, or from
+the `requests\` folder. Every suggestion is a card naming the teacher, the class
+and their reason.
+
+An **add** offers two ways through:
+
+- **Create the student…** opens the ordinary Add student form, with the teacher's
+  spelling of the name in it, the class's level chosen, and the subject cell that
+  class teaches already set. **Correct the spelling before pressing OK** — a
+  teacher's "JASON LIM" becomes the office's "JASON LIM WEI HENG", and that is the
+  name every future update matches on. They join the class automatically.
+- **Could this be someone already on the roll?** lists students whose names look
+  like the same person — the short-form case — so they are *put into the class*
+  rather than created a second time. A shared surname alone is not treated as a
+  match, or every Lim in the level would be offered.
+
+A **remove** offers three, because "take them off" means different things:
+
+- **Take off this class** — they stay on the roll and in their other classes.
+- **Mark as left the school** — they are kept out of every class and every
+  namelist. The school's file is read-only and still lists them, so this is
+  recorded on the app's side and **survives a level refresh** — otherwise they
+  would reappear the next morning. Reversible from the Students tab
+  (*Left the school* in the filter → **Back on roll**). A student who was only
+  ever entered in the app is simply deleted, since nothing outside knows of them.
+- **Turn it down…** with a short reason.
+
+Either way it is the admin's decision — a teacher's suggestion never changes the
+data on its own. Decisions are kept, so the same request cannot be actioned twice,
+and re-sending a list adds nothing. When the admin next saves, the teacher's page
+shows what became of each suggestion — *accepted*, or *not taken up* with the
+reason — and lets them clear it away.
+
 ### Checks the app runs for you
 
 **Nobody missing from a namelist.** The app compares what each student takes
@@ -654,13 +716,17 @@ containing `sample/namelist.xlsx`.
 
 | Sheet | Columns |
 |---|---|
-| Students | StudentID, Name, Class, Level, Gender, PG, Origin, then one column per subject |
-| Groups | GroupCode, GroupName, Subject, Teachers, Level, AutoMatch, AutoPG, AutoClasses |
+| Students | StudentID, Name, Class, Level, Gender, PG, TG, SN, Origin, SourceName, Status, then one column per subject |
+| Groups | GroupCode, GroupName, Subject, Teachers, Level, AutoMatch, AutoPG, AutoTG, AutoClasses |
 | Teachers | Name |
+| Subjects | Subject |
 | Memberships | StudentID, GroupCode |
-| Sources | Level, SourceFile, FilePattern, LastFile, LastImported |
+| Sources | Level, SourceFile, FilePattern, LastFile, LastImported, Mapping |
+| Requests | RequestID, Made, Teacher, GroupCode, Action, StudentName, StudentID, Reason, Status, Decided, Note |
 
-On the Students sheet, any header that isn't one of the fixed five is treated as a
+`Status` is either blank or `left` — see *Suggestions from teachers* below.
+
+On the Students sheet, any header that isn't one of the fixed columns is treated as a
 subject/band column holding that student's allocation (e.g. `EL G3`, `CL G2`) —
 the same shape as the school's raw worksheet, so the saved file stays familiar.
 

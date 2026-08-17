@@ -27,14 +27,22 @@
   var ORIGIN_FILE = 'file';
   var ORIGIN_ADDED = 'added';
 
+  /* A student the school's file still lists but who has left. The file is
+   * read-only and cannot be corrected, so the app remembers the fact instead:
+   * a "left" student stays out of every class and every namelist, and stays
+   * out when the level is refreshed, until the office drops them too. */
+  var STATUS_LEFT = 'left';
+
   var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'TG', 'SN',
-    'Origin', 'SourceName'];
+    'Origin', 'SourceName', 'Status'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teachers', 'Level',
     'AutoMatch', 'AutoPG', 'AutoTG', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
   var TEACHER_HEADERS = ['Name'];
   var SUBJECT_HEADERS = ['Subject'];
   var SOURCE_HEADERS = ['Level', 'SourceFile', 'FilePattern', 'LastFile', 'LastImported', 'Mapping'];
+  var REQUEST_HEADERS = ['RequestID', 'Made', 'Teacher', 'GroupCode', 'Action', 'StudentName',
+    'StudentID', 'Reason', 'Status', 'Decided', 'Note'];
 
   var STUDENT_FIELDS = {
     id: ['studentid', 'id', 'studentno', 'indexno', 'regno', 'nric'],
@@ -53,12 +61,15 @@
     sn: ['sn', 'no', 'serialno', 'sno', 'runningno', 'sequenceno'],
     origin: ['origin'],
     sourceName: ['sourcename'],
+    status: ['status'],
   };
 
   /* Only used when mapping a raw school file: a register number is a way to
    * build a stable id, not something the app stores on the student. */
   var IMPORT_FIELDS = Object.keys(STUDENT_FIELDS).reduce(function (o, k) {
-    o[k] = STUDENT_FIELDS[k];
+    // "Status" is the app's own record of a student having left; a column of
+    // that name in a school file means something else entirely.
+    if (k !== 'status') o[k] = STUDENT_FIELDS[k];
     return o;
   }, { reg: ['reg', 'regno', 'registernumber', 'indexnumber'] });
   var GROUP_FIELDS = {
@@ -106,6 +117,19 @@
     lastFile: ['lastfile'],
     lastImported: ['lastimported'],
     mapping: ['mapping'],
+  };
+  var REQUEST_FIELDS = {
+    id: ['requestid', 'id'],
+    made: ['made', 'sent', 'when'],
+    teacher: ['teacher'],
+    group: ['groupcode', 'group', 'class'],
+    action: ['action'],
+    name: ['studentname', 'name'],
+    studentId: ['studentid'],
+    reason: ['reason'],
+    status: ['status'],
+    decided: ['decided'],
+    note: ['note'],
   };
 
   function xlsx() {
@@ -158,9 +182,13 @@
     return norm(v).split(/[,;|]+/).map(norm).filter(Boolean);
   }
 
+  function hasLeft(student) {
+    return !!student && normKey(student.status) === STATUS_LEFT;
+  }
+
   function emptyModel() {
     return { students: [], groups: [], memberships: [], subjectKeys: [], sources: [],
-      teachers: [], subjectLabels: [] };
+      teachers: [], subjectLabels: [], requests: [] };
   }
 
   /* Match a header row against field aliases; returns { field: columnIndex }.
@@ -259,12 +287,13 @@
       var row = rows[r];
       if (!row || isBlankRow(row)) continue;
       var rec = { id: '', name: '', class: '', level: '', gender: '', pg: '', tg: '', sn: '',
-        origin: '', sourceName: '', subjects: {} };
+        origin: '', sourceName: '', status: '', subjects: {} };
       Object.keys(STUDENT_FIELDS).forEach(function (f) {
         rec[f] = f in idx ? norm(row[idx[f]]) : '';
       });
       rec.pg = normPg(rec.pg);
       rec.tg = normTg(rec.tg);
+      rec.status = normKey(rec.status) === STATUS_LEFT ? STATUS_LEFT : '';
       // Files written before the Origin column existed: assume the students
       // came from the school file (the pre-existing behaviour).
       if (rec.origin !== ORIGIN_ADDED) rec.origin = ORIGIN_FILE;
@@ -315,6 +344,15 @@
     else warnings.push('Sheet "Memberships" not found.');
     var sources = findSheet(wb, 'Sources');   // optional sheet — older files lack it
     if (sources) model.sources = readTable(sources, SOURCE_FIELDS, ['level'], 'Sources', warnings);
+    var reqs = findSheet(wb, 'Requests');     // optional too
+    if (reqs) {
+      model.requests = readTable(reqs, REQUEST_FIELDS, ['id'], 'Requests', warnings)
+        .map(function (r) {
+          r.action = normKey(r.action) === 'add' ? 'add' : 'remove';
+          r.status = ['done', 'dismissed'].indexOf(normKey(r.status)) !== -1 ? normKey(r.status) : 'open';
+          return r;
+        });
+    }
     var staff = findSheet(wb, 'Teachers');
     if (staff) {
       model.teachers = readTable(staff, { name: ['name', 'teacher'] }, ['name'], 'Teachers', [])
@@ -381,11 +419,11 @@
     var keys = model.subjectKeys || [];
     ws = X.utils.aoa_to_sheet([STUDENT_HEADERS.concat(keys)].concat(model.students.map(function (s) {
       return [s.id, s.name, s.class, s.level, s.gender, s.pg, s.tg, s.sn, s.origin || ORIGIN_FILE,
-        s.sourceName === s.name ? '' : s.sourceName]
+        s.sourceName === s.name ? '' : s.sourceName, s.status || '']
         .concat(keys.map(function (k) { return (s.subjects && s.subjects[k]) || ''; }));
     })));
     ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 5 },
-      { wch: 6 }, { wch: 5 }, { wch: 8 }, { wch: 28 }]
+      { wch: 6 }, { wch: 5 }, { wch: 8 }, { wch: 28 }, { wch: 8 }]
       .concat(keys.map(function () { return { wch: 12 }; }));
     X.utils.book_append_sheet(wb, ws, 'Students');
 
@@ -421,6 +459,14 @@
     ws['!cols'] = [{ wch: 12 }, { wch: 42 }, { wch: 30 }, { wch: 42 }, { wch: 22 }, { wch: 60 }];
     X.utils.book_append_sheet(wb, ws, 'Sources');
 
+    ws = X.utils.aoa_to_sheet([REQUEST_HEADERS].concat((model.requests || []).map(function (r) {
+      return [r.id, r.made, r.teacher, r.group, r.action, r.name, r.studentId, r.reason,
+        r.status || 'open', r.decided, r.note];
+    })));
+    ws['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 24 }, { wch: 16 }, { wch: 8 }, { wch: 28 },
+      { wch: 12 }, { wch: 30 }, { wch: 10 }, { wch: 22 }, { wch: 30 }];
+    X.utils.book_append_sheet(wb, ws, 'Requests');
+
     return wb;
   }
 
@@ -431,6 +477,12 @@
       groups: model.groups,
       memberships: model.memberships,
       subjectKeys: model.subjectKeys || [],
+      /* Only what a teacher needs to see the fate of their own suggestions —
+       * enough to say "accepted" or "not taken up" next to what they sent. */
+      requests: (model.requests || []).map(function (r) {
+        return { id: r.id, teacher: r.teacher, group: r.group, action: r.action,
+          name: r.name, status: r.status || 'open', note: r.note || '' };
+      }),
     };
     return '// Auto-generated by admin.html — do not edit by hand.\n' +
       'window.NAMELIST_DATA = ' + JSON.stringify(data, null, 1) + ';\n';
@@ -490,7 +542,7 @@
      * the silent gap a blank cell in the source file produces. Only worth
      * saying once there are classes to be in. */
     if (model.groups.length) {
-      var orphans = model.students.filter(function (s) { return !placed[s.id]; });
+      var orphans = model.students.filter(function (s) { return !placed[s.id] && !hasLeft(s); });
       if (orphans.length) {
         warnings.push(orphans.length + ' student' + (orphans.length === 1 ? ' is' : 's are') +
           ' not in any class: ' +
@@ -745,10 +797,11 @@
    * Entries that do not look like allocations at all come back marked
    * `suspect` with a `why`, for the caller to surface rather than create. */
   function discoverClasses(students, level) {
+    students = (students || []).filter(function (s) { return !hasLeft(s); });
     /* The subject columns in the order the students first show them. */
     var keys = [];
     var seenKey = {};
-    (students || []).forEach(function (s) {
+    students.forEach(function (s) {
       Object.keys(s.subjects || {}).forEach(function (k) {
         if (!seenKey[k]) { seenKey[k] = true; keys.push(k); }
       });
@@ -1320,6 +1373,8 @@
      * teacher page and keeps the class to that level's students. A student
      * whose Level cell the office left blank is NOT excluded — being unknown
      * must not mean being dropped from every namelist. */
+    // Someone who has left is in no class, whatever their subject cells say.
+    if (hasLeft(student)) return false;
     var level = norm(group.level);
     if (level && norm(student.level) && normKey(student.level) !== normKey(level)) return false;
     var tgs = splitList(group.autoTg);
@@ -1408,6 +1463,7 @@
 
     var gaps = {};
     (model.students || []).forEach(function (s) {
+      if (hasLeft(s)) return;   // no class is missing for someone who has left
       Object.keys(s.subjects || {}).forEach(function (key) {
         var value = norm(s.subjects[key]);
         if (!value) return;
@@ -1587,13 +1643,20 @@
   function namelistHtml(group, members, esc, opts) {
     opts = opts || {};
     var meta = namelistMeta(group, members);
+    /* An extra, never-printed column the caller fills — how the teacher page
+     * puts a "not in my class" button beside each name without a second
+     * namelist layout existing anywhere. */
+    var extraHead = opts.actionHead ? '<th class="no-print">' + opts.actionHead + '</th>' : '';
+    var cols = opts.actionHead ? 6 : 5;
     var rows = members.map(function (s, i) {
       return '<tr><td class="nl-sn">' + esc(norm(s.sn) || (i + 1)) + '</td>' +
         '<td class="nl-class">' + esc(s.class) + '</td>' +
         '<td class="nl-name">' + esc(s.name) + '</td>' +
         '<td class="nl-gender">' + esc(s.gender) + '</td>' +
-        '<td class="nl-note"></td></tr>';
-    }).join('') || '<tr><td colspan="5" class="nl-empty">No students in this class yet.</td></tr>';
+        '<td class="nl-note"></td>' +
+        (opts.rowAction ? '<td class="no-print nl-act">' + opts.rowAction(s) + '</td>' : '') +
+        '</tr>';
+    }).join('') || '<tr><td colspan="' + cols + '" class="nl-empty">No students in this class yet.</td></tr>';
     return '<table class="namelist-band"><tbody><tr>' +
       '<td>' + esc(meta.level) + '</td>' +
       '<td>' + esc(meta.band) + '</td>' +
@@ -1602,7 +1665,142 @@
       '</tr></tbody></table>' +
       (opts.note ? '<p class="nl-sub">' + esc(opts.note) + '</p>' : '') +
       '<table class="namelist"><thead><tr><th>S/N</th><th>Class</th><th>Name</th>' +
-      '<th>Gender</th><th>Note</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      '<th>Gender</th><th>Note</th>' + extraHead + '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  /* ---- teacher suggestions ------------------------------------------
+   * A teacher's page is read-only and usually has no write permission on the
+   * shared folder, so a suggestion travels as text: a readable summary for the
+   * human, and one base64 block for the app. Base64 rather than plain JSON
+   * because mail clients hard-wrap long lines, and a break inside a quoted
+   * name would make JSON unparseable — whereas base64 survives any wrapping
+   * once the whitespace is stripped back out.
+   */
+  var REQ_MARK = 'NLREQ1';
+  var REQ_END = 'NLEND';
+
+  function b64encode(str) {
+    var bin = encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function (_, h) {
+      return String.fromCharCode(parseInt(h, 16));
+    });
+    if (typeof btoa === 'function') return btoa(bin);
+    return Buffer.from(bin, 'binary').toString('base64');
+  }
+
+  function b64decode(b64) {
+    var bin = typeof atob === 'function' ? atob(b64)
+      : Buffer.from(b64, 'base64').toString('binary');
+    var pct = '';
+    for (var i = 0; i < bin.length; i++) {
+      var h = bin.charCodeAt(i).toString(16).toUpperCase();
+      pct += '%' + (h.length < 2 ? '0' + h : h);
+    }
+    return decodeURIComponent(pct);
+  }
+
+  /* Same suggestion, same id — so a teacher who sends their whole list twice
+   * does not give the admin the same card twice, and a suggestion already
+   * decided does not come back from the dead. */
+  function requestId(item) {
+    var seed = [normKey(item.teacher), normKey(item.group), normKey(item.action),
+      normKey(item.studentId) || normKey(item.name)].join('|');
+    var h = 5381;
+    for (var i = 0; i < seed.length; i++) h = ((h * 33) ^ seed.charCodeAt(i)) >>> 0;
+    return 'r' + h.toString(36);
+  }
+
+  function requestLine(item, groupLabel) {
+    var where = groupLabel || item.group;
+    return (item.action === 'add' ? '  ADD     ' : '  REMOVE  ') + item.name +
+      (item.action === 'add' ? '  to  ' : '  from  ') + where +
+      (norm(item.reason) ? '  — ' + item.reason : '');
+  }
+
+  /* The whole message a teacher hands over: readable at the top so anyone can
+   * see what is being asked, machine-readable at the bottom. */
+  function requestsToText(items, teacher, madeIso, labelFor) {
+    var made = madeIso || new Date().toISOString();
+    var when = new Date(made);
+    var body = { v: 1, teacher: teacher, made: made, items: items.map(function (it) {
+      return { id: it.id || requestId(it), action: it.action, group: it.group,
+        name: it.name, studentId: it.studentId || '', reason: it.reason || '' };
+    }) };
+    var adds = items.filter(function (i) { return i.action === 'add'; }).length;
+    var payload = b64encode(JSON.stringify(body)).replace(/(.{76})/g, '$1\n');
+    return 'NAMELIST REQUEST\n' +
+      'From: ' + teacher + '\n' +
+      'Sent: ' + (isNaN(when) ? made : when.toLocaleString()) + '\n' +
+      items.length + ' suggestion' + (items.length === 1 ? '' : 's') +
+      (items.length ? ' — ' + adds + ' to add, ' + (items.length - adds) + ' to remove' : '') + '\n\n' +
+      items.map(function (it) {
+        return requestLine(it, labelFor && labelFor(it.group));
+      }).join('\n') + '\n\n' +
+      'For the namelist administrator: open admin.html, go to Requests, and\n' +
+      'paste this whole message into "Paste a request".\n\n' +
+      REQ_MARK + '\n' + payload + '\n' + REQ_END + '\n';
+  }
+
+  /* Accepts the whole message, just the block, or bare JSON — whatever the
+   * admin happened to select before pressing Ctrl+C. */
+  function parseRequestText(text) {
+    var raw = norm(text);
+    if (!raw) return { error: 'Nothing to read — paste the message the teacher sent you.' };
+    var body = null;
+    var at = raw.indexOf(REQ_MARK);
+    if (at !== -1) {
+      var rest = raw.slice(at + REQ_MARK.length);
+      var end = rest.indexOf(REQ_END);
+      if (end !== -1) rest = rest.slice(0, end);
+      try {
+        body = JSON.parse(b64decode(rest.replace(/[^A-Za-z0-9+/=]/g, '')));
+      } catch (e) {
+        return { error: 'That request looks damaged — ask for it to be sent again, ' +
+          'making sure the whole message is copied.' };
+      }
+    } else if (raw.charAt(0) === '{') {
+      try { body = JSON.parse(raw); } catch (e) { body = null; }
+    }
+    if (!body || !Array.isArray(body.items)) {
+      return { error: 'That is not a namelist request — it should contain a line saying ' +
+        REQ_MARK + '.' };
+    }
+    var teacher = norm(body.teacher);
+    var made = norm(body.made);
+    var items = body.items.map(function (it) {
+      var rec = {
+        teacher: teacher, made: made,
+        action: normKey(it.action) === 'add' ? 'add' : 'remove',
+        group: norm(it.group), name: norm(it.name).toUpperCase(),
+        studentId: norm(it.studentId), reason: norm(it.reason),
+        status: 'open', decided: '', note: '',
+      };
+      rec.id = norm(it.id) || requestId(rec);
+      return rec;
+    }).filter(function (r) { return r.name && r.group; });
+    return { teacher: teacher, made: made, items: items };
+  }
+
+  /* Fold incoming suggestions into the model. Anything already known — open or
+   * decided — is left exactly as it is. */
+  function mergeRequests(model, items) {
+    model.requests = model.requests || [];
+    var known = {};
+    model.requests.forEach(function (r) { known[r.id] = r; });
+    var added = 0, repeat = 0, decided = 0;
+    items.forEach(function (it) {
+      var have = known[it.id];
+      if (!have) {
+        model.requests.push(it);
+        known[it.id] = it;
+        added++;
+      } else if (have.status && have.status !== 'open') decided++;
+      else repeat++;
+    });
+    return { added: added, repeat: repeat, decided: decided };
+  }
+
+  function openRequests(model) {
+    return (model.requests || []).filter(function (r) { return (r.status || 'open') === 'open'; });
   }
 
   /* Lookup structures shared by both pages. `data` is a model or NAMELIST_DATA. */
@@ -1652,6 +1850,15 @@
   globalThis.NamelistSchema = {
     ORIGIN_FILE: ORIGIN_FILE,
     ORIGIN_ADDED: ORIGIN_ADDED,
+    STATUS_LEFT: STATUS_LEFT,
+    hasLeft: hasLeft,
+    REQUEST_HEADERS: REQUEST_HEADERS,
+    requestId: requestId,
+    requestLine: requestLine,
+    requestsToText: requestsToText,
+    parseRequestText: parseRequestText,
+    mergeRequests: mergeRequests,
+    openRequests: openRequests,
     nextFreeId: nextFreeId,
     mergeStudents: mergeStudents,
     renameTeacher: renameTeacher,

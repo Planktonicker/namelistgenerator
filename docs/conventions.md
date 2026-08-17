@@ -141,6 +141,17 @@ for a namelist.
 - **Read *What changed…*** after an update — moved class, changed band, new
   student, gone from the file — and copy the list into an email if teachers need
   to know.
+- **Clear the *Requests* tab.** Teachers send suggestions from their own page —
+  someone to add, someone who is not in their half of a shared class. A red count
+  means someone is waiting. Accepting an *add* opens the usual student form with
+  their name in it: **correct the spelling to the office's version before pressing
+  OK**, because that is what future updates match on. If the name looks like
+  somebody already on the roll, put that student in the class rather than creating
+  a second record for the same child.
+- **"Mark as left the school" is not a delete.** The school's file still lists
+  them and the app never writes to it, so the leaver is recorded on the app's side
+  and held out of every namelist — including after a refresh. Undo it under
+  Students → *Left the school* → **Back on roll**.
 - **Opening the app is two keys.** The start screen asks to reconnect to the
   folder every time the browser is restarted — a browser rule for a page opened
   from a drive, not a setting. The button is already focused, so **Enter** (or a

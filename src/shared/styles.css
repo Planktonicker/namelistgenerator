@@ -169,6 +169,9 @@ th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; p
 }
 .badge.plain { background: #eef2f5; color: var(--muted); font-weight: 500; }
 .badge.added { background: var(--red-soft); color: var(--red-dark); font-size: 11px; padding: 0 8px; }
+/* Something is waiting for the admin, rather than merely being counted. */
+.badge.hot { background: var(--red); color: #fff; }
+.badge.left { background: #eceff1; color: var(--muted); font-size: 11px; padding: 0 8px; }
 
 .warnings {
   background: var(--warn-bg);

@@ -202,6 +202,9 @@ th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; p
 }
 .badge.plain { background: #eef2f5; color: var(--muted); font-weight: 500; }
 .badge.added { background: var(--red-soft); color: var(--red-dark); font-size: 11px; padding: 0 8px; }
+/* Something is waiting for the admin, rather than merely being counted. */
+.badge.hot { background: var(--red); color: #fff; }
+.badge.left { background: #eceff1; color: var(--muted); font-size: 11px; padding: 0 8px; }
 
 .warnings {
   background: var(--warn-bg);
@@ -396,6 +399,22 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     margin: 22px 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--red);
   }
   .level-head h3 { margin: 0; font-size: 17px; color: var(--accent); }
+
+  /* suggestions */
+  .namelist .nl-act { width: 1%; white-space: nowrap; }
+  .namelist tr.dropping .nl-name { text-decoration: line-through; color: var(--muted); }
+  .sg-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  .sg-row input { padding: 8px 11px; }
+  .sg-row input.name { text-transform: uppercase; min-width: 220px; }
+  .sg-row input.why { flex: 1; min-width: 180px; }
+  .sg-box { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 12px; }
+  .tray { border-left: 4px solid var(--accent); }
+  .tray ul { margin: 8px 0 0; padding-left: 20px; }
+  .tray li { margin: 3px 0; }
+  .tray .done { color: var(--muted); }
+  #sendText { width: 100%; min-height: 210px; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px; white-space: pre; overflow-wrap: normal; overflow-x: auto; }
+  .send-ways { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
 </style>
 </head>
 <body>
@@ -426,6 +445,14 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         <select id="teacherSelect"></select>
         <div class="chips" id="myClassChips"></div>
       </div>
+      <div class="card tray no-print" id="trayCard" hidden>
+        <h2 id="trayTitle"></h2>
+        <div id="trayBody"></div>
+        <div class="send-ways">
+          <button class="primary" id="traySendBtn">Review and send…</button>
+          <button id="trayClearBtn">Clear the list</button>
+        </div>
+      </div>
       <div id="teacherResults"></div>
     </section>
 
@@ -446,6 +473,22 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   </div>
 
   <div class="print-sheet" id="printSheet"></div>
+
+  <dialog id="sendDialog">
+    <h2>Send these suggestions to the administrator</h2>
+    <p class="hint" id="sendHint"></p>
+    <textarea id="sendText" readonly spellcheck="false"></textarea>
+    <div class="send-ways">
+      <button class="primary" id="sendCopyBtn">Copy for email</button>
+      <button id="sendFileBtn">Save as a file</button>
+      <button id="sendFolderBtn" hidden>Save into the namelist folder</button>
+    </div>
+    <p class="hint" id="sendResult"></p>
+    <div class="actions">
+      <button type="button" id="sendCloseBtn">Close</button>
+      <button type="button" class="primary" id="sendDoneBtn">I have sent it</button>
+    </div>
+  </dialog>
 </main>
 
 <script src="data.js"></script>
@@ -479,14 +522,22 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   var ORIGIN_FILE = 'file';
   var ORIGIN_ADDED = 'added';
 
+  /* A student the school's file still lists but who has left. The file is
+   * read-only and cannot be corrected, so the app remembers the fact instead:
+   * a "left" student stays out of every class and every namelist, and stays
+   * out when the level is refreshed, until the office drops them too. */
+  var STATUS_LEFT = 'left';
+
   var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'TG', 'SN',
-    'Origin', 'SourceName'];
+    'Origin', 'SourceName', 'Status'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teachers', 'Level',
     'AutoMatch', 'AutoPG', 'AutoTG', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
   var TEACHER_HEADERS = ['Name'];
   var SUBJECT_HEADERS = ['Subject'];
   var SOURCE_HEADERS = ['Level', 'SourceFile', 'FilePattern', 'LastFile', 'LastImported', 'Mapping'];
+  var REQUEST_HEADERS = ['RequestID', 'Made', 'Teacher', 'GroupCode', 'Action', 'StudentName',
+    'StudentID', 'Reason', 'Status', 'Decided', 'Note'];
 
   var STUDENT_FIELDS = {
     id: ['studentid', 'id', 'studentno', 'indexno', 'regno', 'nric'],
@@ -505,12 +556,15 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     sn: ['sn', 'no', 'serialno', 'sno', 'runningno', 'sequenceno'],
     origin: ['origin'],
     sourceName: ['sourcename'],
+    status: ['status'],
   };
 
   /* Only used when mapping a raw school file: a register number is a way to
    * build a stable id, not something the app stores on the student. */
   var IMPORT_FIELDS = Object.keys(STUDENT_FIELDS).reduce(function (o, k) {
-    o[k] = STUDENT_FIELDS[k];
+    // "Status" is the app's own record of a student having left; a column of
+    // that name in a school file means something else entirely.
+    if (k !== 'status') o[k] = STUDENT_FIELDS[k];
     return o;
   }, { reg: ['reg', 'regno', 'registernumber', 'indexnumber'] });
   var GROUP_FIELDS = {
@@ -558,6 +612,19 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     lastFile: ['lastfile'],
     lastImported: ['lastimported'],
     mapping: ['mapping'],
+  };
+  var REQUEST_FIELDS = {
+    id: ['requestid', 'id'],
+    made: ['made', 'sent', 'when'],
+    teacher: ['teacher'],
+    group: ['groupcode', 'group', 'class'],
+    action: ['action'],
+    name: ['studentname', 'name'],
+    studentId: ['studentid'],
+    reason: ['reason'],
+    status: ['status'],
+    decided: ['decided'],
+    note: ['note'],
   };
 
   function xlsx() {
@@ -610,9 +677,13 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     return norm(v).split(/[,;|]+/).map(norm).filter(Boolean);
   }
 
+  function hasLeft(student) {
+    return !!student && normKey(student.status) === STATUS_LEFT;
+  }
+
   function emptyModel() {
     return { students: [], groups: [], memberships: [], subjectKeys: [], sources: [],
-      teachers: [], subjectLabels: [] };
+      teachers: [], subjectLabels: [], requests: [] };
   }
 
   /* Match a header row against field aliases; returns { field: columnIndex }.
@@ -711,12 +782,13 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       var row = rows[r];
       if (!row || isBlankRow(row)) continue;
       var rec = { id: '', name: '', class: '', level: '', gender: '', pg: '', tg: '', sn: '',
-        origin: '', sourceName: '', subjects: {} };
+        origin: '', sourceName: '', status: '', subjects: {} };
       Object.keys(STUDENT_FIELDS).forEach(function (f) {
         rec[f] = f in idx ? norm(row[idx[f]]) : '';
       });
       rec.pg = normPg(rec.pg);
       rec.tg = normTg(rec.tg);
+      rec.status = normKey(rec.status) === STATUS_LEFT ? STATUS_LEFT : '';
       // Files written before the Origin column existed: assume the students
       // came from the school file (the pre-existing behaviour).
       if (rec.origin !== ORIGIN_ADDED) rec.origin = ORIGIN_FILE;
@@ -767,6 +839,15 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     else warnings.push('Sheet "Memberships" not found.');
     var sources = findSheet(wb, 'Sources');   // optional sheet — older files lack it
     if (sources) model.sources = readTable(sources, SOURCE_FIELDS, ['level'], 'Sources', warnings);
+    var reqs = findSheet(wb, 'Requests');     // optional too
+    if (reqs) {
+      model.requests = readTable(reqs, REQUEST_FIELDS, ['id'], 'Requests', warnings)
+        .map(function (r) {
+          r.action = normKey(r.action) === 'add' ? 'add' : 'remove';
+          r.status = ['done', 'dismissed'].indexOf(normKey(r.status)) !== -1 ? normKey(r.status) : 'open';
+          return r;
+        });
+    }
     var staff = findSheet(wb, 'Teachers');
     if (staff) {
       model.teachers = readTable(staff, { name: ['name', 'teacher'] }, ['name'], 'Teachers', [])
@@ -833,11 +914,11 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     var keys = model.subjectKeys || [];
     ws = X.utils.aoa_to_sheet([STUDENT_HEADERS.concat(keys)].concat(model.students.map(function (s) {
       return [s.id, s.name, s.class, s.level, s.gender, s.pg, s.tg, s.sn, s.origin || ORIGIN_FILE,
-        s.sourceName === s.name ? '' : s.sourceName]
+        s.sourceName === s.name ? '' : s.sourceName, s.status || '']
         .concat(keys.map(function (k) { return (s.subjects && s.subjects[k]) || ''; }));
     })));
     ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 5 },
-      { wch: 6 }, { wch: 5 }, { wch: 8 }, { wch: 28 }]
+      { wch: 6 }, { wch: 5 }, { wch: 8 }, { wch: 28 }, { wch: 8 }]
       .concat(keys.map(function () { return { wch: 12 }; }));
     X.utils.book_append_sheet(wb, ws, 'Students');
 
@@ -873,6 +954,14 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     ws['!cols'] = [{ wch: 12 }, { wch: 42 }, { wch: 30 }, { wch: 42 }, { wch: 22 }, { wch: 60 }];
     X.utils.book_append_sheet(wb, ws, 'Sources');
 
+    ws = X.utils.aoa_to_sheet([REQUEST_HEADERS].concat((model.requests || []).map(function (r) {
+      return [r.id, r.made, r.teacher, r.group, r.action, r.name, r.studentId, r.reason,
+        r.status || 'open', r.decided, r.note];
+    })));
+    ws['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 24 }, { wch: 16 }, { wch: 8 }, { wch: 28 },
+      { wch: 12 }, { wch: 30 }, { wch: 10 }, { wch: 22 }, { wch: 30 }];
+    X.utils.book_append_sheet(wb, ws, 'Requests');
+
     return wb;
   }
 
@@ -883,6 +972,12 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       groups: model.groups,
       memberships: model.memberships,
       subjectKeys: model.subjectKeys || [],
+      /* Only what a teacher needs to see the fate of their own suggestions —
+       * enough to say "accepted" or "not taken up" next to what they sent. */
+      requests: (model.requests || []).map(function (r) {
+        return { id: r.id, teacher: r.teacher, group: r.group, action: r.action,
+          name: r.name, status: r.status || 'open', note: r.note || '' };
+      }),
     };
     return '// Auto-generated by admin.html — do not edit by hand.\n' +
       'window.NAMELIST_DATA = ' + JSON.stringify(data, null, 1) + ';\n';
@@ -942,7 +1037,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
      * the silent gap a blank cell in the source file produces. Only worth
      * saying once there are classes to be in. */
     if (model.groups.length) {
-      var orphans = model.students.filter(function (s) { return !placed[s.id]; });
+      var orphans = model.students.filter(function (s) { return !placed[s.id] && !hasLeft(s); });
       if (orphans.length) {
         warnings.push(orphans.length + ' student' + (orphans.length === 1 ? ' is' : 's are') +
           ' not in any class: ' +
@@ -1197,10 +1292,11 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
    * Entries that do not look like allocations at all come back marked
    * `suspect` with a `why`, for the caller to surface rather than create. */
   function discoverClasses(students, level) {
+    students = (students || []).filter(function (s) { return !hasLeft(s); });
     /* The subject columns in the order the students first show them. */
     var keys = [];
     var seenKey = {};
-    (students || []).forEach(function (s) {
+    students.forEach(function (s) {
       Object.keys(s.subjects || {}).forEach(function (k) {
         if (!seenKey[k]) { seenKey[k] = true; keys.push(k); }
       });
@@ -1772,6 +1868,8 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
      * teacher page and keeps the class to that level's students. A student
      * whose Level cell the office left blank is NOT excluded — being unknown
      * must not mean being dropped from every namelist. */
+    // Someone who has left is in no class, whatever their subject cells say.
+    if (hasLeft(student)) return false;
     var level = norm(group.level);
     if (level && norm(student.level) && normKey(student.level) !== normKey(level)) return false;
     var tgs = splitList(group.autoTg);
@@ -1860,6 +1958,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
 
     var gaps = {};
     (model.students || []).forEach(function (s) {
+      if (hasLeft(s)) return;   // no class is missing for someone who has left
       Object.keys(s.subjects || {}).forEach(function (key) {
         var value = norm(s.subjects[key]);
         if (!value) return;
@@ -2039,13 +2138,20 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   function namelistHtml(group, members, esc, opts) {
     opts = opts || {};
     var meta = namelistMeta(group, members);
+    /* An extra, never-printed column the caller fills — how the teacher page
+     * puts a "not in my class" button beside each name without a second
+     * namelist layout existing anywhere. */
+    var extraHead = opts.actionHead ? '<th class="no-print">' + opts.actionHead + '</th>' : '';
+    var cols = opts.actionHead ? 6 : 5;
     var rows = members.map(function (s, i) {
       return '<tr><td class="nl-sn">' + esc(norm(s.sn) || (i + 1)) + '</td>' +
         '<td class="nl-class">' + esc(s.class) + '</td>' +
         '<td class="nl-name">' + esc(s.name) + '</td>' +
         '<td class="nl-gender">' + esc(s.gender) + '</td>' +
-        '<td class="nl-note"></td></tr>';
-    }).join('') || '<tr><td colspan="5" class="nl-empty">No students in this class yet.</td></tr>';
+        '<td class="nl-note"></td>' +
+        (opts.rowAction ? '<td class="no-print nl-act">' + opts.rowAction(s) + '</td>' : '') +
+        '</tr>';
+    }).join('') || '<tr><td colspan="' + cols + '" class="nl-empty">No students in this class yet.</td></tr>';
     return '<table class="namelist-band"><tbody><tr>' +
       '<td>' + esc(meta.level) + '</td>' +
       '<td>' + esc(meta.band) + '</td>' +
@@ -2054,7 +2160,142 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       '</tr></tbody></table>' +
       (opts.note ? '<p class="nl-sub">' + esc(opts.note) + '</p>' : '') +
       '<table class="namelist"><thead><tr><th>S/N</th><th>Class</th><th>Name</th>' +
-      '<th>Gender</th><th>Note</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      '<th>Gender</th><th>Note</th>' + extraHead + '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  /* ---- teacher suggestions ------------------------------------------
+   * A teacher's page is read-only and usually has no write permission on the
+   * shared folder, so a suggestion travels as text: a readable summary for the
+   * human, and one base64 block for the app. Base64 rather than plain JSON
+   * because mail clients hard-wrap long lines, and a break inside a quoted
+   * name would make JSON unparseable — whereas base64 survives any wrapping
+   * once the whitespace is stripped back out.
+   */
+  var REQ_MARK = 'NLREQ1';
+  var REQ_END = 'NLEND';
+
+  function b64encode(str) {
+    var bin = encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function (_, h) {
+      return String.fromCharCode(parseInt(h, 16));
+    });
+    if (typeof btoa === 'function') return btoa(bin);
+    return Buffer.from(bin, 'binary').toString('base64');
+  }
+
+  function b64decode(b64) {
+    var bin = typeof atob === 'function' ? atob(b64)
+      : Buffer.from(b64, 'base64').toString('binary');
+    var pct = '';
+    for (var i = 0; i < bin.length; i++) {
+      var h = bin.charCodeAt(i).toString(16).toUpperCase();
+      pct += '%' + (h.length < 2 ? '0' + h : h);
+    }
+    return decodeURIComponent(pct);
+  }
+
+  /* Same suggestion, same id — so a teacher who sends their whole list twice
+   * does not give the admin the same card twice, and a suggestion already
+   * decided does not come back from the dead. */
+  function requestId(item) {
+    var seed = [normKey(item.teacher), normKey(item.group), normKey(item.action),
+      normKey(item.studentId) || normKey(item.name)].join('|');
+    var h = 5381;
+    for (var i = 0; i < seed.length; i++) h = ((h * 33) ^ seed.charCodeAt(i)) >>> 0;
+    return 'r' + h.toString(36);
+  }
+
+  function requestLine(item, groupLabel) {
+    var where = groupLabel || item.group;
+    return (item.action === 'add' ? '  ADD     ' : '  REMOVE  ') + item.name +
+      (item.action === 'add' ? '  to  ' : '  from  ') + where +
+      (norm(item.reason) ? '  — ' + item.reason : '');
+  }
+
+  /* The whole message a teacher hands over: readable at the top so anyone can
+   * see what is being asked, machine-readable at the bottom. */
+  function requestsToText(items, teacher, madeIso, labelFor) {
+    var made = madeIso || new Date().toISOString();
+    var when = new Date(made);
+    var body = { v: 1, teacher: teacher, made: made, items: items.map(function (it) {
+      return { id: it.id || requestId(it), action: it.action, group: it.group,
+        name: it.name, studentId: it.studentId || '', reason: it.reason || '' };
+    }) };
+    var adds = items.filter(function (i) { return i.action === 'add'; }).length;
+    var payload = b64encode(JSON.stringify(body)).replace(/(.{76})/g, '$1\n');
+    return 'NAMELIST REQUEST\n' +
+      'From: ' + teacher + '\n' +
+      'Sent: ' + (isNaN(when) ? made : when.toLocaleString()) + '\n' +
+      items.length + ' suggestion' + (items.length === 1 ? '' : 's') +
+      (items.length ? ' — ' + adds + ' to add, ' + (items.length - adds) + ' to remove' : '') + '\n\n' +
+      items.map(function (it) {
+        return requestLine(it, labelFor && labelFor(it.group));
+      }).join('\n') + '\n\n' +
+      'For the namelist administrator: open admin.html, go to Requests, and\n' +
+      'paste this whole message into "Paste a request".\n\n' +
+      REQ_MARK + '\n' + payload + '\n' + REQ_END + '\n';
+  }
+
+  /* Accepts the whole message, just the block, or bare JSON — whatever the
+   * admin happened to select before pressing Ctrl+C. */
+  function parseRequestText(text) {
+    var raw = norm(text);
+    if (!raw) return { error: 'Nothing to read — paste the message the teacher sent you.' };
+    var body = null;
+    var at = raw.indexOf(REQ_MARK);
+    if (at !== -1) {
+      var rest = raw.slice(at + REQ_MARK.length);
+      var end = rest.indexOf(REQ_END);
+      if (end !== -1) rest = rest.slice(0, end);
+      try {
+        body = JSON.parse(b64decode(rest.replace(/[^A-Za-z0-9+/=]/g, '')));
+      } catch (e) {
+        return { error: 'That request looks damaged — ask for it to be sent again, ' +
+          'making sure the whole message is copied.' };
+      }
+    } else if (raw.charAt(0) === '{') {
+      try { body = JSON.parse(raw); } catch (e) { body = null; }
+    }
+    if (!body || !Array.isArray(body.items)) {
+      return { error: 'That is not a namelist request — it should contain a line saying ' +
+        REQ_MARK + '.' };
+    }
+    var teacher = norm(body.teacher);
+    var made = norm(body.made);
+    var items = body.items.map(function (it) {
+      var rec = {
+        teacher: teacher, made: made,
+        action: normKey(it.action) === 'add' ? 'add' : 'remove',
+        group: norm(it.group), name: norm(it.name).toUpperCase(),
+        studentId: norm(it.studentId), reason: norm(it.reason),
+        status: 'open', decided: '', note: '',
+      };
+      rec.id = norm(it.id) || requestId(rec);
+      return rec;
+    }).filter(function (r) { return r.name && r.group; });
+    return { teacher: teacher, made: made, items: items };
+  }
+
+  /* Fold incoming suggestions into the model. Anything already known — open or
+   * decided — is left exactly as it is. */
+  function mergeRequests(model, items) {
+    model.requests = model.requests || [];
+    var known = {};
+    model.requests.forEach(function (r) { known[r.id] = r; });
+    var added = 0, repeat = 0, decided = 0;
+    items.forEach(function (it) {
+      var have = known[it.id];
+      if (!have) {
+        model.requests.push(it);
+        known[it.id] = it;
+        added++;
+      } else if (have.status && have.status !== 'open') decided++;
+      else repeat++;
+    });
+    return { added: added, repeat: repeat, decided: decided };
+  }
+
+  function openRequests(model) {
+    return (model.requests || []).filter(function (r) { return (r.status || 'open') === 'open'; });
   }
 
   /* Lookup structures shared by both pages. `data` is a model or NAMELIST_DATA. */
@@ -2104,6 +2345,15 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   globalThis.NamelistSchema = {
     ORIGIN_FILE: ORIGIN_FILE,
     ORIGIN_ADDED: ORIGIN_ADDED,
+    STATUS_LEFT: STATUS_LEFT,
+    hasLeft: hasLeft,
+    REQUEST_HEADERS: REQUEST_HEADERS,
+    requestId: requestId,
+    requestLine: requestLine,
+    requestsToText: requestsToText,
+    parseRequestText: parseRequestText,
+    mergeRequests: mergeRequests,
+    openRequests: openRequests,
     nextFreeId: nextFreeId,
     mergeStudents: mergeStudents,
     renameTeacher: renameTeacher,
@@ -2297,12 +2547,191 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     try {
       if (name) localStorage.setItem('namelist.lastTeacher', name);
     } catch (e) { /* private mode */ }
+    suggesting = {};
     renderMyChips();
-    renderTeacherResults();
+    renderTray();
   }
 
   $('teacherSelect').addEventListener('change', function () {
     selectTeacher($('teacherSelect').value);
+  });
+
+  /* ---------- suggestions ----------
+   * A teacher knows their own class better than the file does — half a shared
+   * class, a new arrival, someone who left. This page cannot write to the
+   * shared folder (teachers have read-only permission on it, by design), so a
+   * suggestion is collected here and handed to the admin as text. Nothing is
+   * changed by a teacher; the admin decides. */
+  var pending = [];          // not yet sent, or sent and not yet decided
+  var suggesting = {};       // group code -> the card is in suggest mode
+  var PENDING_KEY = 'namelist.requests@' +
+    location.href.replace(/[^/]*$/, '').replace(/#.*$/, '');
+
+  function loadPending() {
+    try {
+      var raw = localStorage.getItem(PENDING_KEY);
+      pending = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(pending)) pending = [];
+    } catch (e) { pending = []; }
+  }
+
+  function savePending() {
+    try { localStorage.setItem(PENDING_KEY, JSON.stringify(pending)); } catch (e) { /* private mode */ }
+  }
+
+  function minePending() {
+    return pending.filter(function (p) { return p.teacher === selectedTeacher; });
+  }
+
+  function pendingFor(code, action, sid, name) {
+    return pending.filter(function (p) {
+      return p.teacher === selectedTeacher && p.group === code && p.action === action &&
+        (action === 'remove' ? p.studentId === sid : S.normKey(p.name) === S.normKey(name));
+    })[0];
+  }
+
+  /* What the admin did with it, if a newer data.js has come back. */
+  function verdictOf(item) {
+    var known = (data.requests || []).filter(function (r) { return r.id === item.id; })[0];
+    return known && known.status !== 'open' ? known : null;
+  }
+
+  function addPending(item) {
+    item.teacher = selectedTeacher;
+    item.id = S.requestId(item);
+    item.made = new Date().toISOString();
+    item.sent = '';
+    if (!pending.some(function (p) { return p.id === item.id; })) pending.push(item);
+    savePending();
+    renderTray();
+  }
+
+  function dropPending(id) {
+    pending = pending.filter(function (p) { return p.id !== id; });
+    savePending();
+    renderTray();
+  }
+
+  function groupLabelFor(code) {
+    var g = ix.groupsByCode.get(code);
+    return g ? (g.name || g.code) : code;
+  }
+
+  function renderTray() {
+    var mine = minePending();
+    var card = $('trayCard');
+    if (!mine.length) { card.hidden = true; renderTeacherResults(); return; }
+    card.hidden = false;
+    var unsent = mine.filter(function (p) { return !p.sent && !verdictOf(p); });
+    var waiting = mine.filter(function (p) { return p.sent && !verdictOf(p); });
+    var decided = mine.filter(function (p) { return verdictOf(p); });
+    $('trayTitle').textContent = unsent.length
+      ? unsent.length + ' suggestion' + (unsent.length === 1 ? '' : 's') + ' ready to send'
+      : (waiting.length ? waiting.length + ' suggestion' + (waiting.length === 1 ? '' : 's') +
+        ' with the administrator' : 'Your suggestions');
+    $('trayBody').innerHTML = '<ul>' + mine.map(function (p) {
+      var v = verdictOf(p);
+      var state = v
+        ? (v.status === 'done' ? ' — <strong>accepted</strong>' : ' — not taken up')
+        : (p.sent ? ' — sent, waiting' : '');
+      return '<li' + (v ? ' class="done"' : '') + '>' +
+        esc(S.requestLine(p, groupLabelFor(p.group)).trim()) + state +
+        (v && v.note ? ' <span class="muted">(' + esc(v.note) + ')</span>' : '') +
+        ' <button data-undo="' + esc(p.id) + '">remove</button></li>';
+    }).join('') + '</ul>' +
+      (decided.length ? '<p class="hint">The administrator has dealt with ' + decided.length +
+        ' of these — you can clear them.</p>' : '');
+    $('trayBody').querySelectorAll('button[data-undo]').forEach(function (b) {
+      b.addEventListener('click', function () { dropPending(b.dataset.undo); });
+    });
+    $('traySendBtn').disabled = !unsent.length && !waiting.length;
+    $('traySendBtn').textContent = unsent.length ? 'Review and send…' : 'Show the message again…';
+    renderTeacherResults();
+  }
+
+  $('trayClearBtn').addEventListener('click', function () {
+    if (!confirm('Clear your list of suggestions?\n\nAnything already sent stays with the administrator.')) return;
+    pending = pending.filter(function (p) { return p.teacher !== selectedTeacher; });
+    savePending();
+    renderTray();
+  });
+
+  /* The message itself: readable at the top, machine-readable at the bottom. */
+  function sendableText() {
+    var mine = minePending().filter(function (p) { return !verdictOf(p); });
+    return S.requestsToText(mine, selectedTeacher, new Date().toISOString(), groupLabelFor);
+  }
+
+  function fileStem() {
+    return 'namelist-request-' + String(selectedTeacher || 'teacher').replace(/[^A-Za-z0-9]+/g, '-') +
+      '-' + new Date().toISOString().slice(0, 10);
+  }
+
+  $('traySendBtn').addEventListener('click', function () {
+    $('sendText').value = sendableText();
+    var n = minePending().filter(function (p) { return !verdictOf(p); }).length;
+    $('sendHint').textContent = n + ' suggestion' + (n === 1 ? '' : 's') +
+      '. Any one of these gets it to the administrator — an email is usually simplest.';
+    $('sendResult').textContent = '';
+    $('sendFolderBtn').hidden = typeof window.showDirectoryPicker !== 'function';
+    $('sendDialog').showModal();
+  });
+
+  $('sendCloseBtn').addEventListener('click', function () { $('sendDialog').close(); });
+
+  $('sendCopyBtn').addEventListener('click', function () {
+    var box = $('sendText');
+    box.focus();
+    box.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    $('sendResult').textContent = ok
+      ? 'Copied. Paste it into an email to the namelist administrator.'
+      : 'Could not copy automatically — the text is selected, so press Ctrl+C.';
+  });
+
+  $('sendFileBtn').addEventListener('click', function () {
+    var blob = new Blob([$('sendText').value], { type: 'text/plain' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileStem() + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    $('sendResult').textContent = 'Saved to your Downloads folder as ' + a.download +
+      ' — attach it to an email, or drop it in the namelist folder if you can write to it.';
+  });
+
+  /* Only useful where IT has made a requests folder writable for teachers —
+   * then the admin never has to be emailed at all. It fails politely where
+   * the folder is read-only, which is the normal case. */
+  $('sendFolderBtn').addEventListener('click', async function () {
+    try {
+      var dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+      var sub = await dir.getDirectoryHandle('requests', { create: true });
+      var h = await sub.getFileHandle(fileStem() + '-' + Date.now().toString(36) + '.txt',
+        { create: true });
+      var w = await h.createWritable();
+      await w.write($('sendText').value);
+      await w.close();
+      $('sendResult').textContent = 'Saved into requests\\ in that folder. The administrator will ' +
+        'see it the next time they open the editor.';
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      $('sendResult').textContent = 'Could not write there (' + (err && err.message || 'no permission') +
+        '). Use Copy for email or Save as a file instead.';
+    }
+  });
+
+  $('sendDoneBtn').addEventListener('click', function () {
+    var now = new Date().toISOString();
+    pending.forEach(function (p) {
+      if (p.teacher === selectedTeacher && !p.sent) p.sent = now;
+    });
+    savePending();
+    $('sendDialog').close();
+    renderTray();
   });
 
   function renderTeacherResults() {
@@ -2338,14 +2767,36 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       bucket.groups.forEach(function (g) {
         var members = ix.membersByGroup.get(g.code) || [];
         var gi = flat.push(g) - 1;
+        var on = !!suggesting[g.code];
         total += members.length;
         html += '<div class="card"><div class="group-head">' +
           '<div class="left"><h3>' + esc(g.name || g.code) + '</h3>' +
           (g.subject ? '<span class="badge plain">' + esc(g.subject) + '</span>' : '') +
           '<span class="badge">' + members.length + ' student' + (members.length === 1 ? '' : 's') + '</span>' +
           coTeacherNote(g) + '</div>' +
-          '<span class="no-print"><button class="print-group" data-gi="' + gi + '">Print</button></span></div>';
-        html += S.namelistHtml(g, members, esc);
+          '<span class="no-print"><button data-suggest="' + esc(g.code) + '">' +
+          (on ? 'Done suggesting' : 'Suggest a change') + '</button> ' +
+          '<button class="print-group" data-gi="' + gi + '">Print</button></span></div>';
+        html += S.namelistHtml(g, members, esc, !on ? null : {
+          actionHead: 'Suggest',
+          rowAction: function (s) {
+            var has = pendingFor(g.code, 'remove', s.id);
+            return '<button data-drop="' + esc(s.id) + '" data-in="' + esc(g.code) + '">' +
+              (has ? 'Undo' : 'Not in my class') + '</button>';
+          },
+        });
+        if (on) {
+          html += '<div class="sg-box no-print">' +
+            '<p class="hint">Nothing here changes the namelist. Your suggestions are collected ' +
+            'at the top of the page, and the administrator decides.</p>' +
+            '<div class="sg-row">' +
+            '<input type="text" class="name" data-add="' + esc(g.code) + '" ' +
+            'placeholder="FULL NAME, as the school writes it" autocomplete="off">' +
+            '<input type="text" class="why" data-why="' + esc(g.code) + '" ' +
+            'placeholder="Why (optional) — e.g. joined last week" autocomplete="off">' +
+            '<button data-addbtn="' + esc(g.code) + '">Suggest adding</button>' +
+            '</div></div>';
+        }
         html += '</div>';
       });
     });
@@ -2360,6 +2811,56 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     out.querySelectorAll('button.print-group').forEach(function (b) {
       b.addEventListener('click', function () { printGroups([flat[+b.dataset.gi]], selectedTeacher); });
     });
+
+    out.querySelectorAll('button[data-suggest]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var code = b.dataset.suggest;
+        suggesting[code] = !suggesting[code];
+        renderTeacherResults();
+      });
+    });
+    out.querySelectorAll('button[data-drop]').forEach(function (b) {
+      var sid = b.dataset.drop, code = b.dataset.in;
+      var have = pendingFor(code, 'remove', sid);
+      if (have) {
+        var tr = b.closest('tr');
+        if (tr) tr.classList.add('dropping');
+      }
+      b.addEventListener('click', function () {
+        var existing = pendingFor(code, 'remove', sid);
+        if (existing) { dropPending(existing.id); return; }
+        var st = ix.studentsById.get(sid);
+        var why = prompt('Why should ' + (st ? st.name : sid) + ' come off this namelist?\n\n' +
+          'e.g. "not in my half of the class", "left the school", "never turns up — wrong class"', '');
+        if (why === null) return;
+        addPending({ action: 'remove', group: code, studentId: sid,
+          name: st ? st.name : sid, reason: S.norm(why) });
+      });
+    });
+    out.querySelectorAll('button[data-addbtn]').forEach(function (b) {
+      var code = b.dataset.addbtn;
+      var box = out.querySelector('input[data-add="' + CSS.escape(code) + '"]');
+      var why = out.querySelector('input[data-why="' + CSS.escape(code) + '"]');
+      function submit() {
+        var name = S.norm(box.value).toUpperCase();
+        if (!name) { box.focus(); return; }
+        if (name.split(/\s+/).length < 2 &&
+          !confirm('"' + name + '" looks like part of a name.\n\n' +
+            'The administrator matches students by their full name, so a short form may be ' +
+            'hard to place. Send it anyway?')) return;
+        addPending({ action: 'add', group: code, name: name, studentId: '',
+          reason: S.norm(why.value) });
+      }
+      b.addEventListener('click', submit);
+      [box, why].forEach(function (el) {
+        el.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter') { ev.preventDefault(); submit(); }
+        });
+        el.addEventListener('input', function () {
+          if (el === box) el.value = el.value.toUpperCase();
+        });
+      });
+    });
   }
 
   var levelLabel = S.levelLabel;
@@ -2371,6 +2872,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   }
 
   fillTeacherSelect();
+  loadPending();
   try {
     var last = localStorage.getItem('namelist.lastTeacher');
     if (last && ix.groupsByTeacher.has(last)) selectTeacher(last);

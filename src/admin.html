@@ -113,6 +113,21 @@
   #gfMembers tr.out td:not(:first-child) { text-decoration: line-through; color: var(--muted); }
   .warn-row { display: flex; align-items: baseline; gap: 8px; }
   .warn-row .actions { margin-left: auto; white-space: nowrap; }
+
+  /* teachers' suggestions */
+  .req { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 10px 0; }
+  .req.settled { opacity: .6; }
+  .req-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .req-head h4 { margin: 0; font-size: 15px; }
+  .req-why { margin: 6px 0 0; font-size: 13px; }
+  .req-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .req .tag { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px; }
+  .req .tag.add { background: var(--accent-soft); color: var(--accent); }
+  .req .tag.remove { background: #fdeaea; color: #a12; }
+  .req-match { margin: 10px 0 0; font-size: 13px; }
+  .req-cand { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
+  .req-cand > span:first-child { min-width: 190px; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -207,6 +222,7 @@
       <button data-tab="groups">Teaching groups <span class="badge" id="countGroups">0</span></button>
       <button data-tab="memberships">Group members</button>
       <button data-tab="teachers">Teachers <span class="badge" id="countTeachers">0</span></button>
+      <button data-tab="requests">Requests <span class="badge" id="countRequests">0</span></button>
       <button data-tab="sources">School files</button>
     </div>
 
@@ -221,6 +237,7 @@
           <option value="">All students</option>
           <option value="added">Added here only</option>
           <option value="file">From school file only</option>
+          <option value="left">Left the school</option>
         </select>
         <span class="spacer"></span>
         <button id="addSubjectColBtn">Add subject column</button>
@@ -321,6 +338,29 @@
       </div>
     </section>
 
+    <section id="tab-requests" hidden>
+      <div class="toolbar">
+        <select id="reqFilter">
+          <option value="open">Waiting for you</option>
+          <option value="all">Everything, including settled</option>
+        </select>
+        <span class="spacer"></span>
+        <button id="reqScanBtn">Check the requests folder</button>
+        <button id="reqFileBtn">Open a request file…</button>
+        <button class="primary" id="reqPasteBtn">Paste a request…</button>
+        <input type="file" id="reqFileInput" accept=".txt,.json,text/plain" hidden>
+      </div>
+      <div class="card">
+        <p class="hint">Teachers cannot change anything themselves — they send suggestions from
+          <code>namelist.html</code>, and each one waits here for you. An <strong>add</strong> opens the
+          usual student form with the name and the class filled in, so you can correct the spelling
+          before it is created.</p>
+        <div id="requestsList"></div>
+        <p class="empty" id="requestsEmpty" hidden>Nothing waiting. When a teacher sends you a
+          request, paste it here.</p>
+      </div>
+    </section>
+
     <section id="tab-sources" hidden>
       <div class="card">
         <h3>Update levels from the school's files</h3>
@@ -368,6 +408,7 @@
   <!-- ============ dialogs ============ -->
   <dialog id="studentDialog">
     <h2 id="studentDialogTitle">Add student</h2>
+    <p class="hint" id="sfRequestNote" hidden></p>
     <form class="fields" id="studentForm">
       <label for="sfName">Full name *</label>
       <div>
@@ -534,6 +575,19 @@
         <button type="submit" class="primary">Add them</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="pasteRequestDialog">
+    <h2>Paste a request</h2>
+    <p class="hint">Paste the whole message the teacher sent — email quoting and line breaks are
+      fine. Requests you have already dealt with will not come back.</p>
+    <textarea id="pasteRequestText" rows="12" style="width:100%; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px"
+      placeholder="NAMELIST REQUEST&#10;From: …"></textarea>
+    <p class="hint warn" id="pasteRequestNote"></p>
+    <div class="actions">
+      <button type="button" id="pasteRequestCancelBtn">Cancel</button>
+      <button type="button" class="primary" id="pasteRequestGoBtn">Read it</button>
+    </div>
   </dialog>
 
   <dialog id="changesDialog">
@@ -912,6 +966,11 @@
       autoUpdateRan = true;
       autoUpdateFromSchoolFiles().catch(function () { /* never block the editor */ });
     }
+    /* Anything teachers dropped in requests\ is picked up quietly, so the tab
+     * already carries its count when the admin looks. */
+    scanRequestsFolder(true).then(function (n) {
+      if (n) toast(n + ' new suggestion' + (n === 1 ? '' : 's') + ' from teachers — see Requests');
+    }).catch(function () { /* no folder, no permission: nothing to report */ });
   }
 
   /* Opening the editor refreshes the levels from the school's files by itself,
@@ -1365,6 +1424,10 @@
     $('countGroups').textContent = model.groups.length;
     $('countTeachers').textContent = allTeachers().length;
     model.teachers = model.teachers || [];
+    model.requests = model.requests || [];
+    var waiting = S.openRequests(model).length;
+    $('countRequests').textContent = waiting;
+    $('countRequests').classList.toggle('hot', waiting > 0);
 
     selectedIds.forEach(function (id) { if (!ix.studentsById.has(id)) selectedIds.delete(id); });
     candSelected.forEach(function (id) { if (!ix.studentsById.has(id)) candSelected.delete(id); });
@@ -1390,6 +1453,7 @@
     if (currentTab === 'groups') renderGroups();
     if (currentTab === 'memberships') renderMemberships();
     if (currentTab === 'teachers') renderTeachers();
+    if (currentTab === 'requests') renderRequests();
     if (currentTab === 'sources') renderSources();
   }
 
@@ -1523,10 +1587,12 @@
     document.querySelectorAll('.tabs button').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tab === name);
     });
-    ['students', 'groups', 'memberships', 'teachers', 'sources'].forEach(function (t) {
+    ['students', 'groups', 'memberships', 'teachers', 'requests', 'sources'].forEach(function (t) {
       $('tab-' + t).hidden = t !== name;
     });
     refresh();
+    // Opening Requests: pick up anything teachers have dropped in the folder.
+    if (name === 'requests' && dirHandle) await scanRequestsFolder(true);
     // Opening School files: re-read the folder so a file saved by the office
     // a moment ago is already visible.
     if (name === 'sources' && srcDirHandle) await rescanSourceFolder();
@@ -1620,6 +1686,7 @@
       if (tg && S.normTg(s.tg) !== S.normTg(tg)) return false;
       if (origin === 'added' && s.origin !== S.ORIGIN_ADDED) return false;
       if (origin === 'file' && s.origin === S.ORIGIN_ADDED) return false;
+      if (origin === 'left' && !S.hasLeft(s)) return false;
       if (q && S.studentSearchText(s, model.subjectKeys).indexOf(q) === -1) return false;
       return true;
     });
@@ -1676,6 +1743,8 @@
         (s.sourceName && S.normKey(s.sourceName) !== S.normKey(s.name)
           ? ' <span class="badge plain" title="The school file calls them: ' + esc(s.sourceName) +
             '. Your version is kept on every update.">edited</span>' : '') +
+        (S.hasLeft(s) ? ' <span class="badge left" title="Kept out of every class and namelist, ' +
+          'including after a level is refreshed. Use Back on roll to undo.">left</span>' : '') +
         '</td><td>' + esc(s.class) + '</td><td>' + esc(s.level) + '</td>' +
         '<td>' + esc(s.gender) + '</td><td>' + esc(s.pg) + '</td>' +
         (hasTg() ? '<td>' + esc(s.tg || '') + '</td>' : '') +
@@ -1684,6 +1753,7 @@
         }).join('') +
         '<td>' + g + '</td>' +
         '<td class="actions"><button class="linklike" data-act="edit">Edit</button>' +
+        (S.hasLeft(s) ? '<button class="linklike" data-act="back">Back on roll</button>' : '') +
         '<button class="linklike danger" data-act="del">Delete</button></td></tr>';
     }).join('');
     $('studentsEmpty').hidden = model.students.length > 0;
@@ -1714,6 +1784,14 @@
     var student = ix.studentsById.get(id);
     if (!student) return;
     if (btn.dataset.act === 'edit') openStudentDialog(student);
+    if (btn.dataset.act === 'back') {
+      student.status = '';
+      var back = 0;
+      model.groups.forEach(function (g) { back += S.autoFillGroup(model, g, [student.id]); });
+      markDirty();
+      toast(student.name + ' is back on the roll' +
+        (back ? ', in ' + back + ' class' + (back === 1 ? '' : 'es') : ''));
+    }
     if (btn.dataset.act === 'del') {
       var n = (ix.groupsByStudent.get(id) || []).length;
       if (!confirm('Delete ' + student.name + ' (' + id + ')' + (n ? ' and remove them from ' + n + ' group(s)' : '') + '?')) return;
@@ -1809,6 +1887,9 @@
   var editingStudentId = null;
   function openStudentDialog(student) {
     editingStudentId = student ? student.id : null;
+    reqPendingGroup = '';
+    reqPendingId = '';
+    $('sfRequestNote').hidden = true;
     $('studentDialogTitle').textContent = student ? 'Edit student' : 'Add student';
     $('sfAddedNote').hidden = !!(student && student.origin !== S.ORIGIN_ADDED);
     $('sfName').value = student ? student.name : '';
@@ -1960,6 +2041,7 @@
       gender: S.norm($('sfGender').value), pg: S.normPg($('sfPg').value),
       tg: S.normTg($('sfTg').value),
       origin: existing ? existing.origin : S.ORIGIN_ADDED,
+      status: existing ? (existing.status || '') : '',
       sourceName: existing ? (existing.sourceName || existing.name)
         : S.norm($('sfName').value).toUpperCase(),
       subjects: subjects,
@@ -1971,9 +2053,24 @@
       return;
     }
     var autoN = 0;
+    var joined = '';
     if (editingStudentId === null) {
       model.students.push(rec);
       model.groups.forEach(function (g) { autoN += S.autoFillGroup(model, g, [rec.id]); });
+      /* Created from a teacher's request: they join that teacher's class even
+       * if the rule did not already claim them, and the request is settled. */
+      if (reqPendingGroup) {
+        var already = model.memberships.some(function (m) {
+          return m.studentId === rec.id && m.groupCode === reqPendingGroup;
+        });
+        if (!already) model.memberships.push({ studentId: rec.id, groupCode: reqPendingGroup });
+        joined = requestGroupLabel(reqPendingGroup);
+        var pend = (model.requests || []).filter(function (q) { return q.id === reqPendingId; })[0];
+        if (pend) {
+          pend.studentId = rec.id;
+          settleRequest(pend, 'done', 'created as ' + rec.name);
+        }
+      }
     } else {
       var at = model.students.findIndex(function (s) { return s.id === editingStudentId; });
       model.students[at] = rec;
@@ -1984,7 +2081,14 @@
     }
     $('studentDialog').close();
     markDirty();
-    if (autoN) toast(rec.name + ' auto-allocated to ' + autoN + ' group' + (autoN === 1 ? '' : 's'));
+    if (joined) toast(rec.name + ' created and put into ' + joined);
+    else if (autoN) toast(rec.name + ' auto-allocated to ' + autoN + ' group' + (autoN === 1 ? '' : 's'));
+  });
+
+  /* Whichever way the form is dismissed, it stops standing for a request. */
+  $('studentDialog').addEventListener('close', function () {
+    reqPendingGroup = '';
+    reqPendingId = '';
   });
 
   /* ================= groups tab ================= */
@@ -3326,6 +3430,340 @@
     }
   });
 
+  /* ================= teachers' requests =================
+   * Teachers see the namelists but cannot change them. What they can do is
+   * suggest — "this one is not in my half of the class", "this one joined last
+   * week" — and every suggestion lands here for the admin to accept, correct
+   * or turn down. A suggestion never touches the data on its own.
+   */
+
+  var reqShowAll = false;
+  var reqPendingGroup = '';   // class an approved "add" should join
+  var reqPendingId = '';      // the request that opened the student dialog
+
+  function requestGroupLabel(code) {
+    var g = ix.groupsByCode.get(code);
+    return g ? (g.name || g.code) : code;
+  }
+
+  /* Someone already on the roll who is probably who the teacher meant. A
+   * teacher writing "JASON LIM" for "LIM WEI JIE, JASON" is the normal case,
+   * so the admin is offered the existing student rather than creating a
+   * second record for the same child. */
+  function requestNearMatches(req) {
+    var toks = S.nameTokens(req.name);
+    if (!toks.length) return [];
+    var g = ix.groupsByCode.get(req.group);
+    var level = g ? S.norm(g.level) : '';
+    var hits = [];
+    model.students.forEach(function (s) {
+      if (S.hasLeft(s)) return;
+      if (level && S.norm(s.level) && S.normKey(s.level) !== S.normKey(level)) return;
+      var st = S.nameTokens(s.name);
+      var shared = st.filter(function (t) { return toks.indexOf(t) !== -1; }).length;
+      /* One name in common is a surname, not a lead — every Lim in the level
+       * would qualify. Two, or one name wholly contained in the other, is
+       * worth showing. A single-word request is the exception, and is only
+       * offered while it stays specific enough to be useful. */
+      var close = S.tokensOverlap(toks, st) || shared >= 2 ||
+        (toks.length === 1 && shared === 1);
+      if (close) hits.push({ student: s, shared: shared });
+    });
+    if (toks.length === 1 && hits.length > 4) return [];
+    return hits.sort(function (a, b) {
+      return b.shared - a.shared || S.cmp(a.student.name, b.student.name);
+    }).slice(0, 4).map(function (h) { return h.student; });
+  }
+
+  function settleRequest(req, status, note) {
+    req.status = status;
+    req.decided = new Date().toISOString();
+    if (note) req.note = note;
+    markDirty();
+  }
+
+  function renderRequests() {
+    var all = (model.requests || []).slice().sort(function (a, b) {
+      return S.cmp(b.made || '', a.made || '') || S.cmp(a.teacher, b.teacher);
+    });
+    var rows = reqShowAll ? all : all.filter(function (r) { return (r.status || 'open') === 'open'; });
+    $('requestsEmpty').hidden = rows.length > 0;
+    var box = $('requestsList');
+    box.innerHTML = rows.map(function (r, i) {
+      var settled = (r.status || 'open') !== 'open';
+      var g = ix.groupsByCode.get(r.group);
+      var when = r.made ? new Date(r.made) : null;
+      var known = r.studentId ? ix.studentsById.get(r.studentId) : null;
+      var out = '<div class="req' + (settled ? ' settled' : '') + '">' +
+        '<div class="req-head"><span class="tag ' + r.action + '">' +
+        (r.action === 'add' ? 'add' : 'remove') + '</span>' +
+        '<h4>' + esc(r.name) + '</h4>' +
+        '<span class="muted small">' + (r.action === 'add' ? 'to ' : 'from ') +
+        esc(requestGroupLabel(r.group)) + (g ? '' : ' — that class no longer exists') + '</span>' +
+        '<span class="spacer"></span>' +
+        '<span class="muted small">' + esc(r.teacher || 'someone') +
+        (when && !isNaN(when) ? ' · ' + when.toLocaleDateString() : '') + '</span></div>';
+      if (S.norm(r.reason)) out += '<p class="req-why">“' + esc(r.reason) + '”</p>';
+      if (settled) {
+        out += '<p class="hint">' + (r.status === 'done' ? 'Accepted' : 'Turned down') +
+          (r.note ? ' — ' + esc(r.note) : '') + '.</p>';
+      } else if (!g) {
+        out += '<p class="hint warn">The class this refers to is gone, so there is nothing to ' +
+          'change. Turn it down and tell the teacher.</p>' +
+          '<div class="req-acts"><button data-rej="' + i + '">Turn it down…</button></div>';
+      } else if (r.action === 'add') {
+        var near = requestNearMatches(r);
+        if (near.length) {
+          out += '<div class="req-match"><span class="muted small">Could this be someone already ' +
+            'on the roll?</span>' + near.map(function (s, j) {
+            return '<div class="req-cand"><span>' + esc(s.name) + '</span>' +
+              '<span class="badge plain">' + esc(s.class) +
+              (S.norm(s.level) ? ' · ' + esc(S.levelLabel(s.level)) : '') + '</span>' +
+              '<button data-use="' + i + ':' + j + '">Put them in this class</button></div>';
+          }).join('') + '</div>';
+        }
+        out += '<div class="req-acts">' +
+          '<button class="primary" data-new="' + i + '">Create the student…</button>' +
+          '<button data-rej="' + i + '">Turn it down…</button></div>';
+      } else {
+        var inClass = known && (ix.membersByGroup.get(r.group) || []).some(function (s) {
+          return s.id === known.id;
+        });
+        if (!known) {
+          out += '<p class="hint warn">No student of that ID is on the roll any more.</p>';
+        } else if (!inClass) {
+          out += '<p class="hint">' + esc(known.name) + ' is not in that class any more — ' +
+            'this has already been dealt with.</p>';
+        }
+        out += '<div class="req-acts">' +
+          (known && inClass ? '<button class="primary" data-off="' + i + '">Take off this class</button>' : '') +
+          (known ? '<button data-left="' + i + '">' +
+            (known.origin === S.ORIGIN_ADDED ? 'Delete the student' : 'Mark as left the school') +
+            '</button>' : '') +
+          '<button data-rej="' + i + '">Turn it down…</button>' +
+          (known ? '<button data-open="' + i + '">Open their record</button>' : '') +
+          '</div>';
+      }
+      return out + '</div>';
+    }).join('');
+
+    function req(i) { return rows[+i]; }
+
+    box.querySelectorAll('button[data-new]').forEach(function (b) {
+      b.addEventListener('click', function () { approveAdd(req(b.dataset.new)); });
+    });
+    box.querySelectorAll('button[data-use]').forEach(function (b) {
+      var bits = b.dataset.use.split(':');
+      var r = req(bits[0]);
+      b.addEventListener('click', function () {
+        var s = requestNearMatches(r)[+bits[1]];
+        if (!s) return;
+        useExistingForRequest(r, s);
+      });
+    });
+    box.querySelectorAll('button[data-off]').forEach(function (b) {
+      b.addEventListener('click', function () { removeFromClass(req(b.dataset.off)); });
+    });
+    box.querySelectorAll('button[data-left]').forEach(function (b) {
+      b.addEventListener('click', function () { removeAltogether(req(b.dataset.left)); });
+    });
+    box.querySelectorAll('button[data-rej]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var r = req(b.dataset.rej);
+        var why = prompt('Turn down this suggestion from ' + (r.teacher || 'the teacher') +
+          '?\n\nA short reason is kept with it, and the teacher sees it when their page next updates.',
+        '');
+        if (why === null) return;
+        settleRequest(r, 'dismissed', S.norm(why));
+        toast('Turned down — ' + r.name);
+      });
+    });
+    box.querySelectorAll('button[data-open]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var s = ix.studentsById.get(req(b.dataset.open).studentId);
+        if (s) openStudentDialog(s);
+      });
+    });
+  }
+
+  /* Approving an "add" is the ordinary Add student form, opened with what the
+   * teacher told us: their spelling of the name (to correct), the class's own
+   * level, and the subject cell that class teaches already filled in. */
+  function approveAdd(r) {
+    var g = ix.groupsByCode.get(r.group);
+    if (!g) return;
+    openStudentDialog(null);      // clears any earlier request the form held
+    reqPendingGroup = r.group;
+    reqPendingId = r.id;
+    $('sfRequestNote').textContent = (r.teacher || 'A teacher') + ' asked for “' + r.name + '”' +
+      (S.norm(r.reason) ? ' — “' + r.reason + '”' : '') +
+      '. Correct the spelling if it is short or wrong; they will join ' + (g.name || g.code) +
+      ' when you press OK.';
+    $('sfRequestNote').hidden = false;
+    $('sfName').value = S.norm(r.name).toUpperCase();
+    var level = S.norm(g.level) || S.groupLevel(g, ix.membersByGroup.get(g.code) || []);
+    if (level) {
+      $('sfLevel').value = level;
+      renderStudentFields(null, true);
+    }
+    /* The combination the class implies: its own subject column, set to the
+     * allocation its members have. A class for "HIST G3" makes the new
+     * student take HIST G3 — which is also what the rule will match on. */
+    var members = ix.membersByGroup.get(g.code) || [];
+    S.groupSubjectKeys(g, model.subjectKeys).forEach(function (key) {
+      var want = S.matchers(g).filter(function (m) { return m.key === key; })[0];
+      var value = want && want.values.length ? want.values[0] : '';
+      if (!value && members.length) value = S.norm(members[0].subjects && members[0].subjects[key]);
+      if (!value) return;
+      $('sfSubjects').querySelectorAll('select[data-subj]').forEach(function (sel) {
+        if (sel.dataset.subj !== key) return;
+        if (!Array.prototype.some.call(sel.options, function (o) { return o.value === value; })) {
+          sel.appendChild(new Option(value, value));
+        }
+        sel.value = value;
+      });
+    });
+    // Class and TG follow from the request only as far as the level allows;
+    // the admin picks the rest, which is the point of opening the form.
+    suggestStudentId();
+    $('sfName').select();
+  }
+
+  function useExistingForRequest(r, student) {
+    var g = ix.groupsByCode.get(r.group);
+    if (!g) return;
+    if (!confirm('Put ' + student.name + ' (' + student.class + ') into ' + (g.name || g.code) +
+      '?\n\n' + r.teacher + ' asked for “' + r.name + '”, which looks like the same person.')) return;
+    var already = model.memberships.some(function (m) {
+      return m.studentId === student.id && m.groupCode === g.code;
+    });
+    if (!already) model.memberships.push({ studentId: student.id, groupCode: g.code });
+    settleRequest(r, 'done', 'added ' + student.name);
+    toast(student.name + (already ? ' was already in ' : ' added to ') + (g.name || g.code));
+  }
+
+  function removeFromClass(r) {
+    var s = ix.studentsById.get(r.studentId);
+    var g = ix.groupsByCode.get(r.group);
+    if (!s || !g) return;
+    if (!confirm('Take ' + s.name + ' off ' + (g.name || g.code) + '?\n\n' +
+      'They stay on the roll and in their other classes. If this class has a rule, ' +
+      'they could be put back the next time it is re-applied.')) return;
+    model.memberships = model.memberships.filter(function (m) {
+      return !(m.studentId === s.id && m.groupCode === g.code);
+    });
+    settleRequest(r, 'done', 'off ' + (g.name || g.code));
+    toast(s.name + ' taken off ' + (g.name || g.code));
+  }
+
+  /* The whole student, not just this class. A student the app itself holds is
+   * simply deleted; one the school's file still lists cannot be, because the
+   * file is read-only and the next refresh would bring them straight back — so
+   * they are marked as having left, which the refresh keeps. */
+  function removeAltogether(r) {
+    var s = ix.studentsById.get(r.studentId);
+    if (!s) return;
+    var added = s.origin === S.ORIGIN_ADDED;
+    var msg = added
+      ? 'Delete ' + s.name + ' completely?\n\nThey were entered in the app, so nothing outside it ' +
+        'knows about them. This cannot be undone.'
+      : 'Mark ' + s.name + ' as having left the school?\n\nThe school\'s file still lists them and ' +
+        'the app never writes to it, so instead they are kept out of every class and every ' +
+        'namelist — including after the level is refreshed. Undo it from the Students tab.';
+    if (!confirm(msg)) return;
+    model.memberships = model.memberships.filter(function (m) { return m.studentId !== s.id; });
+    if (added) {
+      model.students = model.students.filter(function (e) { return e.id !== s.id; });
+    } else {
+      s.status = S.STATUS_LEFT;
+    }
+    settleRequest(r, 'done', added ? 'deleted' : 'marked as left');
+    toast(s.name + (added ? ' deleted' : ' marked as having left'));
+  }
+
+  /* ---- getting requests in ---- */
+
+  function ingestRequestText(text, where) {
+    var read = S.parseRequestText(text);
+    if (read.error) return { error: read.error };
+    if (!read.items.length) return { error: 'That message has no suggestions in it.' };
+    var merged = S.mergeRequests(model, read.items);
+    if (merged.added) markDirty();
+    else refresh();
+    return {
+      teacher: read.teacher,
+      added: merged.added,
+      skipped: merged.repeat + merged.decided,
+      where: where,
+    };
+  }
+
+  function ingestNote(res) {
+    if (res.error) return res.error;
+    return (res.added ? res.added + ' suggestion' + (res.added === 1 ? '' : 's') + ' from ' +
+      (res.teacher || 'a teacher') : 'Nothing new from ' + (res.teacher || 'that teacher')) +
+      (res.skipped ? ' (' + res.skipped + ' already here)' : '') +
+      (res.where ? ' — ' + res.where : '');
+  }
+
+  $('reqFilter').addEventListener('change', function () {
+    reqShowAll = $('reqFilter').value === 'all';
+    renderRequests();
+  });
+
+  $('reqPasteBtn').addEventListener('click', function () {
+    $('pasteRequestText').value = '';
+    $('pasteRequestNote').textContent = '';
+    $('pasteRequestDialog').showModal();
+    $('pasteRequestText').focus();
+  });
+  $('pasteRequestCancelBtn').addEventListener('click', function () { $('pasteRequestDialog').close(); });
+  $('pasteRequestGoBtn').addEventListener('click', function () {
+    var res = ingestRequestText($('pasteRequestText').value, '');
+    if (res.error) { $('pasteRequestNote').textContent = res.error; return; }
+    $('pasteRequestDialog').close();
+    toast(ingestNote(res));
+  });
+
+  $('reqFileBtn').addEventListener('click', function () { $('reqFileInput').click(); });
+  $('reqFileInput').addEventListener('change', async function () {
+    var f = $('reqFileInput').files[0];
+    $('reqFileInput').value = '';
+    if (!f) return;
+    var res = ingestRequestText(await f.text(), f.name);
+    if (res.error) alert(res.error);
+    else toast(ingestNote(res));
+  });
+
+  /* A requests\ folder inside the data folder, for schools whose teachers can
+   * write to one. Reading it costs nothing where it does not exist. */
+  async function scanRequestsFolder(quiet) {
+    if (!dirHandle) return 0;
+    var dir;
+    try {
+      dir = await dirHandle.getDirectoryHandle('requests');
+    } catch (e) {
+      if (!quiet) toast('No requests folder here yet — teachers can email you their requests instead');
+      return 0;
+    }
+    var found = 0, files = 0;
+    for await (var entry of dir.values()) {
+      if (entry.kind !== 'file' || !/\.(txt|json)$/i.test(entry.name) || /^~\$/.test(entry.name)) continue;
+      files++;
+      try {
+        var res = ingestRequestText(await (await entry.getFile()).text(), entry.name);
+        if (!res.error) found += res.added;
+      } catch (err) { /* an unreadable drop-off is not worth stopping for */ }
+    }
+    if (!quiet) {
+      toast(found ? found + ' new suggestion' + (found === 1 ? '' : 's') + ' from the requests folder'
+        : 'Nothing new in the requests folder (' + files + ' file' + (files === 1 ? '' : 's') + ' read)');
+    }
+    return found;
+  }
+
+  $('reqScanBtn').addEventListener('click', function () { scanRequestsFolder(false); });
+
   /* ================= school-file sources ================= */
 
   var srcDirHandle = null;
@@ -4003,6 +4441,7 @@
     model = m;
     model.subjectKeys = model.subjectKeys || [];
     model.sources = model.sources || [];
+    model.requests = model.requests || [];
     loadWarnings = [];
     $('folderName').textContent = '(test)';
     setDirty(false);

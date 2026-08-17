@@ -43,6 +43,22 @@
     margin: 22px 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--red);
   }
   .level-head h3 { margin: 0; font-size: 17px; color: var(--accent); }
+
+  /* suggestions */
+  .namelist .nl-act { width: 1%; white-space: nowrap; }
+  .namelist tr.dropping .nl-name { text-decoration: line-through; color: var(--muted); }
+  .sg-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  .sg-row input { padding: 8px 11px; }
+  .sg-row input.name { text-transform: uppercase; min-width: 220px; }
+  .sg-row input.why { flex: 1; min-width: 180px; }
+  .sg-box { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 12px; }
+  .tray { border-left: 4px solid var(--accent); }
+  .tray ul { margin: 8px 0 0; padding-left: 20px; }
+  .tray li { margin: 3px 0; }
+  .tray .done { color: var(--muted); }
+  #sendText { width: 100%; min-height: 210px; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px; white-space: pre; overflow-wrap: normal; overflow-x: auto; }
+  .send-ways { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
 </style>
 </head>
 <body>
@@ -73,6 +89,14 @@
         <select id="teacherSelect"></select>
         <div class="chips" id="myClassChips"></div>
       </div>
+      <div class="card tray no-print" id="trayCard" hidden>
+        <h2 id="trayTitle"></h2>
+        <div id="trayBody"></div>
+        <div class="send-ways">
+          <button class="primary" id="traySendBtn">Review and send…</button>
+          <button id="trayClearBtn">Clear the list</button>
+        </div>
+      </div>
       <div id="teacherResults"></div>
     </section>
 
@@ -93,6 +117,22 @@
   </div>
 
   <div class="print-sheet" id="printSheet"></div>
+
+  <dialog id="sendDialog">
+    <h2>Send these suggestions to the administrator</h2>
+    <p class="hint" id="sendHint"></p>
+    <textarea id="sendText" readonly spellcheck="false"></textarea>
+    <div class="send-ways">
+      <button class="primary" id="sendCopyBtn">Copy for email</button>
+      <button id="sendFileBtn">Save as a file</button>
+      <button id="sendFolderBtn" hidden>Save into the namelist folder</button>
+    </div>
+    <p class="hint" id="sendResult"></p>
+    <div class="actions">
+      <button type="button" id="sendCloseBtn">Close</button>
+      <button type="button" class="primary" id="sendDoneBtn">I have sent it</button>
+    </div>
+  </dialog>
 </main>
 
 <script src="data.js"></script>
@@ -214,12 +254,191 @@
     try {
       if (name) localStorage.setItem('namelist.lastTeacher', name);
     } catch (e) { /* private mode */ }
+    suggesting = {};
     renderMyChips();
-    renderTeacherResults();
+    renderTray();
   }
 
   $('teacherSelect').addEventListener('change', function () {
     selectTeacher($('teacherSelect').value);
+  });
+
+  /* ---------- suggestions ----------
+   * A teacher knows their own class better than the file does — half a shared
+   * class, a new arrival, someone who left. This page cannot write to the
+   * shared folder (teachers have read-only permission on it, by design), so a
+   * suggestion is collected here and handed to the admin as text. Nothing is
+   * changed by a teacher; the admin decides. */
+  var pending = [];          // not yet sent, or sent and not yet decided
+  var suggesting = {};       // group code -> the card is in suggest mode
+  var PENDING_KEY = 'namelist.requests@' +
+    location.href.replace(/[^/]*$/, '').replace(/#.*$/, '');
+
+  function loadPending() {
+    try {
+      var raw = localStorage.getItem(PENDING_KEY);
+      pending = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(pending)) pending = [];
+    } catch (e) { pending = []; }
+  }
+
+  function savePending() {
+    try { localStorage.setItem(PENDING_KEY, JSON.stringify(pending)); } catch (e) { /* private mode */ }
+  }
+
+  function minePending() {
+    return pending.filter(function (p) { return p.teacher === selectedTeacher; });
+  }
+
+  function pendingFor(code, action, sid, name) {
+    return pending.filter(function (p) {
+      return p.teacher === selectedTeacher && p.group === code && p.action === action &&
+        (action === 'remove' ? p.studentId === sid : S.normKey(p.name) === S.normKey(name));
+    })[0];
+  }
+
+  /* What the admin did with it, if a newer data.js has come back. */
+  function verdictOf(item) {
+    var known = (data.requests || []).filter(function (r) { return r.id === item.id; })[0];
+    return known && known.status !== 'open' ? known : null;
+  }
+
+  function addPending(item) {
+    item.teacher = selectedTeacher;
+    item.id = S.requestId(item);
+    item.made = new Date().toISOString();
+    item.sent = '';
+    if (!pending.some(function (p) { return p.id === item.id; })) pending.push(item);
+    savePending();
+    renderTray();
+  }
+
+  function dropPending(id) {
+    pending = pending.filter(function (p) { return p.id !== id; });
+    savePending();
+    renderTray();
+  }
+
+  function groupLabelFor(code) {
+    var g = ix.groupsByCode.get(code);
+    return g ? (g.name || g.code) : code;
+  }
+
+  function renderTray() {
+    var mine = minePending();
+    var card = $('trayCard');
+    if (!mine.length) { card.hidden = true; renderTeacherResults(); return; }
+    card.hidden = false;
+    var unsent = mine.filter(function (p) { return !p.sent && !verdictOf(p); });
+    var waiting = mine.filter(function (p) { return p.sent && !verdictOf(p); });
+    var decided = mine.filter(function (p) { return verdictOf(p); });
+    $('trayTitle').textContent = unsent.length
+      ? unsent.length + ' suggestion' + (unsent.length === 1 ? '' : 's') + ' ready to send'
+      : (waiting.length ? waiting.length + ' suggestion' + (waiting.length === 1 ? '' : 's') +
+        ' with the administrator' : 'Your suggestions');
+    $('trayBody').innerHTML = '<ul>' + mine.map(function (p) {
+      var v = verdictOf(p);
+      var state = v
+        ? (v.status === 'done' ? ' — <strong>accepted</strong>' : ' — not taken up')
+        : (p.sent ? ' — sent, waiting' : '');
+      return '<li' + (v ? ' class="done"' : '') + '>' +
+        esc(S.requestLine(p, groupLabelFor(p.group)).trim()) + state +
+        (v && v.note ? ' <span class="muted">(' + esc(v.note) + ')</span>' : '') +
+        ' <button data-undo="' + esc(p.id) + '">remove</button></li>';
+    }).join('') + '</ul>' +
+      (decided.length ? '<p class="hint">The administrator has dealt with ' + decided.length +
+        ' of these — you can clear them.</p>' : '');
+    $('trayBody').querySelectorAll('button[data-undo]').forEach(function (b) {
+      b.addEventListener('click', function () { dropPending(b.dataset.undo); });
+    });
+    $('traySendBtn').disabled = !unsent.length && !waiting.length;
+    $('traySendBtn').textContent = unsent.length ? 'Review and send…' : 'Show the message again…';
+    renderTeacherResults();
+  }
+
+  $('trayClearBtn').addEventListener('click', function () {
+    if (!confirm('Clear your list of suggestions?\n\nAnything already sent stays with the administrator.')) return;
+    pending = pending.filter(function (p) { return p.teacher !== selectedTeacher; });
+    savePending();
+    renderTray();
+  });
+
+  /* The message itself: readable at the top, machine-readable at the bottom. */
+  function sendableText() {
+    var mine = minePending().filter(function (p) { return !verdictOf(p); });
+    return S.requestsToText(mine, selectedTeacher, new Date().toISOString(), groupLabelFor);
+  }
+
+  function fileStem() {
+    return 'namelist-request-' + String(selectedTeacher || 'teacher').replace(/[^A-Za-z0-9]+/g, '-') +
+      '-' + new Date().toISOString().slice(0, 10);
+  }
+
+  $('traySendBtn').addEventListener('click', function () {
+    $('sendText').value = sendableText();
+    var n = minePending().filter(function (p) { return !verdictOf(p); }).length;
+    $('sendHint').textContent = n + ' suggestion' + (n === 1 ? '' : 's') +
+      '. Any one of these gets it to the administrator — an email is usually simplest.';
+    $('sendResult').textContent = '';
+    $('sendFolderBtn').hidden = typeof window.showDirectoryPicker !== 'function';
+    $('sendDialog').showModal();
+  });
+
+  $('sendCloseBtn').addEventListener('click', function () { $('sendDialog').close(); });
+
+  $('sendCopyBtn').addEventListener('click', function () {
+    var box = $('sendText');
+    box.focus();
+    box.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    $('sendResult').textContent = ok
+      ? 'Copied. Paste it into an email to the namelist administrator.'
+      : 'Could not copy automatically — the text is selected, so press Ctrl+C.';
+  });
+
+  $('sendFileBtn').addEventListener('click', function () {
+    var blob = new Blob([$('sendText').value], { type: 'text/plain' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileStem() + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    $('sendResult').textContent = 'Saved to your Downloads folder as ' + a.download +
+      ' — attach it to an email, or drop it in the namelist folder if you can write to it.';
+  });
+
+  /* Only useful where IT has made a requests folder writable for teachers —
+   * then the admin never has to be emailed at all. It fails politely where
+   * the folder is read-only, which is the normal case. */
+  $('sendFolderBtn').addEventListener('click', async function () {
+    try {
+      var dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+      var sub = await dir.getDirectoryHandle('requests', { create: true });
+      var h = await sub.getFileHandle(fileStem() + '-' + Date.now().toString(36) + '.txt',
+        { create: true });
+      var w = await h.createWritable();
+      await w.write($('sendText').value);
+      await w.close();
+      $('sendResult').textContent = 'Saved into requests\\ in that folder. The administrator will ' +
+        'see it the next time they open the editor.';
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      $('sendResult').textContent = 'Could not write there (' + (err && err.message || 'no permission') +
+        '). Use Copy for email or Save as a file instead.';
+    }
+  });
+
+  $('sendDoneBtn').addEventListener('click', function () {
+    var now = new Date().toISOString();
+    pending.forEach(function (p) {
+      if (p.teacher === selectedTeacher && !p.sent) p.sent = now;
+    });
+    savePending();
+    $('sendDialog').close();
+    renderTray();
   });
 
   function renderTeacherResults() {
@@ -255,14 +474,36 @@
       bucket.groups.forEach(function (g) {
         var members = ix.membersByGroup.get(g.code) || [];
         var gi = flat.push(g) - 1;
+        var on = !!suggesting[g.code];
         total += members.length;
         html += '<div class="card"><div class="group-head">' +
           '<div class="left"><h3>' + esc(g.name || g.code) + '</h3>' +
           (g.subject ? '<span class="badge plain">' + esc(g.subject) + '</span>' : '') +
           '<span class="badge">' + members.length + ' student' + (members.length === 1 ? '' : 's') + '</span>' +
           coTeacherNote(g) + '</div>' +
-          '<span class="no-print"><button class="print-group" data-gi="' + gi + '">Print</button></span></div>';
-        html += S.namelistHtml(g, members, esc);
+          '<span class="no-print"><button data-suggest="' + esc(g.code) + '">' +
+          (on ? 'Done suggesting' : 'Suggest a change') + '</button> ' +
+          '<button class="print-group" data-gi="' + gi + '">Print</button></span></div>';
+        html += S.namelistHtml(g, members, esc, !on ? null : {
+          actionHead: 'Suggest',
+          rowAction: function (s) {
+            var has = pendingFor(g.code, 'remove', s.id);
+            return '<button data-drop="' + esc(s.id) + '" data-in="' + esc(g.code) + '">' +
+              (has ? 'Undo' : 'Not in my class') + '</button>';
+          },
+        });
+        if (on) {
+          html += '<div class="sg-box no-print">' +
+            '<p class="hint">Nothing here changes the namelist. Your suggestions are collected ' +
+            'at the top of the page, and the administrator decides.</p>' +
+            '<div class="sg-row">' +
+            '<input type="text" class="name" data-add="' + esc(g.code) + '" ' +
+            'placeholder="FULL NAME, as the school writes it" autocomplete="off">' +
+            '<input type="text" class="why" data-why="' + esc(g.code) + '" ' +
+            'placeholder="Why (optional) — e.g. joined last week" autocomplete="off">' +
+            '<button data-addbtn="' + esc(g.code) + '">Suggest adding</button>' +
+            '</div></div>';
+        }
         html += '</div>';
       });
     });
@@ -277,6 +518,56 @@
     out.querySelectorAll('button.print-group').forEach(function (b) {
       b.addEventListener('click', function () { printGroups([flat[+b.dataset.gi]], selectedTeacher); });
     });
+
+    out.querySelectorAll('button[data-suggest]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var code = b.dataset.suggest;
+        suggesting[code] = !suggesting[code];
+        renderTeacherResults();
+      });
+    });
+    out.querySelectorAll('button[data-drop]').forEach(function (b) {
+      var sid = b.dataset.drop, code = b.dataset.in;
+      var have = pendingFor(code, 'remove', sid);
+      if (have) {
+        var tr = b.closest('tr');
+        if (tr) tr.classList.add('dropping');
+      }
+      b.addEventListener('click', function () {
+        var existing = pendingFor(code, 'remove', sid);
+        if (existing) { dropPending(existing.id); return; }
+        var st = ix.studentsById.get(sid);
+        var why = prompt('Why should ' + (st ? st.name : sid) + ' come off this namelist?\n\n' +
+          'e.g. "not in my half of the class", "left the school", "never turns up — wrong class"', '');
+        if (why === null) return;
+        addPending({ action: 'remove', group: code, studentId: sid,
+          name: st ? st.name : sid, reason: S.norm(why) });
+      });
+    });
+    out.querySelectorAll('button[data-addbtn]').forEach(function (b) {
+      var code = b.dataset.addbtn;
+      var box = out.querySelector('input[data-add="' + CSS.escape(code) + '"]');
+      var why = out.querySelector('input[data-why="' + CSS.escape(code) + '"]');
+      function submit() {
+        var name = S.norm(box.value).toUpperCase();
+        if (!name) { box.focus(); return; }
+        if (name.split(/\s+/).length < 2 &&
+          !confirm('"' + name + '" looks like part of a name.\n\n' +
+            'The administrator matches students by their full name, so a short form may be ' +
+            'hard to place. Send it anyway?')) return;
+        addPending({ action: 'add', group: code, name: name, studentId: '',
+          reason: S.norm(why.value) });
+      }
+      b.addEventListener('click', submit);
+      [box, why].forEach(function (el) {
+        el.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter') { ev.preventDefault(); submit(); }
+        });
+        el.addEventListener('input', function () {
+          if (el === box) el.value = el.value.toUpperCase();
+        });
+      });
+    });
   }
 
   var levelLabel = S.levelLabel;
@@ -288,6 +579,7 @@
   }
 
   fillTeacherSelect();
+  loadPending();
   try {
     var last = localStorage.getItem('namelist.lastTeacher');
     if (last && ix.groupsByTeacher.has(last)) selectTeacher(last);

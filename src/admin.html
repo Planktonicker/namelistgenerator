@@ -63,6 +63,9 @@
   /* A mind map: branches grow to the right from the node you clicked. */
   #groupDialog { max-width: 1040px; }        /* the map needs room to branch */
   #gfGraphLabel { align-self: start; padding-top: 14px; }
+  .graph-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+  .graph-head .hint { margin: 0; }
+  .graph-head button { margin-left: auto; }
   .graph {
     position: relative; overflow: auto; max-height: 62vh;
     border: 1px solid var(--line); border-radius: 12px;
@@ -81,7 +84,10 @@
   }
   /* A branch is a row of nodes under the node that opened it; a wide branch
    * wraps onto a second line rather than running off the map. */
-  .graph-row .ticks { flex-direction: row; flex-wrap: wrap; gap: 8px; max-width: 620px; }
+  .graph-row .ticks {
+    flex-direction: row; flex-wrap: wrap; justify-content: center;
+    gap: 8px; max-width: 620px;
+  }
   .graph-row .ticks label { white-space: nowrap; }
   #gfMembers td:first-child { width: 28px; }
   #gfMembers tr.out td:not(:first-child) { text-decoration: line-through; color: var(--muted); }
@@ -327,12 +333,15 @@
   <dialog id="studentDialog">
     <h2 id="studentDialogTitle">Add student</h2>
     <form class="fields" id="studentForm">
-      <label for="sfName">Name *</label>
+      <label for="sfName">Full name *</label>
       <div>
-        <input type="text" id="sfName" required style="width:100%">
+        <input type="text" id="sfName" required style="width:100%; text-transform:uppercase"
+          placeholder="TAN WEI MING" autocomplete="off">
+        <p class="hint" style="margin:4px 0 0">Full name as the school writes it, in capitals — it is
+          what every later update matches on.</p>
         <p class="hint" id="sfSourceNote" style="margin:4px 0 0" hidden></p>
+        <p class="hint" id="sfIdNote" style="margin:4px 0 0"></p>
       </div>
-      <label for="sfId">Student ID *</label><input type="text" id="sfId" required>
       <label for="sfLevel">Level</label>
       <div>
         <select id="sfLevel"></select>
@@ -368,6 +377,10 @@
       </div>
       <label id="gfGraphLabel">Who is in it</label>
       <div>
+        <div class="graph-head">
+          <span class="hint">Click a node to open the next branch.</span>
+          <button type="button" class="linklike" id="gfClearBtn">Clear the map</button>
+        </div>
         <div class="graph" id="gfGraph">
           <div class="graph-canvas" id="gfCanvas">
             <svg class="graph-edges" id="gfEdges" aria-hidden="true"></svg>
@@ -1542,9 +1555,6 @@
     editingStudentId = student ? student.id : null;
     $('studentDialogTitle').textContent = student ? 'Edit student' : 'Add student';
     $('sfAddedNote').hidden = !!(student && student.origin !== S.ORIGIN_ADDED);
-    if (student) $('sfId').dataset.userEdited = '1';
-    else delete $('sfId').dataset.userEdited;
-    $('sfId').value = student ? student.id : '';
     $('sfName').value = student ? student.name : '';
     var src = student && student.sourceName;
     var edited = src && S.normKey(src) !== S.normKey(student.name);
@@ -1556,9 +1566,9 @@
     fillPick($('sfLevel'), levels, '— no level —',
       student ? student.level : (levels.length === 1 ? levels[0] : ''));
     renderStudentFields(student);
+    suggestStudentId();
     $('studentDialog').showModal();
-    if (student) $('sfId').focus();
-    else $('sfName').focus();   // adding: the id fills itself in from the class
+    $('sfName').focus();        // the id fills itself in from the class
   }
 
   /* A select of what the data actually holds, with the student's own value
@@ -1647,18 +1657,37 @@
 
   /* Adding a student: once a class is chosen, suggest the next free register
    * id for it, unless the admin has typed an id themselves. */
-  function suggestStudentId() {
-    if (editingStudentId !== null || $('sfId').dataset.userEdited) return;
-    var cls = S.norm($('sfClass').value);
-    $('sfId').value = cls ? S.nextFreeId(model, cls) : '';
+  /* The register number is the app's business, not the admin's: it follows the
+   * class, continues that class's register, and never clashes. */
+  function studentIdFor() {
+    if (editingStudentId !== null) return editingStudentId;
+    return S.nextFreeId(model, S.norm($('sfClass').value));
   }
-  $('sfId').addEventListener('input', function () { $('sfId').dataset.userEdited = '1'; });
+
+  function suggestStudentId() {
+    var id = studentIdFor();
+    $('sfIdNote').textContent = editingStudentId !== null
+      ? 'Student ID ' + id + ' (kept)'
+      : 'Student ID ' + id + ' will be given automatically.';
+  }
   $('sfClass').addEventListener('change', suggestStudentId);
+
+  /* Names are stored in capitals so a list printed from the app reads like the
+   * school's own. */
+  $('sfName').addEventListener('input', function () {
+    var box = $('sfName');
+    var at = box.selectionStart;
+    var upper = box.value.toUpperCase();
+    if (upper !== box.value) {
+      box.value = upper;
+      try { box.setSelectionRange(at, at); } catch (e) { /* not a text input */ }
+    }
+  });
 
   $('studentCancelBtn').addEventListener('click', function () { $('studentDialog').close(); });
   $('studentForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
-    var id = S.norm($('sfId').value);
+    var id = studentIdFor();
     var subjects = {};
     var existingSubjects = (editingStudentId !== null &&
       ix.studentsById.get(editingStudentId) || {}).subjects || {};
@@ -1670,12 +1699,13 @@
     });
     var existing = editingStudentId === null ? null : ix.studentsById.get(editingStudentId);
     var rec = {
-      id: id, name: S.norm($('sfName').value), class: S.norm($('sfClass').value),
+      id: id, name: S.norm($('sfName').value).toUpperCase(), class: S.norm($('sfClass').value),
       level: S.norm($('sfLevel').value),
       gender: S.norm($('sfGender').value), pg: S.normPg($('sfPg').value),
       tg: S.normTg($('sfTg').value),
       origin: existing ? existing.origin : S.ORIGIN_ADDED,
-      sourceName: existing ? (existing.sourceName || existing.name) : S.norm($('sfName').value),
+      sourceName: existing ? (existing.sourceName || existing.name)
+        : S.norm($('sfName').value).toUpperCase(),
       subjects: subjects,
     };
     if (!id || !rec.name) return;
@@ -1959,28 +1989,35 @@
     var canvas = $('gfCanvas');
     if (!canvas || !$('groupDialog').open) return;
     var visible = MAP_COLS.filter(function (id) { return !$(id).hidden; });
-    var y = PAD + 14;          // room above the first row for its caption
-    var right = 0;
-    var prev = null;
+    /* The map is centred rather than pinned to the left: the first branch sits
+     * in the middle, and each one below is centred under the node that opened
+     * it, nudged back inside the canvas when a wide branch would overhang. */
+    var widest = 0;
     visible.forEach(function (id) {
       var row = $(id);
       row.style.left = '0px';
       row.style.top = '0px';                  // measure at a known origin first
+      widest = Math.max(widest, row.offsetWidth);
+    });
+    var width = Math.max($('gfGraph').clientWidth - 10, widest + PAD * 2, 320);
+    var y = PAD + 14;          // room above the first row for its caption
+    var prev = null;
+    visible.forEach(function (id) {
+      var row = $(id);
       var w = row.offsetWidth;
       var h = row.offsetHeight;
-      var left = PAD;
+      var left = (width - w) / 2;             // the trunk starts in the middle
       if (prev) {
         var a = anchorOf(prev);
-        // The branch hangs under the node that opened it.
-        if (a) left = Math.max(PAD, nodeBox(prev, a).cx - w / 2);
+        if (a) left = nodeBox(prev, a).cx - w / 2;
       }
-      row.style.left = left + 'px';
+      left = Math.max(PAD, Math.min(left, width - w - PAD));
+      row.style.left = Math.round(left) + 'px';
       row.style.top = y + 'px';
-      right = Math.max(right, left + w);
       y += h + ROW_GAP;
       prev = row;
     });
-    canvas.style.width = Math.max(right + PAD, 320) + 'px';
+    canvas.style.width = width + 'px';
     canvas.style.height = (y - ROW_GAP + PAD) + 'px';
     drawEdges(visible);
     // Keep the branch that just opened in view.
@@ -2134,6 +2171,15 @@
   $('gfMoreBtn').addEventListener('click', function () {
     moreShown = true;
     updateGraph();
+  });
+
+  /* Start the rule again without closing the dialog — quicker than unticking
+   * a path node by node, and the only way back from a single-choice branch. */
+  $('gfClearBtn').addEventListener('click', function () {
+    dialogLevels = [];
+    clearBelow('level');
+    renderRuleTicks('');
+    suggestGroupIdentity();
   });
 
   function renderTgTicks() {

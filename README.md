@@ -136,8 +136,13 @@ first and decides the rest**: class, gender, PG, TG/SG and the subject list are
 all dropdowns drawn from that level's students, and each subject offers only the
 groups that level runs — so a Sec 4 student is never offered 1R1, and Sec 1 is
 never offered POA. A class that does not exist yet can still be typed in through
-**Other…**, and the student ID is suggested as the next free slot in that class
-register (`1R1-27`). Such students are:
+**Other…**.
+
+There is **no student ID to fill in**: it is allocated as the next free slot in
+that class's register (`1R1-27`) and the dialog says which one it will use. The
+**full name** is asked for in capitals — the app upper-cases it as you type —
+because that name is what every later school-file update matches on. Such
+students are:
 
 - stored **only in the app's own `namelist.xlsx`** — the school's official file
   is never written to;
@@ -437,6 +442,10 @@ not: classes discovered from a ministry-format file keep the school's own code
 code…** in the dialog, where it can also be set by hand if your school files
 expect a particular code. Renaming a class carries its code (and its students)
 along, unless you gave it a code of its own.
+
+**Clear the map** starts the rule over without closing the dialog — the only way
+back out of a single-choice branch, and quicker than unticking a path node by
+node.
 
 **Answering higher up the map clears what hung below it.** A class built for
 Sec 4 POA cannot keep Sec 1's tutorial groups, so picking a different level

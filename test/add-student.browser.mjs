@@ -40,6 +40,9 @@ const fields = await page.locator('#studentForm label').allInnerTexts();
 check('the level is asked before anything it decides',
   fields.indexOf('Level') < fields.indexOf('Class') &&
   fields.indexOf('Level') < fields.indexOf('PG'), fields.slice(0, 6).join(' → '));
+check('there is no student ID to fill in — it is allocated',
+  (await page.locator('#sfId').count()) === 0 &&
+  !fields.some((f) => /student id/i.test(f)), fields.join(' → '));
 check('class, gender, PG and TG/SG are all dropdowns',
   (await page.locator('#sfClass').evaluate((e) => e.tagName)) === 'SELECT' &&
   (await page.locator('#sfGender').evaluate((e) => e.tagName)) === 'SELECT' &&
@@ -70,23 +73,31 @@ check('and swaps the subjects',
   (await page.locator('#sfSubjects label').allInnerTexts()).includes('HIST'));
 
 await page.selectOption('#sfClass', '1R2');
-check('the student ID follows the class', /^1R2-\d+$/.test(await page.locator('#sfId').inputValue()),
-  await page.locator('#sfId').inputValue());
+check('the ID it will use is shown, and follows the class',
+  /Student ID 1R2-\d+ will be given automatically/.test(await page.locator('#sfIdNote').innerText()),
+  await page.locator('#sfIdNote').innerText());
 await page.fill('#sfName', 'Late Transfer');
+check('the name is forced into capitals as it is typed',
+  (await page.locator('#sfName').inputValue()) === 'LATE TRANSFER',
+  await page.locator('#sfName').inputValue());
+check('and the dialog says a full name is wanted',
+  (await page.locator('#studentForm').innerText()).includes('Full name as the school writes it'));
 await page.selectOption('#sfPg', '3');
 await page.selectOption('#sfTg', { index: 1 });
 await page.selectOption('#sfSubjects select >> nth=0', 'EL G3');
 await page.click('#studentForm button[type="submit"]');
 await page.waitForTimeout(300);
 const saved = await page.evaluate(() =>
-  window.__testModel().students.find((s) => s.name === 'Late Transfer'));
+  window.__testModel().students.find((s) => s.name === 'LATE TRANSFER'));
+check('the student is saved with an ID of its own',
+  saved && /^1R2-\d+$/.test(saved.id), saved && saved.id);
 check('the student is saved with what was picked',
   saved && saved.class === '1R2' && saved.pg === '3' && saved.level === 'Sec 1' &&
   saved.subjects.EL === 'EL G3' && !!saved.tg, JSON.stringify(saved));
 check('and is marked as added here, not from the school file', saved.origin === 'added');
 
 // editing keeps their own values even when the level has moved on
-await page.fill('#studentSearch', 'Late Transfer');
+await page.fill('#studentSearch', 'LATE TRANSFER');
 await page.locator('#studentsTable tbody tr').first().locator('button[data-act="edit"]').click();
 await page.waitForSelector('#studentDialog[open]');
 check('editing shows their current answers',

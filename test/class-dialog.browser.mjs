@@ -220,9 +220,24 @@ await page.locator('#gfKeyTicks label').filter({ hasText: /^GEOG\b/ }).first().c
 check('picking a different subject clears the branches under it',
   (await page.locator('#gfValueTicks label.on').count()) === 0 &&
   (await page.locator('#gfTgTicks label.on').count()) === 0);
+await page.locator('#gfValueTicks label').first().click();
+await page.locator('#gfTgTicks label').first().click();
+await page.locator('#gfValueTicks label').nth(1).click();
+check('picking a different group clears the TG/SG under it',
+  (await page.locator('#gfTgTicks label.on').count()) === 0);
 await page.locator('#gfLevelTicks label').filter({ hasText: 'Every level' }).first().click();
 check('and picking a different level clears the subject too',
   (await page.locator('#gfKeyTicks label.on').first().innerText()).startsWith('Any subject'));
+
+// the map can be started again in one click
+await page.locator('#gfLevelTicks label').filter({ hasText: /^1\b/ }).first().click();
+await page.locator('#gfKeyTicks label').filter({ hasText: /^HIST\b/ }).first().click();
+await page.locator('#gfValueTicks label').first().click();
+await page.click('#gfClearBtn');
+check('Clear the map puts every branch back to the start',
+  (await page.locator('#gfLevelTicks label.on').first().innerText()).startsWith('Every level') &&
+  (await page.locator('#gfKeyTicks label.on').first().innerText()).startsWith('Any subject') &&
+  (await page.locator('#gfValueRow').isHidden()));
 await page.click('#groupCancelBtn');
 
 check('renaming a teacher updates their classes',

@@ -130,7 +130,7 @@ check('data.js reflects the new student', await page.evaluate(async () => {
   const rec = window.__fs.get('data/data.js');
   const text = new TextDecoder().decode(rec.bytes);
   const w = {}; new Function('window', text)(w);
-  return w.NAMELIST_DATA.students.some((s) => s.name === 'Alpha Admin');
+  return w.NAMELIST_DATA.students.some((s) => s.name === 'ALPHA ADMIN');
 }));
 
 // ---- someone edits the Excel directly while the admin keeps working ----
@@ -180,8 +180,8 @@ const after = await page.evaluate(() => {
   return {
     backups: backups.length,
     liveHasExcelEdit: liveModel.students.some((s) => s.name === 'EDITED IN EXCEL'),
-    liveHasHtmlEdits: liveModel.students.some((s) => s.name === 'Alpha Admin') &&
-      liveModel.students.some((s) => s.name === 'Beta Admin'),
+    liveHasHtmlEdits: liveModel.students.some((s) => s.name === 'ALPHA ADMIN') &&
+      liveModel.students.some((s) => s.name === 'BETA ADMIN'),
     backupHasExcelEdit: bkModel.students.some((s) => s.name === 'EDITED IN EXCEL'),
   };
 });

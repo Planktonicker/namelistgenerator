@@ -312,6 +312,22 @@ converted on load: the value moves onto the student, the column disappears from
 the subject list, and any class rule that pointed at it is rewritten to the new
 field. Nothing needs to be redone by hand.
 
+### Positional subject columns (Sub 5, Sub 6, Sub 7)
+
+Upper-secondary files list the electives in numbered slots rather than named
+columns: POA can sit under `Sub 5` for one student and `Sub 7` for the next.
+The app reads the subject out of the cell rather than the heading, so all of
+them land under one **POA** column whichever slot they came from. Two details
+make that reliable:
+
+- the stored value names its own subject (`POA G2`, `DT G2`), so a bare `G2`
+  from one slot can never be confused with another subject's `G2`;
+- a subject spelled two ways in one file (`PHY` and `Phy`) is folded into the
+  spelling seen first, so it is one column and one class, not two.
+
+A student who genuinely takes the same subject twice (a rare double entry) keeps
+both, the second under `SUBJECT (2)`.
+
 ### Source file layouts
 
 Two shapes of school file are recognised automatically.
@@ -366,12 +382,15 @@ A class can be taught by several teachers; each of them sees it under their own
 name, with the others noted as co-teachers.
 
 Everything else about a class is ticked from what is actually in the data, with
-a running count of how many students the ticks currently cover:
+a running count of how many students the ticks currently cover. **The Level
+comes first and filters the rest**: choose Sec 4 and only Sec 4's form classes,
+subject groups, posting groups and subject columns are offered — Sec 1's 1R1–1R6
+are not in the way.
 
 | Field | What it does |
 |---|---|
 | **Level** | groups the class under that heading on the teacher page, *and* keeps it to that level's students |
-| **Must be taking** | pick a column, tick its groups — several ticks in one column mean "either" (`HIST G3` or `HIST G2`), and a second column narrows further (`TG = TG2`) |
+| **Must be taking** | pick a column, tick its groups — several ticks in one column mean "either" (`HIST G3` or `HIST G2`), and a second column narrows further (`TG = TG2`). A column with nothing ticked means *anyone taking that subject*, and the count line says so |
 | **PG** | tick one or more posting groups (always 1, 2, 3 — a file that writes `PG2` is read as `2`) |
 | **TG / SG** | tick tutorial / subject groups — the teaching group a student sits in, which need not follow the form class (SG3 can span 1R1–1R6). Hidden for schools whose files have no such column |
 | **Limit to classes** | tick the form classes |

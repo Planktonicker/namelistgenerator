@@ -645,4 +645,33 @@ test('an update reports what it changed, student by student', () => {
   assert.deepStrictEqual(again.changes.map((c) => c.kind), ['missing']);
 });
 
+test('positional Sub 5/6/7 columns fold into one subject each', () => {
+  // POA under Sub 5 for one student and Sub 7 for the next is one subject,
+  // and "PHY"/"Phy" is one spelling, not two columns.
+  const rows = [
+    ['Name', 'Class', 'Sub 5', 'Sub 6', 'Sub 7'],
+    ['Alice', '4E1', 'POA', 'Sci PC G2', 'PHY'],
+    ['Bob', '4E1', 'Sci PC', 'DT G2', 'POA G2'],
+    ['Cara', '4E2', 'Phy', 'POA', 'DT'],
+  ];
+  const res = S.importStudents(rows, {
+    headerRow: 0,
+    cols: { name: 0, class: 1 },
+    subjectCols: [],
+    slotCols: [2, 3, 4],
+    dialect: 'plain',
+  });
+  assert.deepStrictEqual(res.students[0].subjects, { POA: 'POA', 'Sci PC': 'Sci PC G2', PHY: 'PHY' });
+  assert.deepStrictEqual(res.students[1].subjects, { 'Sci PC': 'Sci PC', DT: 'DT G2', POA: 'POA G2' });
+  // Cara's "Phy" lands under the PHY key already in use, spelled that way
+  assert.deepStrictEqual(res.students[2].subjects, { PHY: 'PHY', POA: 'POA', DT: 'DT' });
+
+  // the value names its subject, so G2 in one column never collides with
+  // another subject's G2 when classes are discovered from the data
+  const found = S.discoverClasses(res.students, 'Sec 4').filter((g) => !g.suspect);
+  const names = found.map((g) => g.autoMatch).sort();
+  assert.ok(names.includes('DT=DT G2'), names.join(' | '));
+  assert.ok(names.includes('POA=POA G2'), names.join(' | '));
+});
+
 console.log(passed + ' tests passed');

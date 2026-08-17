@@ -161,6 +161,36 @@ const sgClasses = new Set((await page.locator('#memTable tbody tr').allInnerText
 check('a subject group cuts across form classes',
   sgClasses.size > 1, Array.from(sgClasses).join(','));
 
+// the level drives what the dialog offers
+await page.locator('.tabs button[data-tab="groups"]').click();
+await page.click('#addGroupBtn');
+await page.evaluate(() => {   // a second level appears in the data
+  const m = window.__testModel();
+  m.students.push({ id: '4E1-01', name: 'Sec Four Kid', class: '4E1', level: 'Sec 4',
+    gender: 'M', pg: '2', tg: 'SG5', origin: 'file', sourceName: 'Sec Four Kid',
+    subjects: { POA: 'POA G2' } });
+  m.subjectKeys.push('POA');
+  window.__loadModelForTest(m);
+});
+await page.click('#groupCancelBtn');
+await page.click('#addGroupBtn');
+await page.selectOption('#gfLevel', 'Sec 4');
+check('choosing a level limits the classes to that level',
+  (await page.locator('#gfClassTicks').innerText()).includes('4E1') &&
+  !(await page.locator('#gfClassTicks').innerText()).includes('1R1'),
+  (await page.locator('#gfClassTicks').innerText()).replace(/\s+/g, ' '));
+check('and the TG/SG groups', (await page.locator('#gfTgTicks').innerText()).includes('SG5') &&
+  !(await page.locator('#gfTgTicks').innerText()).includes('SG1'));
+check('and the subject columns on offer',
+  (await page.locator('#gfAutoKey option').allInnerTexts()).includes('POA') &&
+  !(await page.locator('#gfAutoKey option').allInnerTexts()).includes('HIST'),
+  (await page.locator('#gfAutoKey option').allInnerTexts()).join(','));
+await page.selectOption('#gfLevel', '1');
+check('switching back restores the other level',
+  (await page.locator('#gfClassTicks').innerText()).includes('1R1') &&
+  (await page.locator('#gfAutoKey option').allInnerTexts()).includes('HIST'));
+await page.click('#groupCancelBtn');
+
 check('renaming a teacher updates their classes',
   (await page.locator('#groupsTable').innerText()).includes('Mr Cheng Xin Ze'));
 check('no JS errors', errors.length === 0, errors.slice(0, 2).join('|'));

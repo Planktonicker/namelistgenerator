@@ -975,7 +975,14 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       var subject = norm(m ? m[1] : raw);
       var band = m ? m[2].toUpperCase() : '';
       if (!subject) return null;
-      return { subject: subject, band: band, code: '', value: band || subject };
+      /* The value carries the subject as well as the band. These columns are
+       * positional — POA can sit under Sub 5 for one student and Sub 7 for the
+       * next — so a bare "G2" would collide with every other subject's G2 and
+       * read as nothing on its own. */
+      return {
+        subject: subject, band: band, code: '',
+        value: band ? subject + ' ' + band : subject,
+      };
     }
     var parts = raw.split(' - ').map(function (p) { return norm(p); });
     var code = '';
@@ -1231,6 +1238,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     var counters = {};
     var usedIds = {};
     var cols = mapping.cols || {};
+    var slotKeys = {};        // normalised subject -> the spelling first seen
     function cell(row, key) {
       return cols[key] == null || cols[key] === '' ? '' : norm(row[cols[key]]);
     }
@@ -1263,13 +1271,19 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       (mapping.slotCols || []).forEach(function (ci) {
         var a = parseAllocation(row[ci], mapping.dialect);
         if (!a) return;
-        var key = a.subject;
-        if (subjects[key] && subjects[key] !== a.value) {
+        // "PHY" in one row and "Phy" in the next is one subject, not two —
+        // and the value spells it the same way, so the two are one group.
+        var key = slotKeys[normKey(a.subject)] || a.subject;
+        slotKeys[normKey(a.subject)] = key;
+        var value = normKey(a.value).indexOf(normKey(a.subject)) === 0
+          ? (a.band ? key + ' ' + a.band : key)   // plain "DT G2"
+          : a.value;                              // coded "G2 - K234"
+        if (subjects[key] && subjects[key] !== value) {
           var n = 2;
           while (subjects[key + ' (' + n + ')']) n++;
           key = key + ' (' + n + ')';       // same subject twice: keep both
         }
-        subjects[key] = a.value;
+        subjects[key] = value;
       });
       students.push({
         id: id, name: name, class: cls,

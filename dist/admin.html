@@ -1470,7 +1470,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       var subject = norm(m ? m[1] : raw);
       var band = m ? m[2].toUpperCase() : '';
       if (!subject) return null;
-      return { subject: subject, band: band, code: '', value: band || subject };
+      /* The value carries the subject as well as the band. These columns are
+       * positional — POA can sit under Sub 5 for one student and Sub 7 for the
+       * next — so a bare "G2" would collide with every other subject's G2 and
+       * read as nothing on its own. */
+      return {
+        subject: subject, band: band, code: '',
+        value: band ? subject + ' ' + band : subject,
+      };
     }
     var parts = raw.split(' - ').map(function (p) { return norm(p); });
     var code = '';
@@ -1726,6 +1733,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var counters = {};
     var usedIds = {};
     var cols = mapping.cols || {};
+    var slotKeys = {};        // normalised subject -> the spelling first seen
     function cell(row, key) {
       return cols[key] == null || cols[key] === '' ? '' : norm(row[cols[key]]);
     }
@@ -1758,13 +1766,19 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       (mapping.slotCols || []).forEach(function (ci) {
         var a = parseAllocation(row[ci], mapping.dialect);
         if (!a) return;
-        var key = a.subject;
-        if (subjects[key] && subjects[key] !== a.value) {
+        // "PHY" in one row and "Phy" in the next is one subject, not two —
+        // and the value spells it the same way, so the two are one group.
+        var key = slotKeys[normKey(a.subject)] || a.subject;
+        slotKeys[normKey(a.subject)] = key;
+        var value = normKey(a.value).indexOf(normKey(a.subject)) === 0
+          ? (a.band ? key + ' ' + a.band : key)   // plain "DT G2"
+          : a.value;                              // coded "G2 - K234"
+        if (subjects[key] && subjects[key] !== value) {
           var n = 2;
           while (subjects[key + ' (' + n + ')']) n++;
           key = key + ' (' + n + ')';       // same subject twice: keep both
         }
-        subjects[key] = a.value;
+        subjects[key] = value;
       });
       students.push({
         id: id, name: name, class: cls,
@@ -3533,13 +3547,69 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   var pendingBulkAdd = false;
   var pendingPrefill = null;   // {key, value} to tick when the dialog opens
 
+  /* Everything the class dialog offers is drawn from the level it is set to:
+   * pick Sec 4 and only Sec 4's classes, groups and subjects are on the table.
+   * Students whose Level cell the office left blank stay in the pool — they
+   * are excluded from nothing, here or in the rule itself. */
+  function dialogPool() {
+    var level = S.norm($('gfLevel').value);
+    if (!level) return model.students;
+    return model.students.filter(function (s) {
+      return !S.norm(s.level) || S.normKey(s.level) === S.normKey(level);
+    });
+  }
+
+  /* Tick options counted over that pool. Anything already ticked is kept on
+   * the list even if the level no longer has it, so it can be unticked. */
+  function tickOptions(read, chosen) {
+    var counts = {};
+    dialogPool().forEach(function (s) {
+      var v = S.norm(read(s));
+      if (v) counts[v] = (counts[v] || 0) + 1;
+    });
+    (chosen || []).forEach(function (v) { if (!(v in counts)) counts[v] = 0; });
+    return Object.keys(counts).sort(S.cmp).map(function (v) {
+      return { value: v, label: v, n: counts[v] };
+    });
+  }
+
   function subjectValueOptions(key) {
     var vals = new Set();
-    model.students.forEach(function (s) {
+    dialogPool().forEach(function (s) {
       var v = s.subjects && S.norm(s.subjects[key]);
       if (v) vals.add(v);
     });
     return Array.from(vals).sort(S.cmp);
+  }
+
+  /* Only the subject columns this level actually uses. */
+  function fillKeySelect(want) {
+    var current = want === undefined ? $('gfAutoKey').value : want;
+    var pool = dialogPool();
+    var keys = (model.subjectKeys || []).filter(function (k) {
+      return pool.some(function (s) { return s.subjects && S.norm(s.subjects[k]); });
+    });
+    // A column the level does not use is dropped — unless this class is
+    // actually built on it, in which case it stays so it can be seen.
+    var ruled = dialogCriteria.some(function (c) {
+      return S.normKey(c.key) === S.normKey(current) && c.values.length;
+    });
+    if (current && ruled && keys.indexOf(current) === -1) keys.push(current);
+    $('gfAutoKey').innerHTML = '<option value="">(none — members added by hand)</option>' +
+      keys.map(function (k) {
+        return '<option value="' + esc(k) + '">' + esc(k) + '</option>';
+      }).join('');
+    $('gfAutoKey').value = keys.indexOf(current) === -1 ? '' : current;
+  }
+
+  function renderRuleTicks(wantKey) {
+    fillKeySelect(wantKey);
+    renderValueTicks();
+    renderPgTicks();
+    renderTgTicks();
+    renderClassTicks();
+    renderCriteria();
+    updateMatchCount();
   }
 
   /* One tick list. `options` are [{ value, label, n }]; `chosen` is the list of
@@ -3572,8 +3642,15 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       return;
     }
     var n = model.students.filter(function (s) { return S.matchesRule(s, rec); }).length;
+    /* A column chosen with nothing ticked still narrows the class to whoever
+     * takes that subject at all — say so, or the number looks wrong. */
+    var anyKeys = dialogCriteria.filter(function (c) { return !c.values.length; })
+      .map(function (c) { return c.key; });
+    var note = anyKeys.length
+      ? ' (anyone taking ' + anyKeys.join(' and ') + ' — tick groups above to narrow)'
+      : '';
     $('gfMatchCount').textContent = n
-      ? n + ' student' + (n === 1 ? '' : 's') + ' match this right now.'
+      ? n + ' student' + (n === 1 ? '' : 's') + ' match this right now' + note + '.'
       : 'No students match this yet — loosen a tick above.';
   }
 
@@ -3584,14 +3661,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (!key) return;
     var crit = dialogCriteria.find(function (c) { return S.normKey(c.key) === S.normKey(key); });
     if (!crit) { crit = { key: key, values: [] }; dialogCriteria.push(crit); }
-    var counts = {};
-    model.students.forEach(function (s) {
-      var v = s.subjects && S.norm(s.subjects[key]);
-      if (v) counts[v] = (counts[v] || 0) + 1;
-    });
-    renderTicks(box, subjectValueOptions(key).map(function (v) {
-      return { value: v, label: v, n: counts[v] };
-    }), crit.values, function () {
+    renderTicks(box, tickOptions(function (s) {
+      return s.subjects && s.subjects[key];
+    }, crit.values), crit.values, function () {
       renderCriteria();
       suggestGroupIdentity();
       updateMatchCount();
@@ -3599,39 +3671,22 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   }
 
   function renderPgTicks() {
-    var counts = {};
-    model.students.forEach(function (s) {
-      var v = S.normPg(s.pg);
-      if (v) counts[v] = (counts[v] || 0) + 1;
-    });
-    renderTicks($('gfPgTicks'), uniqueValues('pg').map(function (v) {
-      return { value: v, label: v, n: counts[v] };
-    }), dialogPgs, function () { suggestGroupIdentity(); updateMatchCount(); });
+    renderTicks($('gfPgTicks'), tickOptions(function (s) { return S.normPg(s.pg); }, dialogPgs),
+      dialogPgs, function () { suggestGroupIdentity(); updateMatchCount(); });
   }
 
   function renderTgTicks() {
-    var values = uniqueValues('tg');
-    $('gfTgRow').hidden = !values.length;
-    $('gfTgLabel').hidden = !values.length;
-    if (!values.length) { dialogTgs = []; return; }
-    var counts = {};
-    model.students.forEach(function (s) {
-      var v = S.normTg(s.tg);
-      if (v) counts[v] = (counts[v] || 0) + 1;
-    });
-    renderTicks($('gfTgTicks'), values.map(function (v) {
-      return { value: v, label: v, n: counts[v] };
-    }), dialogTgs, function () { suggestGroupIdentity(); updateMatchCount(); });
+    var options = tickOptions(function (s) { return S.normTg(s.tg); }, dialogTgs);
+    $('gfTgRow').hidden = !options.length;
+    $('gfTgLabel').hidden = !options.length;
+    if (!options.length) return;
+    renderTicks($('gfTgTicks'), options, dialogTgs,
+      function () { suggestGroupIdentity(); updateMatchCount(); });
   }
 
   function renderClassTicks() {
-    var counts = {};
-    model.students.forEach(function (s) {
-      if (S.norm(s.class)) counts[s.class] = (counts[s.class] || 0) + 1;
-    });
-    renderTicks($('gfClassTicks'), uniqueValues('class').map(function (c) {
-      return { value: c, label: c, n: counts[c] };
-    }), dialogClasses, function () { suggestGroupIdentity(); updateMatchCount(); });
+    renderTicks($('gfClassTicks'), tickOptions(function (s) { return s.class; }, dialogClasses),
+      dialogClasses, function () { suggestGroupIdentity(); updateMatchCount(); });
   }
 
   function suggestGroupIdentity() {
@@ -3660,8 +3715,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     updateMatchCount();
   });
   $('gfLevel').addEventListener('change', function () {
+    renderRuleTicks();
     suggestGroupIdentity();
-    updateMatchCount();
   });
   ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
     $(id).addEventListener('input', function () { $(id).dataset.userEdited = '1'; });
@@ -3819,10 +3874,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       return '<option value="' + esc(l) + '">' + esc(l) + '</option>';
     }).join('');
     $('gfLevel').value = group ? (group.level || '') : (levels.length === 1 ? levels[0] : '');
-    $('gfAutoKey').innerHTML = '<option value="">(none — members added by hand)</option>' +
-      (model.subjectKeys || []).map(function (k) {
-        return '<option value="' + esc(k) + '">' + esc(k) + '</option>';
-      }).join('');
     dialogCriteria = group ? S.matchers(group) : [];
     dialogPgs = group ? S.splitList(group.autoPg) : [];
     dialogTgs = group ? S.splitList(group.autoTg) : [];
@@ -3834,14 +3885,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       dialogCriteria = [{ key: prefilled.key, values: [prefilled.value] }];
       pendingPrefill = null;
     }
+    // Open on the column the class is already built around, so its ticks show.
     var live = dialogCriteria.filter(function (c) { return c.values.length; })[0];
-    $('gfAutoKey').value = live ? live.key : '';
-    if ($('gfAutoKey').value !== (live ? live.key : '')) $('gfAutoKey').value = '';
-    renderValueTicks();
-    renderPgTicks();
-    renderTgTicks();
-    renderClassTicks();
-    renderCriteria();
+    renderRuleTicks(live ? live.key : '');
     ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
       if (group) $(id).dataset.userEdited = '1';       // never rewrite an existing group's identity
       else delete $(id).dataset.userEdited;

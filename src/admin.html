@@ -260,6 +260,7 @@
           app can ever modify the official files.</p>
         <div class="toolbar">
           <button class="primary" id="srcFolderBtn">Choose school files folder…</button>
+          <button id="srcFolderChangeBtn" hidden>Choose a different folder…</button>
           <span class="badge plain" id="srcFolderName" hidden></span>
           <span class="spacer"></span>
           <button id="addSecLevelsBtn">Add Sec 1–5</button>
@@ -444,7 +445,9 @@
       </table>
     </div>
     <p class="empty small" id="pickEmpty" hidden>No spreadsheets match.</p>
-    <div class="actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px">
+    <div class="actions" style="display:flex; gap:10px; margin-top:14px">
+      <button type="button" id="pickFolderBtn">Choose a different folder…</button>
+      <span class="spacer" style="flex:1"></span>
       <button type="button" id="pickCancelBtn">Cancel</button>
     </div>
   </dialog>
@@ -2219,6 +2222,15 @@
     guidedSetup = false;   // the admin decided to stop; the table shows what is left
     $('pickFileDialog').close();
   });
+  /* Wrong folder noticed here rather than in the tab behind: swap it without
+   * losing your place in the walkthrough. */
+  $('pickFolderBtn').addEventListener('click', async function () {
+    if (!(await connectSourceFolder({ force: true }))) return;
+    $('pickSearch').value = '';
+    $('pickFolderName').textContent = srcDirHandle.name;
+    renderPickTable();
+    $('pickSearch').focus();
+  });
   $('pickSearch').addEventListener('input', renderPickTable);
 
   async function openPickFileDialog(index) {
@@ -2269,8 +2281,12 @@
 
   /* Always requested read-only: the browser itself then refuses any write
    * into the school's folder, whatever this page's code does. */
-  async function connectSourceFolder() {
-    var handle = srcDirPending;
+  /* `force` skips both the remembered folder and the connected one, so the
+   * admin can move to a different folder at any time — the school reorganises
+   * its share, or the wrong folder was picked in the first place. */
+  async function connectSourceFolder(opts) {
+    var force = opts && opts.force;
+    var handle = force ? null : srcDirPending;
     if (handle) {
       // Remembered folder: a permission prompt is all that is needed.
       if (!(await ensurePermission(handle, 'read'))) handle = null;
@@ -2279,6 +2295,7 @@
     if (!handle) {
       try { handle = await window.showDirectoryPicker({ mode: 'read' }); }
       catch (e) { return false; } // user cancelled
+      srcDirPending = null;
       rememberHandle('sourceDir', handle);
     }
     await scanSourceFolder(handle);
@@ -2288,6 +2305,11 @@
   $('srcFolderBtn').addEventListener('click', async function () {
     if (srcDirHandle) { await rescanSourceFolder(); toast('Folder rescanned'); return; }
     await connectSourceFolder();
+  });
+
+  $('srcFolderChangeBtn').addEventListener('click', async function () {
+    if (!(await connectSourceFolder({ force: true }))) return;
+    toast('Now reading ' + srcDirHandle.name + ' — ' + srcFiles.length + ' spreadsheet(s)');
   });
 
   async function scanSourceFolder(handle) {
@@ -2309,6 +2331,11 @@
     $('srcFolderName').hidden = false;
     $('srcFolderBtn').textContent = 'Rescan folder';
     $('srcFolderBtn').classList.remove('primary');
+    $('srcFolderChangeBtn').hidden = false;
+    if ($('pickFileDialog').open) {
+      $('pickFolderName').textContent = srcDirHandle.name;
+      renderPickTable();
+    }
     renderSources();
   }
 

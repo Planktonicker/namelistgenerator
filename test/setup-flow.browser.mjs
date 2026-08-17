@@ -78,16 +78,22 @@ await page.addInitScript(() => {
     async queryPermission() { return 'granted'; },
     async requestPermission() { return 'granted'; },
   });
-  // first pick = the app's (empty) data folder, second = the school folder
+  // 1st pick = the app's (empty) data folder, 2nd = the wrong school folder,
+  // 3rd onwards = the right one
   let picks = 0;
-  window.showDirectoryPicker = async () =>
-    (picks++ === 0 ? mkDir('data/', 'Namelist') : mkDir('school/', 'Subject Grouping List'));
+  window.showDirectoryPicker = async () => {
+    picks += 1;
+    if (picks === 1) return mkDir('data/', 'Namelist');
+    if (picks === 2) return mkDir('wrong/', 'Old 2025 lists');
+    return mkDir('school/', 'Subject Grouping List');
+  };
 });
 
 await page.goto('file://' + demo + '/admin.html');
 const xlsx = readFileSync(SRC);
 await page.evaluate((bytes) => {
   window.__fs.put('school/S3 allocation (whatever name).xlsx', new Uint8Array(bytes), 1000);
+  window.__fs.put('wrong/last years list.xlsx', new Uint8Array(bytes), 900);
 }, Array.from(xlsx));
 
 // open the empty data folder -> setup screen
@@ -105,8 +111,17 @@ check('setup screen names the folder', setupText.includes('Namelist'));
 await page.click('#setupLevelsBtn');
 await page.waitForSelector('#pickFileDialog[open]');
 check('it asks which file is Sec 1', (await page.locator('#pickLevelName').innerText()) === 'Sec 1');
-check('the picker lists the school folder\'s files',
-  (await page.locator('#pickTable tbody tr').innerText()).includes('S3 allocation'));
+check('a wrong folder is not a dead end — the picker offers to change it',
+  (await page.locator('#pickFolderBtn').isVisible()) &&
+  (await page.locator('#pickTable tbody tr').innerText()).includes('last years list'));
+await page.click('#pickFolderBtn');
+await page.waitForFunction(() =>
+  document.getElementById('pickFolderName').textContent === 'Subject Grouping List');
+check('picking another folder relists it without closing the dialog',
+  (await page.locator('#pickFileDialog').isVisible()) &&
+  (await page.locator('#pickTable tbody tr').count()) === 1 &&
+  (await page.locator('#pickTable tbody tr').innerText()).includes('S3 allocation'),
+  (await page.locator('#pickTable tbody').innerText()).replace(/\s+/g, ' '));
 check('Sec 1-5 were all created', (await page.locator('#sourcesTable tbody tr').count()) === 5);
 
 // pick a file for Sec 1 -> review its columns -> it imports and moves on to Sec 2
@@ -129,6 +144,8 @@ check('Cancel ends the walkthrough', !(await page.locator('#pickFileDialog').isV
 const rows = await page.locator('#sourcesTable tbody tr').allInnerTexts();
 check('Sec 1 shows its file, the rest still say pick a file',
   rows[0].includes('S3 allocation') && rows[1].includes('not chosen yet'));
+check('the School files tab also offers a different folder afterwards',
+  await page.locator('#srcFolderChangeBtn').isVisible());
 check('no JS errors', errors.length === 0);
 if (errors.length) console.log(errors.slice(0, 3));
 

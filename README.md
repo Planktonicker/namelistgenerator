@@ -121,8 +121,14 @@ publish was more than a fortnight ago.
 **Reconnecting.** Chrome/Edge remember both folders between sessions, so after
 the first time the start screen offers **Reconnect to “…”** — a single
 permission click instead of navigating the shared drive again. The School files
-button does the same for the sources folder. "Choose a different folder…" is
-always available if anything moves.
+button does the same for the sources folder.
+
+**Changing folder later.** Neither choice is permanent. **Choose a different
+folder…** sits next to the connected folder's name in the School files tab, and
+again inside the "which file is this level" picker — so a folder picked in
+error, or a share the school reorganises, is swapped without restarting: the
+picker relists the new folder on the spot and each level keeps the file name it
+was pointed at.
 
 **Adding a student the school's file doesn't have yet.** Use **Add student** in
 the Students tab (a late transfer, a new enrolment). Fill in the details —

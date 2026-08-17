@@ -481,6 +481,31 @@ turned into classes; they appear under **Check these** with *Create it anyway*
 and *Ignore*, so a mislabelled column is a decision rather than a phantom class
 in the list.
 
+### The printed namelist
+
+Every namelist — on screen, in the teacher page's **Print**, and in the admin's
+**Print this namelist** — uses the school's own layout, so what a teacher looks
+at is what comes out of the printer:
+
+```
+┌──────────┬───────────┬──────────────────────┬───────────────────┐
+│ Sec 3    │ PG 3 A    │ SS/Geo               │    Total pax: 15  │
+└──────────┴───────────┴──────────────────────┴───────────────────┘
+┌──────┬───────┬──────────────────────────┬────────┬─────────────┐
+│ S/N  │ Class │ Name                     │ Gender │ Note        │
+├──────┼───────┼──────────────────────────┼────────┼─────────────┤
+│  25  │ 3S1   │ TAN JAE REN              │ M      │             │
+│  45  │ 3S2   │ EDGAR KAUNG ZARNI HEIN   │ M      │             │
+```
+
+The banner names the level, the posting/subject group and the subject, with the
+head count on the right — read from the class's own rule, or off its students
+when it has none. **S/N is the school's own serial number**, captured from the
+`S/N` (or `No`) column when a level is imported, so a printed list can be
+checked against the office's list line by line; a student added in the app, who
+has no S/N of their own, falls back to their row number. **Note** is left blank
+to write in.
+
 ### Checks the app runs for you
 
 **Nobody missing from a namelist.** The app compares what each student takes

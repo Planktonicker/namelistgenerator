@@ -58,7 +58,7 @@ test('header aliases, subject columns, and messy input are tolerated', () => {
   assert.strictEqual(model.students.length, 2);
   assert.deepStrictEqual(model.subjectKeys, ['EL', 'MT']);
   assert.deepStrictEqual(model.students[0],
-    { id: 's001', name: 'Alice Tan', class: '1R1', level: '1', gender: 'F', pg: '3', tg: '',
+    { id: 's001', name: 'Alice Tan', class: '1R1', level: '1', gender: 'F', pg: '3', tg: '', sn: '',
       origin: 'file', sourceName: 'Alice Tan', subjects: { EL: 'EL G3', MT: 'CL G2' } });
   assert.deepStrictEqual(model.students[1].subjects, { EL: 'EL G2' });
   assert.ok(warnings.some((w) => w.includes('row 5')), 'expected a skipped-row warning');
@@ -96,7 +96,7 @@ test('importStudents: auto-IDs, subject columns, skipped rows', () => {
   assert.deepStrictEqual(res.students[0].subjects, { EL: 'EL G3', MT: 'CL G2' });
   assert.deepStrictEqual(res.students[1].subjects, { EL: 'EL G2' }); // empty cell omitted
   assert.deepStrictEqual(res.students[2],
-    { id: '1R2-01', name: 'Carol', class: '1R2', level: '', gender: 'F', pg: '1', tg: 'TG1',
+    { id: '1R2-01', name: 'Carol', class: '1R2', level: '', gender: 'F', pg: '1', tg: 'TG1', sn: '',
       origin: 'file', sourceName: 'Carol', subjects: { EL: 'EL G1', MT: 'ML G1' } });
   assert.strictEqual(res.warnings.length, 1);
   assert.ok(res.warnings[0].includes('no name'));
@@ -672,6 +672,36 @@ test('positional Sub 5/6/7 columns fold into one subject each', () => {
   const names = found.map((g) => g.autoMatch).sort();
   assert.ok(names.includes('DT=DT G2'), names.join(' | '));
   assert.ok(names.includes('POA=POA G2'), names.join(' | '));
+});
+
+test('a namelist prints in the school\'s own layout', () => {
+  const group = { code: 'G', name: 'SS/Geo 3 A', subject: 'HUM', teachers: ['MRS TAN'],
+    level: 'Sec 3', autoMatch: 'HUM=SS/Geo', autoPg: '3', autoTg: '3 A', autoClasses: '' };
+  const members = [
+    { id: 'a', sn: '25', class: '3S1', name: 'TAN JAE REN', gender: 'M' },
+    { id: 'b', sn: '45', class: '3S2', name: 'EDGAR KAUNG ZARNI HEIN', gender: 'M' },
+    { id: 'c', sn: '', class: '3S3', name: 'ADDED LATER', gender: 'F' },
+  ];
+  const meta = S.namelistMeta(group, members);
+  // the banner across the top: level, group, subject, head count
+  assert.deepStrictEqual(meta,
+    { level: 'Sec 3', band: 'PG 3 A', subject: 'SS/Geo', total: 3 });
+
+  const html = S.namelistHtml(group, members, (v) => String(v));
+  assert.ok(html.includes('Total pax: <strong>3</strong>'));
+  assert.deepStrictEqual(
+    (html.match(/<th>([^<]+)<\/th>/g) || []).map((h) => h.replace(/<\/?th>/g, '')),
+    ['S/N', 'Class', 'Name', 'Gender', 'Note']);
+  // the school's own S/N is kept; a student added here falls back to their row
+  assert.ok(html.includes('>25<') && html.includes('>45<') && html.includes('>3<'));
+  assert.ok(html.includes('TAN JAE REN') && html.includes('>M<') && html.includes('nl-note'));
+
+  // a class with no rule reads its banner off the students instead
+  const plain = S.namelistMeta({ code: 'P', name: 'Remedial', subject: '', teachers: [] },
+    [{ class: '3S1', level: 'Sec 3', pg: '2', tg: '2 A/BC', name: 'X' }]);
+  assert.strictEqual(plain.level, 'Sec 3');
+  assert.strictEqual(plain.band, 'PG 2 A/BC');
+  assert.strictEqual(plain.subject, 'Remedial');
 });
 
 console.log(passed + ' tests passed');

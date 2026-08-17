@@ -160,8 +160,14 @@ check('classes are grouped under a level heading',
   await t.locator('.level-head h3').first().innerText());
 check('a co-taught class names the other teacher',
   (await t.locator('#teacherResults').innerText()).includes('with Mr Tan'));
-const rows = await t.locator('#teacherResults .card').first().locator('tbody tr').count();
+const rows = await t.locator('#teacherResults .card').first().locator('.namelist tbody tr').count();
 check('her namelist has the right students (' + rows + ')', rows === 82 || rows === 37);
+const band = (await t.locator('#teacherResults .namelist-band').first().innerText()).replace(/\s+/g, ' ');
+const head = (await t.locator('#teacherResults .namelist thead').first().innerText()).replace(/\s+/g, ' ');
+check('the namelist carries the school\'s own layout',
+  /Total pax/.test(band) && /Sec 3/.test(band) && /Additional Mathematics/.test(band) &&
+  head.trim() === 'S/N Class Name Gender Note',
+  band + ' // ' + head);
 // clicking a chip narrows the page to that one class
 await t.locator('#myClassChips button').nth(1).click();
 check('a chip shows just that class',

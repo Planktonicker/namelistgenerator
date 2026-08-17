@@ -27,7 +27,7 @@
   var ORIGIN_FILE = 'file';
   var ORIGIN_ADDED = 'added';
 
-  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'TG',
+  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'TG', 'SN',
     'Origin', 'SourceName'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teachers', 'Level',
     'AutoMatch', 'AutoPG', 'AutoTG', 'AutoClasses'];
@@ -47,6 +47,9 @@
      * their form class (SG1–SG6 across 1R1–1R6). */
     tg: ['tg', 'sg', 'subgroup', 'subjectgroup', 'tutorialgroup', 'tutgroup', 'subjgroup',
       'subgrp', 'subjgrp', 'sgroup'],
+    /* The school's own serial number for the student, kept so a printed
+     * namelist can carry the same S/N the office's list uses. */
+    sn: ['sn', 'no', 'serialno', 'sno', 'runningno', 'sequenceno'],
     origin: ['origin'],
     sourceName: ['sourcename'],
   };
@@ -253,7 +256,7 @@
     for (var r = 1; r < rows.length; r++) {
       var row = rows[r];
       if (!row || isBlankRow(row)) continue;
-      var rec = { id: '', name: '', class: '', level: '', gender: '', pg: '', tg: '',
+      var rec = { id: '', name: '', class: '', level: '', gender: '', pg: '', tg: '', sn: '',
         origin: '', sourceName: '', subjects: {} };
       Object.keys(STUDENT_FIELDS).forEach(function (f) {
         rec[f] = f in idx ? norm(row[idx[f]]) : '';
@@ -360,12 +363,12 @@
 
     var keys = model.subjectKeys || [];
     ws = X.utils.aoa_to_sheet([STUDENT_HEADERS.concat(keys)].concat(model.students.map(function (s) {
-      return [s.id, s.name, s.class, s.level, s.gender, s.pg, s.tg, s.origin || ORIGIN_FILE,
+      return [s.id, s.name, s.class, s.level, s.gender, s.pg, s.tg, s.sn, s.origin || ORIGIN_FILE,
         s.sourceName === s.name ? '' : s.sourceName]
         .concat(keys.map(function (k) { return (s.subjects && s.subjects[k]) || ''; }));
     })));
     ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 5 },
-      { wch: 6 }, { wch: 8 }, { wch: 28 }]
+      { wch: 6 }, { wch: 5 }, { wch: 8 }, { wch: 28 }]
       .concat(keys.map(function () { return { wch: 12 }; }));
     X.utils.book_append_sheet(wb, ws, 'Students');
 
@@ -888,7 +891,7 @@
         id: id, name: name, class: cls,
         level: cell(row, 'level'),
         gender: cell(row, 'gender'), pg: normPg(cell(row, 'pg')),
-        tg: normTg(cell(row, 'tg')),
+        tg: normTg(cell(row, 'tg')), sn: cell(row, 'sn'),
         origin: ORIGIN_FILE, sourceName: name, subjects: subjects,
       });
     }
@@ -1027,6 +1030,7 @@
         if (imp.gender) m.gender = imp.gender;
         if (imp.pg) m.pg = imp.pg;
         if (imp.tg) m.tg = imp.tg;
+        if (imp.sn) m.sn = imp.sn;
         m.subjects = m.subjects || {};
         importedKeys.forEach(function (k) {
           if (imp.subjects[k]) m.subjects[k] = imp.subjects[k];
@@ -1037,7 +1041,7 @@
         var newId = freeId(imp.class);
         model.students.push({
           id: newId, name: imp.name, class: imp.class, level: imp.level,
-          gender: imp.gender, pg: imp.pg, tg: imp.tg || '', origin: ORIGIN_FILE,
+          gender: imp.gender, pg: imp.pg, tg: imp.tg || '', sn: imp.sn || '', origin: ORIGIN_FILE,
           sourceName: imp.sourceName || imp.name, subjects: imp.subjects,
         });
         addedIds.push(newId);
@@ -1110,7 +1114,7 @@
       if (s.id === loserId) loser = s;
     });
     if (!keeper || !loser || keeper === loser) return null;
-    ['class', 'level', 'gender', 'pg', 'tg', 'sourceName'].forEach(function (f) {
+    ['class', 'level', 'gender', 'pg', 'tg', 'sn', 'sourceName'].forEach(function (f) {
       if (!norm(keeper[f]) && norm(loser[f])) keeper[f] = loser[f];
     });
     keeper.subjects = keeper.subjects || {};
@@ -1393,6 +1397,99 @@
       student.pg + ' ' + (student.tg || '') + ' ' + subjectSummary(student, keys)).toLowerCase();
   }
 
+  /* ---- the printed namelist ------------------------------------------
+   * The school's own layout: a banner naming the level, the posting/subject
+   * group and the subject, with the head count on the right, then a bordered
+   * grid of S/N, Class, Name, Gender and a Note column to write in. Both pages
+   * render the same thing, so what a teacher sees is what prints. */
+
+  /* "3" and "SECONDARY 3" both read as "Sec 3"; anything else is left as the
+   * school wrote it. */
+  function levelLabel(level) {
+    var v = norm(level);
+    if (/^\d+$/.test(v)) return 'Sec ' + v;
+    var m = /^sec(?:ondary)?\s*([0-9]+[A-Za-z]?)$/i.exec(v);
+    if (m) return 'Sec ' + m[1];
+    m = /^pri(?:mary)?\s*([0-9]+[A-Za-z]?)$/i.exec(v);
+    if (m) return 'Pri ' + m[1];
+    return v;
+  }
+
+  function uniqueOf(list) {
+    var seen = {};
+    var out = [];
+    list.forEach(function (v) {
+      v = norm(v);
+      if (!v || seen[normKey(v)]) return;
+      seen[normKey(v)] = true;
+      out.push(v);
+    });
+    return out;
+  }
+
+  /* What the banner across the top of a namelist says. Taken from the class's
+   * rule where it has one, and read off its students where it does not. */
+  function namelistMeta(group, members) {
+    members = members || [];
+    function fromMembers(read, cap) {
+      var vals = uniqueOf(members.map(read));
+      return vals.length && vals.length <= (cap || 3) ? vals : [];
+    }
+    var pgs = splitList(group.autoPg);
+    if (!pgs.length) pgs = fromMembers(function (s) { return normPg(s.pg); });
+    var tgs = splitList(group.autoTg);
+    if (!tgs.length) tgs = fromMembers(function (s) { return normTg(s.tg); });
+    /* What the class teaches, in the most telling words available: the ticked
+     * group values ("SS/Geo", "POA G2") unless those are only a band and a
+     * school code ("G3 - K341"), in which case the subject label says more. */
+    var values = matchers(group).map(function (m) { return m.values.join(' / '); }).filter(Boolean);
+    var bandOnly = values.length && values.every(function (v) {
+      return /^G\d(\s*-\s*\S+)?$/i.test(norm(v));
+    });
+    var subject = (bandOnly || !values.length)
+      ? (norm(group.subject) || values.join(' · ') || norm(group.name) || group.code)
+      : values.join(' · ');
+    if (bandOnly && values.length) subject += ' ' + values.join(' · ');
+    /* The subject group usually leads with its posting group ("3 A" is PG 3,
+     * group A), so printing both would read "PG 3 3 A". */
+    var band;
+    if (pgs.length && tgs.length &&
+      tgs.every(function (t) { return normKey(t).indexOf(normKey(pgs[0])) === 0; })) {
+      band = 'PG ' + tgs.join(', ');
+    } else {
+      band = [pgs.length ? 'PG ' + pgs.join(', ') : '', tgs.join(', ')].filter(Boolean).join('  ');
+    }
+    return {
+      level: levelLabel(groupLevel(group, members)),
+      band: band,
+      subject: subject,
+      total: members.length,
+    };
+  }
+
+  /* One namelist as HTML — the same markup on screen and on paper. `esc` is
+   * passed in because each page has its own. */
+  function namelistHtml(group, members, esc, opts) {
+    opts = opts || {};
+    var meta = namelistMeta(group, members);
+    var rows = members.map(function (s, i) {
+      return '<tr><td class="nl-sn">' + esc(norm(s.sn) || (i + 1)) + '</td>' +
+        '<td class="nl-class">' + esc(s.class) + '</td>' +
+        '<td class="nl-name">' + esc(s.name) + '</td>' +
+        '<td class="nl-gender">' + esc(s.gender) + '</td>' +
+        '<td class="nl-note"></td></tr>';
+    }).join('') || '<tr><td colspan="5" class="nl-empty">No students in this class yet.</td></tr>';
+    return '<table class="namelist-band"><tbody><tr>' +
+      '<td>' + esc(meta.level) + '</td>' +
+      '<td>' + esc(meta.band) + '</td>' +
+      '<td class="nl-subject">' + esc(meta.subject) + '</td>' +
+      '<td class="nl-pax">Total pax: <strong>' + meta.total + '</strong></td>' +
+      '</tr></tbody></table>' +
+      (opts.note ? '<p class="nl-sub">' + esc(opts.note) + '</p>' : '') +
+      '<table class="namelist"><thead><tr><th>S/N</th><th>Class</th><th>Name</th>' +
+      '<th>Gender</th><th>Note</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
   /* Lookup structures shared by both pages. `data` is a model or NAMELIST_DATA. */
   function buildIndexes(data) {
     var studentsById = new Map();
@@ -1502,6 +1599,9 @@
     teacherNames: teacherNames,
     teacherLabel: teacherLabel,
     groupLevel: groupLevel,
+    levelLabel: levelLabel,
+    namelistMeta: namelistMeta,
+    namelistHtml: namelistHtml,
     groupsByLevelFor: groupsByLevelFor,
   };
 })();

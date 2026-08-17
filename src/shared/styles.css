@@ -290,3 +290,31 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   .print-sheet .sub { color: #444; margin: 0 0 10px; font-size: 12px; }
   .print-sheet table.list th { color: #333; }
 }
+
+
+/* ---- the school's namelist layout, on screen and on paper ---- */
+.namelist-band, .namelist {
+  width: 100%; border-collapse: collapse; font-size: 13px; background: #fff;
+}
+.namelist-band { margin-bottom: 12px; }
+.namelist-band td {
+  border: 1px solid #333; padding: 6px 10px; font-weight: 600; white-space: nowrap;
+}
+.namelist-band td:nth-child(3) { width: 45%; white-space: normal; }
+.namelist-band .nl-pax { text-align: right; font-weight: 400; }
+.namelist th, .namelist td { border: 1px solid #333; padding: 5px 8px; }
+.namelist thead th {
+  background: var(--accent-soft); font-size: 12px; letter-spacing: .02em; text-align: left;
+}
+.namelist .nl-sn { width: 46px; text-align: right; }
+.namelist .nl-class { width: 68px; }
+.namelist .nl-gender { width: 62px; text-align: center; }
+.namelist .nl-note { width: 26%; }
+.namelist .nl-empty { text-align: center; color: var(--muted); }
+.nl-sub { margin: -6px 0 10px; font-size: 12px; color: var(--muted); }
+
+@media print {
+  .namelist-band td, .namelist th, .namelist td { border: 1px solid #000; }
+  .namelist thead th { background: #fff; }
+  .namelist tbody tr { page-break-inside: avoid; }
+}

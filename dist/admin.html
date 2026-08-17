@@ -324,6 +324,34 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   .print-sheet table.list th { color: #333; }
 }
 
+
+/* ---- the school's namelist layout, on screen and on paper ---- */
+.namelist-band, .namelist {
+  width: 100%; border-collapse: collapse; font-size: 13px; background: #fff;
+}
+.namelist-band { margin-bottom: 12px; }
+.namelist-band td {
+  border: 1px solid #333; padding: 6px 10px; font-weight: 600; white-space: nowrap;
+}
+.namelist-band td:nth-child(3) { width: 45%; white-space: normal; }
+.namelist-band .nl-pax { text-align: right; font-weight: 400; }
+.namelist th, .namelist td { border: 1px solid #333; padding: 5px 8px; }
+.namelist thead th {
+  background: var(--accent-soft); font-size: 12px; letter-spacing: .02em; text-align: left;
+}
+.namelist .nl-sn { width: 46px; text-align: right; }
+.namelist .nl-class { width: 68px; }
+.namelist .nl-gender { width: 62px; text-align: center; }
+.namelist .nl-note { width: 26%; }
+.namelist .nl-empty { text-align: center; color: var(--muted); }
+.nl-sub { margin: -6px 0 10px; font-size: 12px; color: var(--muted); }
+
+@media print {
+  .namelist-band td, .namelist th, .namelist td { border: 1px solid #000; }
+  .namelist thead th { background: #fff; }
+  .namelist tbody tr { page-break-inside: avoid; }
+}
+
 </style>
 <style>
   .topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -555,7 +583,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
           <h3>Current members <span class="badge" id="memCount">0</span></h3>
           <div class="scrolly">
             <table class="list" id="memTable">
-              <thead><tr><th style="width:34px">#</th><th>Name</th><th>Class</th><th>ID</th><th></th></tr></thead>
+              <thead><tr><th style="width:46px">S/N</th><th>Class</th><th>Name</th><th>Gender</th><th></th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -985,7 +1013,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   var ORIGIN_FILE = 'file';
   var ORIGIN_ADDED = 'added';
 
-  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'TG',
+  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'TG', 'SN',
     'Origin', 'SourceName'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teachers', 'Level',
     'AutoMatch', 'AutoPG', 'AutoTG', 'AutoClasses'];
@@ -1005,6 +1033,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
      * their form class (SG1–SG6 across 1R1–1R6). */
     tg: ['tg', 'sg', 'subgroup', 'subjectgroup', 'tutorialgroup', 'tutgroup', 'subjgroup',
       'subgrp', 'subjgrp', 'sgroup'],
+    /* The school's own serial number for the student, kept so a printed
+     * namelist can carry the same S/N the office's list uses. */
+    sn: ['sn', 'no', 'serialno', 'sno', 'runningno', 'sequenceno'],
     origin: ['origin'],
     sourceName: ['sourcename'],
   };
@@ -1211,7 +1242,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     for (var r = 1; r < rows.length; r++) {
       var row = rows[r];
       if (!row || isBlankRow(row)) continue;
-      var rec = { id: '', name: '', class: '', level: '', gender: '', pg: '', tg: '',
+      var rec = { id: '', name: '', class: '', level: '', gender: '', pg: '', tg: '', sn: '',
         origin: '', sourceName: '', subjects: {} };
       Object.keys(STUDENT_FIELDS).forEach(function (f) {
         rec[f] = f in idx ? norm(row[idx[f]]) : '';
@@ -1318,12 +1349,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
     var keys = model.subjectKeys || [];
     ws = X.utils.aoa_to_sheet([STUDENT_HEADERS.concat(keys)].concat(model.students.map(function (s) {
-      return [s.id, s.name, s.class, s.level, s.gender, s.pg, s.tg, s.origin || ORIGIN_FILE,
+      return [s.id, s.name, s.class, s.level, s.gender, s.pg, s.tg, s.sn, s.origin || ORIGIN_FILE,
         s.sourceName === s.name ? '' : s.sourceName]
         .concat(keys.map(function (k) { return (s.subjects && s.subjects[k]) || ''; }));
     })));
     ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 5 },
-      { wch: 6 }, { wch: 8 }, { wch: 28 }]
+      { wch: 6 }, { wch: 5 }, { wch: 8 }, { wch: 28 }]
       .concat(keys.map(function () { return { wch: 12 }; }));
     X.utils.book_append_sheet(wb, ws, 'Students');
 
@@ -1846,7 +1877,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         id: id, name: name, class: cls,
         level: cell(row, 'level'),
         gender: cell(row, 'gender'), pg: normPg(cell(row, 'pg')),
-        tg: normTg(cell(row, 'tg')),
+        tg: normTg(cell(row, 'tg')), sn: cell(row, 'sn'),
         origin: ORIGIN_FILE, sourceName: name, subjects: subjects,
       });
     }
@@ -1985,6 +2016,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         if (imp.gender) m.gender = imp.gender;
         if (imp.pg) m.pg = imp.pg;
         if (imp.tg) m.tg = imp.tg;
+        if (imp.sn) m.sn = imp.sn;
         m.subjects = m.subjects || {};
         importedKeys.forEach(function (k) {
           if (imp.subjects[k]) m.subjects[k] = imp.subjects[k];
@@ -1995,7 +2027,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         var newId = freeId(imp.class);
         model.students.push({
           id: newId, name: imp.name, class: imp.class, level: imp.level,
-          gender: imp.gender, pg: imp.pg, tg: imp.tg || '', origin: ORIGIN_FILE,
+          gender: imp.gender, pg: imp.pg, tg: imp.tg || '', sn: imp.sn || '', origin: ORIGIN_FILE,
           sourceName: imp.sourceName || imp.name, subjects: imp.subjects,
         });
         addedIds.push(newId);
@@ -2068,7 +2100,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       if (s.id === loserId) loser = s;
     });
     if (!keeper || !loser || keeper === loser) return null;
-    ['class', 'level', 'gender', 'pg', 'tg', 'sourceName'].forEach(function (f) {
+    ['class', 'level', 'gender', 'pg', 'tg', 'sn', 'sourceName'].forEach(function (f) {
       if (!norm(keeper[f]) && norm(loser[f])) keeper[f] = loser[f];
     });
     keeper.subjects = keeper.subjects || {};
@@ -2351,6 +2383,99 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       student.pg + ' ' + (student.tg || '') + ' ' + subjectSummary(student, keys)).toLowerCase();
   }
 
+  /* ---- the printed namelist ------------------------------------------
+   * The school's own layout: a banner naming the level, the posting/subject
+   * group and the subject, with the head count on the right, then a bordered
+   * grid of S/N, Class, Name, Gender and a Note column to write in. Both pages
+   * render the same thing, so what a teacher sees is what prints. */
+
+  /* "3" and "SECONDARY 3" both read as "Sec 3"; anything else is left as the
+   * school wrote it. */
+  function levelLabel(level) {
+    var v = norm(level);
+    if (/^\d+$/.test(v)) return 'Sec ' + v;
+    var m = /^sec(?:ondary)?\s*([0-9]+[A-Za-z]?)$/i.exec(v);
+    if (m) return 'Sec ' + m[1];
+    m = /^pri(?:mary)?\s*([0-9]+[A-Za-z]?)$/i.exec(v);
+    if (m) return 'Pri ' + m[1];
+    return v;
+  }
+
+  function uniqueOf(list) {
+    var seen = {};
+    var out = [];
+    list.forEach(function (v) {
+      v = norm(v);
+      if (!v || seen[normKey(v)]) return;
+      seen[normKey(v)] = true;
+      out.push(v);
+    });
+    return out;
+  }
+
+  /* What the banner across the top of a namelist says. Taken from the class's
+   * rule where it has one, and read off its students where it does not. */
+  function namelistMeta(group, members) {
+    members = members || [];
+    function fromMembers(read, cap) {
+      var vals = uniqueOf(members.map(read));
+      return vals.length && vals.length <= (cap || 3) ? vals : [];
+    }
+    var pgs = splitList(group.autoPg);
+    if (!pgs.length) pgs = fromMembers(function (s) { return normPg(s.pg); });
+    var tgs = splitList(group.autoTg);
+    if (!tgs.length) tgs = fromMembers(function (s) { return normTg(s.tg); });
+    /* What the class teaches, in the most telling words available: the ticked
+     * group values ("SS/Geo", "POA G2") unless those are only a band and a
+     * school code ("G3 - K341"), in which case the subject label says more. */
+    var values = matchers(group).map(function (m) { return m.values.join(' / '); }).filter(Boolean);
+    var bandOnly = values.length && values.every(function (v) {
+      return /^G\d(\s*-\s*\S+)?$/i.test(norm(v));
+    });
+    var subject = (bandOnly || !values.length)
+      ? (norm(group.subject) || values.join(' · ') || norm(group.name) || group.code)
+      : values.join(' · ');
+    if (bandOnly && values.length) subject += ' ' + values.join(' · ');
+    /* The subject group usually leads with its posting group ("3 A" is PG 3,
+     * group A), so printing both would read "PG 3 3 A". */
+    var band;
+    if (pgs.length && tgs.length &&
+      tgs.every(function (t) { return normKey(t).indexOf(normKey(pgs[0])) === 0; })) {
+      band = 'PG ' + tgs.join(', ');
+    } else {
+      band = [pgs.length ? 'PG ' + pgs.join(', ') : '', tgs.join(', ')].filter(Boolean).join('  ');
+    }
+    return {
+      level: levelLabel(groupLevel(group, members)),
+      band: band,
+      subject: subject,
+      total: members.length,
+    };
+  }
+
+  /* One namelist as HTML — the same markup on screen and on paper. `esc` is
+   * passed in because each page has its own. */
+  function namelistHtml(group, members, esc, opts) {
+    opts = opts || {};
+    var meta = namelistMeta(group, members);
+    var rows = members.map(function (s, i) {
+      return '<tr><td class="nl-sn">' + esc(norm(s.sn) || (i + 1)) + '</td>' +
+        '<td class="nl-class">' + esc(s.class) + '</td>' +
+        '<td class="nl-name">' + esc(s.name) + '</td>' +
+        '<td class="nl-gender">' + esc(s.gender) + '</td>' +
+        '<td class="nl-note"></td></tr>';
+    }).join('') || '<tr><td colspan="5" class="nl-empty">No students in this class yet.</td></tr>';
+    return '<table class="namelist-band"><tbody><tr>' +
+      '<td>' + esc(meta.level) + '</td>' +
+      '<td>' + esc(meta.band) + '</td>' +
+      '<td class="nl-subject">' + esc(meta.subject) + '</td>' +
+      '<td class="nl-pax">Total pax: <strong>' + meta.total + '</strong></td>' +
+      '</tr></tbody></table>' +
+      (opts.note ? '<p class="nl-sub">' + esc(opts.note) + '</p>' : '') +
+      '<table class="namelist"><thead><tr><th>S/N</th><th>Class</th><th>Name</th>' +
+      '<th>Gender</th><th>Note</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
   /* Lookup structures shared by both pages. `data` is a model or NAMELIST_DATA. */
   function buildIndexes(data) {
     var studentsById = new Map();
@@ -2460,6 +2585,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     teacherNames: teacherNames,
     teacherLabel: teacherLabel,
     groupLevel: groupLevel,
+    levelLabel: levelLabel,
+    namelistMeta: namelistMeta,
+    namelistHtml: namelistHtml,
     groupsByLevelFor: groupsByLevelFor,
   };
 })();
@@ -2933,17 +3061,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   function printGroupSheet(group) {
     var members = ix.membersByGroup.get(group.code) || [];
-    var today = new Date().toLocaleDateString();
-    var rows = members.map(function (s, i) {
-      return '<tr><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) +
-        '</td><td>' + esc(s.id) + '</td><td style="width:30%"></td></tr>';
-    }).join('');
-    $('printSheet').innerHTML = '<div class="card"><h2>' +
-      esc((group.name || group.code) + (group.subject ? ' — ' + group.subject : '')) + '</h2>' +
-      '<p class="sub">' + (S.teacherNames(group).length ? 'Teacher: ' + esc(S.teacherNames(group).join(', ')) + ' · ' : '') +
-      members.length + ' student' + (members.length === 1 ? '' : 's') + ' · Printed ' + esc(today) + '</p>' +
-      '<table class="list"><thead><tr><th style="width:34px">#</th><th>Name</th><th>Class</th><th>ID</th><th>Remarks</th></tr></thead>' +
-      '<tbody>' + (rows || '<tr><td colspan="5">No students in this group.</td></tr>') + '</tbody></table></div>';
+    var note = (S.teacherNames(group).length ? S.teacherNames(group).join(', ') + ' · ' : '') +
+      (group.name || group.code) + ' · printed ' + new Date().toLocaleDateString();
+    // Exactly what the teacher page prints — one layout, defined once.
+    $('printSheet').innerHTML = '<div class="card">' +
+      S.namelistHtml(group, members, esc, { note: note }) + '</div>';
     document.body.classList.add('print-sheet-mode');
     window.print();
   }
@@ -4467,7 +4589,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var members = ix.membersByGroup.get(code) || [];
     $('memCount').textContent = members.length;
     $('memTable').querySelector('tbody').innerHTML = members.map(function (s, i) {
-      return '<tr data-id="' + esc(s.id) + '"><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.id) + '</td>' +
+      return '<tr data-id="' + esc(s.id) + '"><td>' + esc(S.norm(s.sn) || (i + 1)) + '</td>' +
+        '<td>' + esc(s.class) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.gender) + '</td>' +
         '<td class="actions"><button class="linklike danger" data-act="remove">Remove</button></td></tr>';
     }).join('');
     $('memEmpty').hidden = members.length > 0;

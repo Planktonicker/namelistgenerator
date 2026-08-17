@@ -236,7 +236,7 @@
           <h3>Current members <span class="badge" id="memCount">0</span></h3>
           <div class="scrolly">
             <table class="list" id="memTable">
-              <thead><tr><th style="width:34px">#</th><th>Name</th><th>Class</th><th>ID</th><th></th></tr></thead>
+              <thead><tr><th style="width:46px">S/N</th><th>Class</th><th>Name</th><th>Gender</th><th></th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -1081,17 +1081,11 @@
 
   function printGroupSheet(group) {
     var members = ix.membersByGroup.get(group.code) || [];
-    var today = new Date().toLocaleDateString();
-    var rows = members.map(function (s, i) {
-      return '<tr><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) +
-        '</td><td>' + esc(s.id) + '</td><td style="width:30%"></td></tr>';
-    }).join('');
-    $('printSheet').innerHTML = '<div class="card"><h2>' +
-      esc((group.name || group.code) + (group.subject ? ' — ' + group.subject : '')) + '</h2>' +
-      '<p class="sub">' + (S.teacherNames(group).length ? 'Teacher: ' + esc(S.teacherNames(group).join(', ')) + ' · ' : '') +
-      members.length + ' student' + (members.length === 1 ? '' : 's') + ' · Printed ' + esc(today) + '</p>' +
-      '<table class="list"><thead><tr><th style="width:34px">#</th><th>Name</th><th>Class</th><th>ID</th><th>Remarks</th></tr></thead>' +
-      '<tbody>' + (rows || '<tr><td colspan="5">No students in this group.</td></tr>') + '</tbody></table></div>';
+    var note = (S.teacherNames(group).length ? S.teacherNames(group).join(', ') + ' · ' : '') +
+      (group.name || group.code) + ' · printed ' + new Date().toLocaleDateString();
+    // Exactly what the teacher page prints — one layout, defined once.
+    $('printSheet').innerHTML = '<div class="card">' +
+      S.namelistHtml(group, members, esc, { note: note }) + '</div>';
     document.body.classList.add('print-sheet-mode');
     window.print();
   }
@@ -2615,7 +2609,8 @@
     var members = ix.membersByGroup.get(code) || [];
     $('memCount').textContent = members.length;
     $('memTable').querySelector('tbody').innerHTML = members.map(function (s, i) {
-      return '<tr data-id="' + esc(s.id) + '"><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td><td>' + esc(s.id) + '</td>' +
+      return '<tr data-id="' + esc(s.id) + '"><td>' + esc(S.norm(s.sn) || (i + 1)) + '</td>' +
+        '<td>' + esc(s.class) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.gender) + '</td>' +
         '<td class="actions"><button class="linklike danger" data-act="remove">Remove</button></td></tr>';
     }).join('');
     $('memEmpty').hidden = members.length > 0;

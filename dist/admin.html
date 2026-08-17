@@ -555,6 +555,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
       <div class="toolbar">
         <input type="search" id="teacherSearch" placeholder="Search teachers" style="min-width:220px">
         <span class="spacer"></span>
+        <button id="pasteTeachersBtn">Paste list…</button>
         <button class="primary" id="addTeacherBtn" title="Add a teacher">+</button>
       </div>
       <div class="card">
@@ -582,6 +583,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         <div class="toolbar">
           <button class="primary" id="srcFolderBtn">Choose school files folder…</button>
           <button id="srcFolderChangeBtn" hidden>Choose a different folder…</button>
+          <button id="changesBtn" hidden>What changed…</button>
           <span class="badge plain" id="srcFolderName" hidden></span>
           <span class="spacer"></span>
           <button id="addSecLevelsBtn">Add Sec 1–5</button>
@@ -724,6 +726,39 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         <button type="submit" class="primary">OK</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="pasteTeachersDialog">
+    <h2>Paste a staff list</h2>
+    <p class="small muted">One name per line — straight out of the staff spreadsheet or an email.
+      Names already in the list are skipped, and nothing is added until you press Add.</p>
+    <form class="fields" id="pasteTeachersForm">
+      <label for="pasteTeachersBox">Names</label>
+      <textarea id="pasteTeachersBox" rows="12" style="width:100%; font-family:inherit"
+        placeholder="Mrs Lim Bee Leng&#10;Mr Alvin Ong&#10;Mdm Halimah Yusof"></textarea>
+      <label></label>
+      <p class="hint" id="pasteTeachersNote" style="margin:0"></p>
+      <div class="actions">
+        <button type="button" id="pasteTeachersCancel">Cancel</button>
+        <button type="submit" class="primary">Add them</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="changesDialog">
+    <h2>What changed</h2>
+    <p class="small muted" id="changesSummary"></p>
+    <div class="toolbar" style="margin-bottom:8px">
+      <select id="changesKind"></select>
+      <span class="spacer"></span>
+      <button type="button" id="changesCopyBtn">Copy list</button>
+    </div>
+    <div class="scrolly" style="max-height:340px">
+      <table class="list" id="changesTable"><tbody></tbody></table>
+    </div>
+    <div class="actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px">
+      <button type="button" id="changesCloseBtn" class="primary">Close</button>
+    </div>
   </dialog>
 
   <dialog id="sourceDialog">
@@ -906,7 +941,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     /* Tutorial group and subject group are the same thing under two names:
      * the teaching group a student sits in for a subject, which need not be
      * their form class (SG1–SG6 across 1R1–1R6). */
-    tg: ['tg', 'sg', 'tutorialgroup', 'tutgroup', 'subjectgroup', 'subjgroup', 'sgroup'],
+    tg: ['tg', 'sg', 'subgroup', 'subjectgroup', 'tutorialgroup', 'tutgroup', 'subjgroup',
+      'subgrp', 'subjgrp', 'sgroup'],
     origin: ['origin'],
     sourceName: ['sourcename'],
   };
@@ -995,15 +1031,17 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
    * Spacing and case are noise; the label the school uses is not, so only the
    * former is normalised. */
   function normTg(v) {
-    var t = norm(v).replace(/\s+/g, '');
-    var m = /^([A-Za-z]{1,3})[-.]?(\d+[A-Za-z]?)$/.exec(t);
-    if (m) return m[1].toUpperCase() + m[2].toUpperCase();
-    return t.toUpperCase();
+    var t = norm(v).replace(/\s+/g, ' ').toUpperCase();
+    // "SG 3", "sg3" and "TG-2" are one label with a number: close it up.
+    var m = /^([A-Z]{1,3})\s*[-.]?\s*(\d+[A-Z]?)$/.exec(t);
+    if (m) return m[1] + m[2];
+    // Anything else ("2 A/BC", "1 A/CO") is the school's own code: leave it be.
+    return t;
   }
 
   /* Does this column hold tutorial/subject groups rather than a subject? */
   function isTgHeader(h) {
-    return /^(tg|sg|tutorial\s*group|subject\s*group|subj\s*group)\b/i.test(norm(h));
+    return /^(tg|sg|sub\s*group|sub\s*grp|tutorial\s*group|subject\s*group|subj\s*group)\b/i.test(norm(h));
   }
 
   /* "1, 2" -> ['1','2']; used for the fields the class dialog now ticks
@@ -1770,6 +1808,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   function applyLevelUpdate(model, imported, importedKeys) {
     importedKeys = importedKeys || [];
+    var changes = [];
     var classSet = {};
     var levelSet = {};
     imported.forEach(function (s) {
@@ -1843,6 +1882,28 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         m.sourceName = imp.name;
         if (wasFilesOwn) m.name = imp.name;
         m.origin = ORIGIN_FILE;   // adopted: the school's file now lists them
+        /* What the office actually changed about this student, so the admin
+         * can see it rather than take "159 updated" on trust. */
+        if (imp.class && normKey(imp.class) !== normKey(m.class)) {
+          changes.push({ kind: 'moved', name: m.name, from: m.class, to: imp.class,
+            text: m.name + ': class ' + m.class + ' → ' + imp.class });
+        }
+        if (imp.pg && normKey(imp.pg) !== normKey(m.pg)) {
+          changes.push({ kind: 'pg', name: m.name, from: m.pg, to: imp.pg,
+            text: m.name + ' (' + (imp.class || m.class) + '): PG ' + (m.pg || '—') + ' → ' + imp.pg });
+        }
+        if (imp.tg && normTg(imp.tg) !== normTg(m.tg)) {
+          changes.push({ kind: 'tg', name: m.name, from: m.tg, to: imp.tg,
+            text: m.name + ' (' + (imp.class || m.class) + '): TG/SG ' + (m.tg || '—') + ' → ' + imp.tg });
+        }
+        importedKeys.forEach(function (k) {
+          var before = norm(m.subjects && m.subjects[k]);
+          var after = norm(imp.subjects[k]);
+          if (normKey(before) === normKey(after)) return;
+          changes.push({ kind: 'subject', name: m.name, key: k, from: before, to: after,
+            text: m.name + ' (' + (imp.class || m.class) + '): ' + k + ' ' +
+              (before || '—') + ' → ' + (after || 'dropped') });
+        });
         if (imp.class) m.class = imp.class;
         if (imp.level) m.level = imp.level;
         if (imp.gender) m.gender = imp.gender;
@@ -1862,6 +1923,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
           sourceName: imp.sourceName || imp.name, subjects: imp.subjects,
         });
         addedIds.push(newId);
+        changes.push({ kind: 'added', name: imp.name, to: imp.class,
+          text: imp.name + ' (' + (imp.class || '—') + '): new in this file' });
         added++;
       }
     });
@@ -1887,6 +1950,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       keptAddedIds: keptAdded.map(function (s) { return s.id; }),
       missingIds: missing.map(function (s) { return s.id; }),
       missingLabels: missing.map(function (s) { return s.name + ' (' + s.class + ')'; }),
+      changes: changes.concat(missing.map(function (s) {
+        return { kind: 'missing', name: s.name, from: s.class,
+          text: s.name + ' (' + s.class + '): no longer in the file' };
+      })),
     };
   }
 
@@ -2067,6 +2134,57 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       added++;
     });
     return added;
+  }
+
+  /* Which subject column(s) a class is about: the columns its rule keys on,
+   * or failing that its subject label if that matches a column. */
+  function groupSubjectKeys(group, subjectKeys) {
+    var keys = matchers(group).map(function (m) { return m.key; });
+    if (keys.length) return keys;
+    var label = norm(group.subject);
+    if (!label) return [];
+    return (subjectKeys || []).filter(function (k) { return normKey(k) === normKey(label); });
+  }
+
+  /* Allocations no class covers: a student takes HIST G3, but is in no class
+   * built on the HIST column. Returned one row per subject+allocation, worst
+   * first, each listing the students concerned.
+   *
+   * A subject with NO class at all anywhere is not reported per student — that
+   * is "the classes have not been made yet", not a gap in an existing setup. */
+  function coverageGaps(model) {
+    var byStudent = {};      // studentId -> { subjectKey: true }
+    var covered = {};        // subjectKey -> true (some class exists for it)
+    var groupsByCode = {};
+    (model.groups || []).forEach(function (g) {
+      groupsByCode[g.code] = g;
+      groupSubjectKeys(g, model.subjectKeys).forEach(function (k) { covered[normKey(k)] = true; });
+    });
+    (model.memberships || []).forEach(function (m) {
+      var g = groupsByCode[m.groupCode];
+      if (!g) return;
+      byStudent[m.studentId] = byStudent[m.studentId] || {};
+      groupSubjectKeys(g, model.subjectKeys).forEach(function (k) {
+        byStudent[m.studentId][normKey(k)] = true;
+      });
+    });
+
+    var gaps = {};
+    (model.students || []).forEach(function (s) {
+      Object.keys(s.subjects || {}).forEach(function (key) {
+        var value = norm(s.subjects[key]);
+        if (!value) return;
+        if (!covered[normKey(key)]) return;             // no classes for this subject yet
+        if (byStudent[s.id] && byStudent[s.id][normKey(key)]) return;
+        var id = key + '|' + value;
+        if (!gaps[id]) gaps[id] = { key: key, value: value, students: [] };
+        gaps[id].students.push(s.id);
+      });
+    });
+    return Object.keys(gaps).map(function (k) { return gaps[k]; })
+      .sort(function (a, b) {
+        return b.students.length - a.students.length || cmp(a.key, b.key) || cmp(a.value, b.value);
+      });
   }
 
   /* Pick the most recently modified file whose name contains the pattern.
@@ -2251,6 +2369,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     parseAllocation: parseAllocation,
     discoverClasses: discoverClasses,
     classProblem: classProblem,
+    coverageGaps: coverageGaps,
+    groupSubjectKeys: groupSubjectKeys,
     matchers: matchers,
     matchersToString: matchersToString,
     derivePattern: derivePattern,
@@ -2469,6 +2589,68 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
    * not. Nothing destructive happens on its own: students who dropped off a
    * file are kept and reported, never auto-deleted. */
   var autoUpdateRan = false;
+  /* Everything the last refresh actually did, student by student, so an
+   * automatic update is inspectable instead of a number to be trusted. */
+  var lastChanges = [];
+
+  var CHANGE_LABELS = {
+    added: 'New students',
+    missing: 'No longer in the file',
+    moved: 'Moved class',
+    pg: 'PG changed',
+    tg: 'TG/SG changed',
+    subject: 'Subject group changed',
+  };
+
+  function changesShown() {
+    var kind = $('changesKind').value;
+    return lastChanges.filter(function (c) { return !kind || c.kind === kind; });
+  }
+
+  function renderChanges() {
+    var rows = changesShown();
+    $('changesTable').querySelector('tbody').innerHTML = rows.length
+      ? rows.map(function (c) {
+          return '<tr><td style="width:70px" class="small muted">' + esc(c.level) + '</td>' +
+            '<td>' + esc(c.text) + '</td></tr>';
+        }).join('')
+      : '<tr><td class="muted">Nothing of that kind.</td></tr>';
+  }
+
+  function openChangesDialog() {
+    var counts = {};
+    lastChanges.forEach(function (c) { counts[c.kind] = (counts[c.kind] || 0) + 1; });
+    var kinds = Object.keys(CHANGE_LABELS).filter(function (k) { return counts[k]; });
+    $('changesSummary').textContent = lastChanges.length
+      ? kinds.map(function (k) { return counts[k] + ' ' + CHANGE_LABELS[k].toLowerCase(); }).join(' · ')
+      : 'The files brought nothing new.';
+    $('changesKind').innerHTML = '<option value="">Everything (' + lastChanges.length + ')</option>' +
+      kinds.map(function (k) {
+        return '<option value="' + k + '">' + esc(CHANGE_LABELS[k]) + ' (' + counts[k] + ')</option>';
+      }).join('');
+    renderChanges();
+    $('changesDialog').showModal();
+  }
+
+  /* The last refresh's detail stays reachable from the tab that caused it. */
+  function refreshChangesBtn() {
+    $('changesBtn').hidden = !lastChanges.length;
+    $('changesBtn').textContent = 'What changed… (' + lastChanges.length + ')';
+  }
+  $('changesBtn').addEventListener('click', openChangesDialog);
+
+  $('changesKind').addEventListener('change', renderChanges);
+  $('changesCloseBtn').addEventListener('click', function () { $('changesDialog').close(); });
+  $('changesCopyBtn').addEventListener('click', async function () {
+    var text = changesShown().map(function (c) { return c.level + ' — ' + c.text; }).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('Copied — paste it into an email');
+    } catch (e) {
+      // file:// without clipboard permission: fall back to a selectable prompt
+      window.prompt('Copy this list:', text);
+    }
+  });
 
   function updateBar(text, buttonLabel, onClick) {
     $('updateCheckText').textContent = text;
@@ -2504,6 +2686,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
     var done = [];
     var skipped = [];
+    lastChanges = [];
     for (var i = 0; i < model.sources.length; i++) {
       var src = model.sources[i];
       var state = S.resolveSource(srcFiles, src);
@@ -2520,10 +2703,16 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         continue;
       }
       var rep = applyLevelImport(i, file, proposal, { silent: true });
-      if (rep) done.push(src.level + ': ' + rep.updated + ' updated, ' + rep.added + ' added' +
-        (rep.missingIds.length ? ', ' + rep.missingIds.length + ' no longer in the file' : ''));
+      if (rep) {
+        done.push(src.level + ': ' + rep.updated + ' updated, ' + rep.added + ' added' +
+          (rep.missingIds.length ? ', ' + rep.missingIds.length + ' no longer in the file' : ''));
+        lastChanges = lastChanges.concat((rep.changes || []).map(function (c) {
+          return { level: src.level, kind: c.kind, text: c.text };
+        }));
+      }
     }
 
+    refreshChangesBtn();
     if (done.length && dirHandle) await save({ silent: true });
 
     if (!done.length && !skipped.length) {
@@ -2533,9 +2722,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     }
     updateBar('Updated from the school files — ' + done.join(' · ') +
       (skipped.length ? '. Needs your attention: ' + skipped.join(', ') : ''),
-      skipped.length ? 'Open School files' : 'Check again',
+      skipped.length ? 'Open School files' : (lastChanges.length ? 'What changed…' : 'Check again'),
       skipped.length ? function () { switchToTab('sources'); } :
-        function () { autoUpdateFromSchoolFiles({ manual: true }); });
+        (lastChanges.length ? openChangesDialog :
+          function () { autoUpdateFromSchoolFiles({ manual: true }); }));
   }
 
   $('setupBackBtn').addEventListener('click', function () { show('startScreen'); });
@@ -2699,6 +2889,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     selectedIds.forEach(function (id) { if (!ix.studentsById.has(id)) selectedIds.delete(id); });
     candSelected.forEach(function (id) { if (!ix.studentsById.has(id)) candSelected.delete(id); });
 
+    refreshCoverageIssue();
     renderWarnings();
 
     fillOptions($('studentLevelFilter'), uniqueValues('level'), 'All levels');
@@ -2730,6 +2921,59 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   function addIssue(issue) {
     if (!openIssues.some(function (i) { return i.id === issue.id; })) openIssues.push(issue);
+  }
+
+  /* Students who take a subject but sit in no class for it — the failure that
+   * otherwise surfaces in week one, when a teacher's namelist is short. */
+  var coverageDismissed = false;
+
+  function refreshCoverageIssue() {
+    openIssues = openIssues.filter(function (i) { return i.id !== 'coverage'; });
+    if (coverageDismissed) return;   // detail rows are showing, or told to drop it
+    var gaps = S.coverageGaps(model);
+    if (!gaps.length) return;
+    var total = gaps.reduce(function (n, g) { return n + g.students.length; }, 0);
+    var top = gaps.slice(0, 3).map(function (g) { return g.value + ' ×' + g.students.length; }).join(', ');
+    addIssue({
+      id: 'coverage',
+      text: total + ' student allocation(s) have no class: ' + top +
+        (gaps.length > 3 ? ', and ' + (gaps.length - 3) + ' more' : '') + '.',
+      actions: [
+        { label: 'Show me', run: function () { showCoverageGaps(gaps); } },
+        { label: 'Ignore for now', danger: true, run: function () { coverageDismissed = true; } },
+      ],
+    });
+  }
+
+  function showCoverageGaps(gaps) {
+    gaps.slice(0, 20).forEach(function (g) {
+      addIssue({
+        id: 'coverage:' + g.key + '=' + g.value,
+        text: g.students.length + ' student(s) take ' + S.displayPair(g.key, g.value) +
+          ' but are in no class for it.',
+        actions: [
+          { label: 'Make a class for them', run: function () {
+            selectStudents(g.students);
+            pendingPrefill = { key: g.key, value: g.value };
+            pendingBulkAdd = true;
+            switchToTab('groups').then(function () { openGroupDialog(null); });
+          } },
+          { label: 'Show the students', run: function () {
+            selectStudents(g.students);
+            $('studentSearch').value = g.value;
+            switchToTab('students').then(renderStudents);
+          } },
+          { label: 'Ignore', danger: true },
+        ],
+      });
+    });
+    coverageDismissed = true;   // the summary is replaced by the detail
+  }
+
+  /* Mutated, never reassigned: the row-selection helpers hold this very Set. */
+  function selectStudents(ids) {
+    selectedIds.clear();
+    ids.forEach(function (id) { selectedIds.add(id); });
   }
 
   function renderWarnings() {
@@ -3287,6 +3531,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   var editingGroupCode = null;
   var pendingBulkAdd = false;
+  var pendingPrefill = null;   // {key, value} to tick when the dialog opens
 
   function subjectValueOptions(key) {
     var vals = new Set();
@@ -3584,6 +3829,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     dialogClasses = group ? S.splitList(group.autoClasses) : [];
     dialogRemoved = new Set();
     // Open on the column the class is already built around, so its ticks show.
+    var prefilled = pendingPrefill;
+    if (prefilled) {
+      dialogCriteria = [{ key: prefilled.key, values: [prefilled.value] }];
+      pendingPrefill = null;
+    }
     var live = dialogCriteria.filter(function (c) { return c.values.length; })[0];
     $('gfAutoKey').value = live ? live.key : '';
     if ($('gfAutoKey').value !== (live ? live.key : '')) $('gfAutoKey').value = '';
@@ -3597,6 +3847,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       else delete $(id).dataset.userEdited;
     });
     renderDialogMembers();
+    // A class opened from a coverage gap arrives with its rule already ticked,
+    // so name it as if those ticks had been made by hand.
+    if (prefilled) suggestGroupIdentity();
     updateMatchCount();
     $('groupDialog').showModal();
     $('gfTeacher').focus();
@@ -3857,6 +4110,50 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     }
     markDirty();
   }
+
+  /* Start of year: forty names arrive in one message, not one at a time. */
+  function pastedTeacherNames() {
+    var seen = {};
+    return $('pasteTeachersBox').value.split(/[\n\r]+/)
+      .map(function (line) {
+        // tolerate "1. Mrs Tan", "Mrs Tan (EL)" and trailing commas from a paste
+        return S.norm(line.replace(/^\s*\d+[.)]\s*/, '').replace(/[,;]+$/, ''));
+      })
+      .filter(function (name) {
+        if (!name) return false;
+        var k = S.normKey(name);
+        if (seen[k]) return false;
+        seen[k] = true;
+        return !allTeachers().some(function (t) { return S.normKey(t) === k; });
+      });
+  }
+
+  function renderPasteNote() {
+    var fresh = pastedTeacherNames();
+    var lines = $('pasteTeachersBox').value.split(/[\n\r]+/).filter(function (l) { return S.norm(l); }).length;
+    $('pasteTeachersNote').textContent = lines
+      ? fresh.length + ' new name(s) of ' + lines + ' line(s)' +
+        (lines - fresh.length ? ' — ' + (lines - fresh.length) + ' already in the list or repeated' : '')
+      : 'Nothing pasted yet.';
+  }
+
+  $('pasteTeachersBtn').addEventListener('click', function () {
+    $('pasteTeachersBox').value = '';
+    renderPasteNote();
+    $('pasteTeachersDialog').showModal();
+    $('pasteTeachersBox').focus();
+  });
+  $('pasteTeachersBox').addEventListener('input', renderPasteNote);
+  $('pasteTeachersCancel').addEventListener('click', function () { $('pasteTeachersDialog').close(); });
+  $('pasteTeachersForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var fresh = pastedTeacherNames();
+    $('pasteTeachersDialog').close();
+    if (!fresh.length) { toast('No new names in that list'); return; }
+    fresh.forEach(function (name) { model.teachers.push(name); });
+    markDirty();
+    toast(fresh.length + ' teacher(s) added — give them their classes with “Classes…”');
+  });
 
   function renderTeachers() {
     var q = $('teacherSearch').value.trim().toLowerCase();
@@ -4494,6 +4791,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     src.lastFile = file.name;
     src.lastImported = new Date().toISOString();
     markDirty();
+    lastChanges = (report.changes || []).map(function (c) {
+      return { level: src.level, kind: c.kind, text: c.text };
+    });
+    refreshChangesBtn();
     if (silent) return report;
     toast(src.level + ': ' + report.updated + ' updated, ' + report.added + ' added' +
       (autoPlacements ? ' (' + autoPlacements + ' auto-allocation' + (autoPlacements === 1 ? '' : 's') + ')' : '') +

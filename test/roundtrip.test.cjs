@@ -587,4 +587,62 @@ test('TG/SG is a field of its own, and old files are lifted onto it', () => {
   assert.strictEqual(S.normTg('TG-2'), 'TG2');
 });
 
+test('coverage: students taking a subject with no class for it', () => {
+  const model = {
+    students: [
+      { id: 'a', name: 'A', class: '1R1', subjects: { EL: 'EL G3', HIST: 'HIST G3' } },
+      { id: 'b', name: 'B', class: '1R1', subjects: { EL: 'EL G3', HIST: 'HIST G3' } },
+      { id: 'c', name: 'C', class: '1R2', subjects: { EL: 'EL G2', GEOG: 'GEOG G2' } },
+    ],
+    groups: [
+      { code: 'EL3', name: 'English G3', subject: 'EL', teachers: ['T'], autoMatch: 'EL=EL G3' },
+      { code: 'H3', name: 'History G3', subject: 'HIST', teachers: ['T'], autoMatch: 'HIST=HIST G3' },
+    ],
+    memberships: [
+      { studentId: 'a', groupCode: 'EL3' }, { studentId: 'b', groupCode: 'EL3' },
+      { studentId: 'a', groupCode: 'H3' },     // B is missing from History
+    ],
+    subjectKeys: ['EL', 'HIST', 'GEOG'],
+  };
+  const gaps = S.coverageGaps(model);
+  // B has no History class; C's EL G2 has no class either. GEOG has no classes
+  // at all, so it is "not set up yet" rather than a gap.
+  assert.deepStrictEqual(gaps.map((g) => g.key + ' ' + g.value + ' x' + g.students.length),
+    ['EL EL G2 x1', 'HIST HIST G3 x1']);
+  assert.deepStrictEqual(gaps[1].students, ['b']);
+
+  // putting B in the class closes the gap
+  model.memberships.push({ studentId: 'b', groupCode: 'H3' });
+  assert.deepStrictEqual(S.coverageGaps(model).map((g) => g.value), ['EL G2']);
+});
+
+test('an update reports what it changed, student by student', () => {
+  const model = {
+    students: [
+      { id: 'a', name: 'Alice', class: '1R1', level: '1', gender: 'F', pg: '3', tg: 'SG1',
+        origin: 'file', sourceName: 'Alice', subjects: { EL: 'EL G3' } },
+      { id: 'b', name: 'Bob', class: '1R1', level: '1', gender: 'M', pg: '2', tg: 'SG2',
+        origin: 'file', sourceName: 'Bob', subjects: { EL: 'EL G2' } },
+    ],
+    groups: [], memberships: [], subjectKeys: ['EL'], sources: [],
+  };
+  const res = S.applyLevelUpdate(model, [
+    { name: 'Alice', class: '1R2', level: '1', gender: 'F', pg: '1', tg: 'SG4', subjects: { EL: 'EL G2' } },
+    { name: 'Cara', class: '1R1', level: '1', gender: 'F', pg: '1', tg: 'SG3', subjects: { EL: 'EL G1' } },
+  ], ['EL']);
+  const kinds = res.changes.map((c) => c.kind);
+  assert.deepStrictEqual(kinds, ['moved', 'pg', 'tg', 'subject', 'added', 'missing']);
+  assert.ok(res.changes[0].text.includes('1R1 → 1R2'));
+  assert.ok(res.changes[3].text.includes('EL G3 → EL G2'));
+  assert.ok(res.changes[4].text.includes('Cara'));
+  assert.ok(res.changes[5].text.includes('Bob'));
+  // running the same file again reports nothing new (Bob is still absent from
+  // it, and stays reported until someone decides to remove him)
+  const again = S.applyLevelUpdate(model, [
+    { name: 'Alice', class: '1R2', level: '1', gender: 'F', pg: '1', tg: 'SG4', subjects: { EL: 'EL G2' } },
+    { name: 'Cara', class: '1R1', level: '1', gender: 'F', pg: '1', tg: 'SG3', subjects: { EL: 'EL G1' } },
+  ], ['EL']);
+  assert.deepStrictEqual(again.changes.map((c) => c.kind), ['missing']);
+});
+
 console.log(passed + ' tests passed');

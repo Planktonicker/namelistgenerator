@@ -45,7 +45,8 @@
     /* Tutorial group and subject group are the same thing under two names:
      * the teaching group a student sits in for a subject, which need not be
      * their form class (SG1–SG6 across 1R1–1R6). */
-    tg: ['tg', 'sg', 'tutorialgroup', 'tutgroup', 'subjectgroup', 'subjgroup', 'sgroup'],
+    tg: ['tg', 'sg', 'subgroup', 'subjectgroup', 'tutorialgroup', 'tutgroup', 'subjgroup',
+      'subgrp', 'subjgrp', 'sgroup'],
     origin: ['origin'],
     sourceName: ['sourcename'],
   };
@@ -134,15 +135,17 @@
    * Spacing and case are noise; the label the school uses is not, so only the
    * former is normalised. */
   function normTg(v) {
-    var t = norm(v).replace(/\s+/g, '');
-    var m = /^([A-Za-z]{1,3})[-.]?(\d+[A-Za-z]?)$/.exec(t);
-    if (m) return m[1].toUpperCase() + m[2].toUpperCase();
-    return t.toUpperCase();
+    var t = norm(v).replace(/\s+/g, ' ').toUpperCase();
+    // "SG 3", "sg3" and "TG-2" are one label with a number: close it up.
+    var m = /^([A-Z]{1,3})\s*[-.]?\s*(\d+[A-Z]?)$/.exec(t);
+    if (m) return m[1] + m[2];
+    // Anything else ("2 A/BC", "1 A/CO") is the school's own code: leave it be.
+    return t;
   }
 
   /* Does this column hold tutorial/subject groups rather than a subject? */
   function isTgHeader(h) {
-    return /^(tg|sg|tutorial\s*group|subject\s*group|subj\s*group)\b/i.test(norm(h));
+    return /^(tg|sg|sub\s*group|sub\s*grp|tutorial\s*group|subject\s*group|subj\s*group)\b/i.test(norm(h));
   }
 
   /* "1, 2" -> ['1','2']; used for the fields the class dialog now ticks
@@ -909,6 +912,7 @@
 
   function applyLevelUpdate(model, imported, importedKeys) {
     importedKeys = importedKeys || [];
+    var changes = [];
     var classSet = {};
     var levelSet = {};
     imported.forEach(function (s) {
@@ -982,6 +986,28 @@
         m.sourceName = imp.name;
         if (wasFilesOwn) m.name = imp.name;
         m.origin = ORIGIN_FILE;   // adopted: the school's file now lists them
+        /* What the office actually changed about this student, so the admin
+         * can see it rather than take "159 updated" on trust. */
+        if (imp.class && normKey(imp.class) !== normKey(m.class)) {
+          changes.push({ kind: 'moved', name: m.name, from: m.class, to: imp.class,
+            text: m.name + ': class ' + m.class + ' → ' + imp.class });
+        }
+        if (imp.pg && normKey(imp.pg) !== normKey(m.pg)) {
+          changes.push({ kind: 'pg', name: m.name, from: m.pg, to: imp.pg,
+            text: m.name + ' (' + (imp.class || m.class) + '): PG ' + (m.pg || '—') + ' → ' + imp.pg });
+        }
+        if (imp.tg && normTg(imp.tg) !== normTg(m.tg)) {
+          changes.push({ kind: 'tg', name: m.name, from: m.tg, to: imp.tg,
+            text: m.name + ' (' + (imp.class || m.class) + '): TG/SG ' + (m.tg || '—') + ' → ' + imp.tg });
+        }
+        importedKeys.forEach(function (k) {
+          var before = norm(m.subjects && m.subjects[k]);
+          var after = norm(imp.subjects[k]);
+          if (normKey(before) === normKey(after)) return;
+          changes.push({ kind: 'subject', name: m.name, key: k, from: before, to: after,
+            text: m.name + ' (' + (imp.class || m.class) + '): ' + k + ' ' +
+              (before || '—') + ' → ' + (after || 'dropped') });
+        });
         if (imp.class) m.class = imp.class;
         if (imp.level) m.level = imp.level;
         if (imp.gender) m.gender = imp.gender;
@@ -1001,6 +1027,8 @@
           sourceName: imp.sourceName || imp.name, subjects: imp.subjects,
         });
         addedIds.push(newId);
+        changes.push({ kind: 'added', name: imp.name, to: imp.class,
+          text: imp.name + ' (' + (imp.class || '—') + '): new in this file' });
         added++;
       }
     });
@@ -1026,6 +1054,10 @@
       keptAddedIds: keptAdded.map(function (s) { return s.id; }),
       missingIds: missing.map(function (s) { return s.id; }),
       missingLabels: missing.map(function (s) { return s.name + ' (' + s.class + ')'; }),
+      changes: changes.concat(missing.map(function (s) {
+        return { kind: 'missing', name: s.name, from: s.class,
+          text: s.name + ' (' + s.class + '): no longer in the file' };
+      })),
     };
   }
 
@@ -1206,6 +1238,57 @@
       added++;
     });
     return added;
+  }
+
+  /* Which subject column(s) a class is about: the columns its rule keys on,
+   * or failing that its subject label if that matches a column. */
+  function groupSubjectKeys(group, subjectKeys) {
+    var keys = matchers(group).map(function (m) { return m.key; });
+    if (keys.length) return keys;
+    var label = norm(group.subject);
+    if (!label) return [];
+    return (subjectKeys || []).filter(function (k) { return normKey(k) === normKey(label); });
+  }
+
+  /* Allocations no class covers: a student takes HIST G3, but is in no class
+   * built on the HIST column. Returned one row per subject+allocation, worst
+   * first, each listing the students concerned.
+   *
+   * A subject with NO class at all anywhere is not reported per student — that
+   * is "the classes have not been made yet", not a gap in an existing setup. */
+  function coverageGaps(model) {
+    var byStudent = {};      // studentId -> { subjectKey: true }
+    var covered = {};        // subjectKey -> true (some class exists for it)
+    var groupsByCode = {};
+    (model.groups || []).forEach(function (g) {
+      groupsByCode[g.code] = g;
+      groupSubjectKeys(g, model.subjectKeys).forEach(function (k) { covered[normKey(k)] = true; });
+    });
+    (model.memberships || []).forEach(function (m) {
+      var g = groupsByCode[m.groupCode];
+      if (!g) return;
+      byStudent[m.studentId] = byStudent[m.studentId] || {};
+      groupSubjectKeys(g, model.subjectKeys).forEach(function (k) {
+        byStudent[m.studentId][normKey(k)] = true;
+      });
+    });
+
+    var gaps = {};
+    (model.students || []).forEach(function (s) {
+      Object.keys(s.subjects || {}).forEach(function (key) {
+        var value = norm(s.subjects[key]);
+        if (!value) return;
+        if (!covered[normKey(key)]) return;             // no classes for this subject yet
+        if (byStudent[s.id] && byStudent[s.id][normKey(key)]) return;
+        var id = key + '|' + value;
+        if (!gaps[id]) gaps[id] = { key: key, value: value, students: [] };
+        gaps[id].students.push(s.id);
+      });
+    });
+    return Object.keys(gaps).map(function (k) { return gaps[k]; })
+      .sort(function (a, b) {
+        return b.students.length - a.students.length || cmp(a.key, b.key) || cmp(a.value, b.value);
+      });
   }
 
   /* Pick the most recently modified file whose name contains the pattern.
@@ -1390,6 +1473,8 @@
     parseAllocation: parseAllocation,
     discoverClasses: discoverClasses,
     classProblem: classProblem,
+    coverageGaps: coverageGaps,
+    groupSubjectKeys: groupSubjectKeys,
     matchers: matchers,
     matchersToString: matchersToString,
     derivePattern: derivePattern,

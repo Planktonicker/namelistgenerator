@@ -235,6 +235,7 @@ test/setup-flow.browser.mjs  first run asks which file is each level
 test/auto-update.browser.mjs  opening the editor refreshes levels by itself
 test/class-dialog.browser.mjs  teacher roster + building a class from criteria
 test/edit-class.browser.mjs    editing a class re-applies its rule; members untick
+test/coverage-changes.browser.mjs  coverage gaps, the change report, pasted staff
 ```
 
 Requires only Node (no npm packages):
@@ -252,6 +253,7 @@ browser test that needs Playwright installed:
 PLAYWRIGHT_CHROMIUM=/path/to/chromium node test/conflict.browser.mjs
 PLAYWRIGHT_CHROMIUM=... node test/class-dialog.browser.mjs
 PLAYWRIGHT_CHROMIUM=... node test/edit-class.browser.mjs
+PLAYWRIGHT_CHROMIUM=... node test/coverage-changes.browser.mjs
 PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \
   node test/allocation-format.browser.mjs
 PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \
@@ -296,9 +298,9 @@ Some levels split a subject into teaching groups that are **not** the form
 class: SG1–SG6 across 1R1–1R6, or TG1/TG2 within a level. The app treats TG and
 SG as the same thing — one field on the student, shown as **TG/SG**:
 
-- a `TG`, `SG`, `Tutorial Group` or `Subject Group` column in the school's file
-  is picked up automatically (correct it in the column review if a file names it
-  something else);
+- a `TG`, `SG`, `Sub Group`, `Tutorial Group` or `Subject Group` column in the
+  school's file is picked up automatically — and if a file names it something
+  else entirely, point the **TG / SG** row of the column review at it;
 - it appears as a column and a filter in Students and Group members, is
   searchable, and is its own tick row when you build a class;
 - it prints on the teacher's namelist whenever the class has one;
@@ -350,7 +352,10 @@ notes admins leave in spare slot columns.
 
 Teacher names live in the **Teachers** tab, so they are picked from a list when
 you build a class rather than retyped — no more two spellings of one person.
-Press **+** to add a name straight into the list; click any name to change it
+Press **+** to add a name straight into the list — or **Paste list…** at the
+start of the year, which takes a whole staff list pasted from a spreadsheet or
+an email (one name per line, numbering and stray commas tolerated) and adds only
+the names that are new. Click any name to change it
 (the app asks you to confirm before saving, since **renaming one updates every
 class it is tagged to**). **Classes…** on a teacher's row hands them their
 classes after the fact: pick the **subject** (and level, if there is more than
@@ -393,6 +398,22 @@ allocations — a `Year` column holding `2026`, a placeholder `N/A` — are **no
 turned into classes; they appear under **Check these** with *Create it anyway*
 and *Ignore*, so a mislabelled column is a decision rather than a phantom class
 in the list.
+
+### Checks the app runs for you
+
+**Nobody missing from a namelist.** The app compares what each student takes
+against the classes they are in, and reports allocations no class covers —
+*"78 student(s) take GEOG G3 but are in no class for it"*. Each gap comes with
+**Make a class for them** (opens the class dialog with that subject group
+already ticked, those students already selected, and the class already named),
+**Show the students**, or **Ignore**. A subject with no classes at all yet is
+not reported: that is "not set up", not a gap.
+
+**What the school's file changed.** Every refresh records what it did, student
+by student — moved class, PG changed, TG/SG changed, subject group changed, new
+in the file, no longer in the file. The update bar offers **What changed…**
+(also a button in the School files tab), which lists them, filters by kind, and
+copies the list so it can be pasted into an email to the teachers concerned.
 
 ### Two people editing at once
 

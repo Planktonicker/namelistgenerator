@@ -442,6 +442,20 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     gap: 8px; max-width: 620px;
   }
   .graph-row .ticks label { white-space: nowrap; }
+  /* The class picker: a scrolling list of levels, each with its own chips, and
+   * a summary line that stays put underneath. */
+  .tc-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  #tcTicks {
+    display: flex; flex-direction: column; gap: 14px;
+    max-height: 46vh; overflow-y: auto;
+    padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe;
+  }
+  .tc-level { display: flex; flex-direction: column; gap: 7px; }
+  .tc-key {
+    font-size: 12px; font-weight: 700; color: var(--accent);
+    padding-bottom: 3px; border-bottom: 1px solid var(--line);
+  }
+  .tc-body .hint { margin: 0; }
   #gfMembers td:first-child { width: 28px; }
   #gfMembers tr.out td:not(:first-child) { text-decoration: line-through; color: var(--muted); }
   .warn-row { display: flex; align-items: baseline; gap: 8px; }
@@ -835,9 +849,9 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         <select id="tcLevel" style="flex:0 0 150px"></select>
       </div>
       <label>Classes</label>
-      <div>
-        <div class="ticks" id="tcTicks" style="max-height:320px"></div>
-        <p class="hint" style="margin:6px 0 0" id="tcChosenNote"></p>
+      <div class="tc-body">
+        <div id="tcTicks"></div>
+        <p class="hint" id="tcChosenNote"></p>
       </div>
       <div class="actions">
         <button type="button" id="tcCancelBtn">Cancel</button>
@@ -5184,16 +5198,59 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     });
   }
 
+  /* Classes are listed under their level, not in one long mixed list: a
+   * teacher looking for their Sec 4 class should not read past Sec 1's. */
   function renderTcTicks() {
     var rows = tcRows();
-    renderTicks($('tcTicks'), rows.map(function (g) {
-      return {
-        value: g.code,
-        label: (g.name || g.code) + (g.level ? ' · ' + g.level : ''),
-        n: (ix.membersByGroup.get(g.code) || []).length,
-      };
-    }), tcChosen, renderTcNote);
+    var buckets = [];
+    var byLevel = {};
+    rows.forEach(function (g) {
+      var members = ix.membersByGroup.get(g.code) || [];
+      var lvl = S.norm(S.groupLevel(g, members));
+      var id = S.normKey(lvl) || '~';
+      if (!byLevel[id]) {
+        byLevel[id] = { level: lvl, groups: [] };
+        buckets.push(byLevel[id]);
+      }
+      byLevel[id].groups.push(g);
+    });
+    buckets.sort(function (a, b) {
+      if (!a.level !== !b.level) return a.level ? -1 : 1;   // unlevelled last
+      return S.cmp(a.level, b.level);
+    });
+
+    var box = $('tcTicks');
+    box.innerHTML = buckets.map(function (b, i) {
+      return '<div class="tc-level"><span class="tc-key">' +
+        esc(b.level ? S.levelLabel(b.level) : 'No level') + '</span>' +
+        '<div class="ticks" id="tcTicks' + i + '"></div></div>';
+    }).join('') || '<p class="empty">No class matches those filters.</p>';
+
+    buckets.forEach(function (b, i) {
+      renderTicks($('tcTicks' + i), b.groups.map(function (g) {
+        return {
+          value: g.code,
+          label: withoutLevel(g.name || g.code, b.level),
+          n: (ix.membersByGroup.get(g.code) || []).length,
+        };
+      }), tcChosen, renderTcNote);
+    });
     renderTcNote();
+  }
+
+  /* The heading already says the level, so a class called "Sec 4 POA G2" reads
+   * as "POA G2" underneath it. */
+  function withoutLevel(name, level) {
+    var out = S.norm(name);
+    [S.levelLabel(level), level].forEach(function (prefix) {
+      var p = S.norm(prefix);
+      if (!p) return;
+      if (S.normKey(out).indexOf(S.normKey(p)) === 0 && out.length > p.length) {
+        var rest = S.norm(out.slice(p.length).replace(/^[\s\-–·:]+/, ''));
+        if (rest) out = rest;
+      }
+    });
+    return out;
   }
 
   function renderTcNote() {
@@ -5205,6 +5262,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       ? 'Teaching ' + names.length + ': ' + names.join(', ')
       : 'No classes ticked yet.';
   }
+
 
   function openTeacherClasses(name) {
     tcTeacher = name;

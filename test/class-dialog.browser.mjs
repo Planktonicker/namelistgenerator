@@ -127,6 +127,24 @@ await page.locator('#teachersTable tbody tr', { hasText: 'Mdm Rahim' })
 await page.waitForSelector('#teacherClassesDialog[open]');
 check('a teacher can be given classes from their row',
   (await page.locator('#tcTicks label').count()) > 0);
+check('the classes are split by level straight away',
+  (await page.locator('#tcTicks .tc-level').count()) >= 1 &&
+  (await page.locator('#tcTicks .tc-key').first().innerText()).startsWith('Sec'),
+  (await page.locator('#tcTicks .tc-key').allInnerTexts()).join(' | '));
+check('a chip does not repeat the level its heading already says',
+  await page.evaluate(() => Array.from(document.querySelectorAll('#tcTicks .tc-level'))
+    .every((b) => {
+      const lvl = b.querySelector('.tc-key').textContent.trim();
+      return Array.from(b.querySelectorAll('label'))
+        .every((l) => l.textContent.trim().indexOf(lvl) !== 0);
+    })));
+check('the list scrolls in its own box — nothing overlaps the summary',
+  await page.evaluate(() => {
+    const list = document.getElementById('tcTicks');
+    const note = document.getElementById('tcChosenNote');
+    return getComputedStyle(list).overflowY === 'auto' &&
+      note.getBoundingClientRect().top >= list.getBoundingClientRect().bottom;
+  }));
 const allClasses = await page.locator('#tcTicks label').count();
 await page.selectOption('#tcSubject', 'English Language');
 const englishOnly = await page.locator('#tcTicks label').count();

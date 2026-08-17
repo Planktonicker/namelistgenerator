@@ -125,7 +125,18 @@ publish was more than a fortnight ago.
 
 **Reconnecting.** Chrome/Edge remember both folders between sessions, so after
 the first time the start screen offers **Reconnect to “…”** — a single
-permission click instead of navigating the shared drive again. The School files
+permission click instead of navigating the shared drive again.
+
+**Each copy of the app remembers its own folder.** Browsers keep folder handles
+for the whole `file://` origin, so a second copy of `admin.html` — a new year's
+folder, a test copy, a colleague's drive — used to open, reconnect to the
+*original* folder and save there, leaving the new folder's `namelist.xlsx`
+untouched and apparently broken. What a page remembers is now keyed to the
+folder that page was opened from: a copy starts with a clean slate and asks
+which folder it should use, and the original keeps its own. If the folder a page
+remembers is not the folder the page itself sits in, the start screen says so —
+that is legitimate (the data folder may live elsewhere), but it is also exactly
+what a half-finished copy looks like. The School files
 button does the same for the sources folder.
 
 **Changing folder later.** Neither choice is permanent. **Choose a different
@@ -473,7 +484,12 @@ and the tutorial groups are the ones those students are actually in.
 | **PG** | tick one or more posting groups (always 1, 2, 3 — a file that writes `PG2` is read as `2`). Behind **More filters…** at every level, because the subject group already says which posting group a student is in |
 | **TG / SG** | tick tutorial / subject groups — the teaching group a student sits in, which need not follow the form class (SG3 can span 1R1–1R6). Hidden for levels whose files have no such column |
 | **Form class** | tick the form classes |
-| **Members** | everyone currently on the namelist, each with a tick — untick anyone who should not be there |
+| **Members** | everyone currently on the namelist, each with a tick — untick anyone who should not be there, or **Tick all** / **Untick all** in one go |
+
+**Subject** is a list, like teachers: **New…** adds one (*History*), every later
+class picks it from the dropdown, and **Remove** takes a wrong one off the list
+without touching the classes already labelled with it. The list is stored in
+`namelist.xlsx` alongside the teachers.
 
 The class has **one name**, and that name is also its code — there is no second
 field to keep in step. A code only appears when it says something the name does

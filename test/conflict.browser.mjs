@@ -8,7 +8,8 @@
  *   PLAYWRIGHT_CHROMIUM=/path/to/chromium node test/conflict.browser.mjs
  */
 import { chromium } from 'playwright';
-import { readFileSync } from 'node:fs';
+import { readFileSync, copyFileSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -206,6 +207,29 @@ const drift = await page.evaluate(() => {
   };
 });
 check('DRIFT: a direct Excel edit is NOT reflected in data.js', drift.dataJsHas === false);
+
+/* ---- a second copy of the app, in another folder ----
+ * The browser keeps folder handles for the whole file:// origin, so a copy of
+ * the app used to reconnect to the ORIGINAL copy's data folder and save there,
+ * leaving the new folder's namelist.xlsx untouched. What a copy remembers is
+ * now keyed to the folder the page itself was opened from. */
+const copy = join(mkdtempSync(join(tmpdir(), 'namelist-')), 'copy');
+mkdirSync(copy, { recursive: true });
+copyFileSync(join(repo, 'dist/admin.html'), join(copy, 'admin.html'));
+const page2 = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+page2.on('pageerror', (e) => errors.push('copy: ' + String(e)));
+await page2.goto('file://' + copy + '/admin.html');
+await page2.waitForTimeout(300);
+const keyHere = await page.evaluate(() => window.__handleKeyForTest('dataDir'));
+const keyThere = await page2.evaluate(() => window.__handleKeyForTest('dataDir'));
+check('a copy remembers its folder under its own key', keyHere !== keyThere,
+  keyHere.split('/').slice(-2).join('/') + '  vs  ' + keyThere.split('/').slice(-2).join('/'));
+check('and the key names the folder the page was opened from',
+  keyThere.indexOf('/copy/') !== -1 && keyHere.indexOf('/dist/') !== -1);
+check('so the copy asks for a folder instead of reusing the first one\'s',
+  (await page2.locator('#reconnectBtn').isHidden()) &&
+  (await page2.locator('#openFolderBtn').innerText()).includes('Open data folder'));
+await page2.close();
 
 check('no JS errors', errors.length === 0);
 if (errors.length) console.log(errors);

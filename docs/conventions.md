@@ -165,6 +165,10 @@ The cleanest way, and the one to plan for:
 5. **Copy `namelist.html` and `admin.html`** from `dist/` if a newer build
    exists, and keep the teacher shortcut pointing at `namelist.html`.
 
+Each copy of `admin.html` remembers its own data folder, so the new year's copy
+opens asking which folder to use rather than quietly saving into last year's.
+The first time you open it, choose the new folder.
+
 Keeping last year's `namelist.xlsx` and re-pointing the levels at new files also
 works — students are matched by name and moved to their new class and level —
 but the teaching classes from last year would then need clearing out by hand.

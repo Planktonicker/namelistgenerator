@@ -474,6 +474,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         <button class="primary bigbtn" id="reconnectBtn" hidden></button>
         <button class="primary bigbtn" id="openFolderBtn">Open data folder…</button>
       </p>
+      <p class="hint" id="folderHint" hidden></p>
     </div>
   </section>
 
@@ -610,7 +611,9 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
           </div>
           <div class="scrolly">
             <table class="list selectable" id="memCandidates">
-              <thead><tr><th class="checkcol"></th><th>Name</th><th>Class</th><th>PG</th><th>TG/SG</th><th>Subjects</th></tr></thead>
+              <thead><tr><th class="checkcol"><input type="checkbox" id="memCandCheckAll"
+                title="Select every student shown"></th><th>Name</th><th>Class</th><th>PG</th>
+                <th>TG/SG</th><th>Subjects</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -784,10 +787,18 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         </div>
         <div style="display:flex; gap:8px; margin-top:6px">
           <button type="button" id="gfManageMembers">Add students…</button>
+          <button type="button" class="linklike" id="gfMembersAll">Tick all</button>
+          <button type="button" class="linklike" id="gfMembersNone">Untick all</button>
         </div>
       </div>
       <label for="gfName">Class name *</label><input type="text" id="gfName" required placeholder="e.g. English G3 1R1">
-      <label for="gfSubject">Subject label</label><input type="text" id="gfSubject" list="subjectList" placeholder="shown on the teacher page">
+      <label for="gfSubject">Subject</label>
+      <div style="display:flex; gap:8px; align-items:center">
+        <select id="gfSubject" style="flex:1"></select>
+        <button type="button" id="gfSubjectNew" title="Add a subject to the list">New…</button>
+        <button type="button" class="linklike danger" id="gfSubjectDrop"
+          title="Take this subject off the list">Remove</button>
+      </div>
       <label id="gfCodeToggleLabel" hidden></label>
       <div id="gfCodeToggleRow" hidden>
         <button type="button" class="linklike" id="gfCodeBtn">Advanced — class code…</button>
@@ -1029,6 +1040,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     'AutoMatch', 'AutoPG', 'AutoTG', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
   var TEACHER_HEADERS = ['Name'];
+  var SUBJECT_HEADERS = ['Subject'];
   var SOURCE_HEADERS = ['Level', 'SourceFile', 'FilePattern', 'LastFile', 'LastImported', 'Mapping'];
 
   var STUDENT_FIELDS = {
@@ -1154,7 +1166,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   }
 
   function emptyModel() {
-    return { students: [], groups: [], memberships: [], subjectKeys: [], sources: [], teachers: [] };
+    return { students: [], groups: [], memberships: [], subjectKeys: [], sources: [],
+      teachers: [], subjectLabels: [] };
   }
 
   /* Match a header row against field aliases; returns { field: columnIndex }.
@@ -1321,6 +1334,21 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       });
     });
     model.teachers.sort(cmp);
+
+    /* Subject labels are a list of their own, so a subject typed once can be
+     * picked from then on — and any label already on a class belongs in it. */
+    var subjectSheet = findSheet(wb, 'Subjects');
+    if (subjectSheet) {
+      model.subjectLabels = readTable(subjectSheet, { name: ['subject', 'name'] }, ['name'], 'Subjects', [])
+        .map(function (r) { return r.name; });
+    }
+    model.groups.forEach(function (g) {
+      var label = norm(g.subject);
+      if (label && !model.subjectLabels.some(function (e) { return normKey(e) === normKey(label); })) {
+        model.subjectLabels.push(label);
+      }
+    });
+    model.subjectLabels.sort(cmp);
     return { model: model, warnings: warnings.concat(validateModel(model)) };
   }
 
@@ -1387,6 +1415,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     })));
     ws['!cols'] = [{ wch: 34 }];
     X.utils.book_append_sheet(wb, ws, 'Teachers');
+
+    ws = X.utils.aoa_to_sheet([SUBJECT_HEADERS].concat((model.subjectLabels || []).map(function (t) {
+      return [t];
+    })));
+    ws['!cols'] = [{ wch: 30 }];
+    X.utils.book_append_sheet(wb, ws, 'Subjects');
 
     ws = X.utils.aoa_to_sheet([SOURCE_HEADERS].concat((model.sources || []).map(function (s) {
       return [s.level, s.file, s.pattern, s.lastFile, s.lastImported, s.mapping];
@@ -2629,6 +2663,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     mergeStudents: mergeStudents,
     renameTeacher: renameTeacher,
     TEACHER_HEADERS: TEACHER_HEADERS,
+    SUBJECT_HEADERS: SUBJECT_HEADERS,
     STUDENT_HEADERS: STUDENT_HEADERS,
     GROUP_HEADERS: GROUP_HEADERS,
     MEMBERSHIP_HEADERS: MEMBERSHIP_HEADERS,
@@ -2713,6 +2748,22 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   var IDB_NAME = 'namelist-admin';
   var IDB_STORE = 'handles';
 
+  /* Handles are remembered per COPY of the app, not per browser. Every
+   * file:// page shares one IndexedDB, so a folder copied to a new place used
+   * to open, reconnect to the ORIGINAL folder, and quietly save there — the
+   * new folder's namelist.xlsx never changing. The key carries the folder this
+   * page itself was opened from, so each copy remembers its own. */
+  function pageFolderUrl() {
+    return String(location.href).replace(/[?#].*$/, '').replace(/[^/]*$/, '');
+  }
+
+  function pageFolderName() {
+    var parts = pageFolderUrl().replace(/\/$/, '').split('/');
+    try { return decodeURIComponent(parts[parts.length - 1] || ''); } catch (e) { return parts.pop() || ''; }
+  }
+
+  function handleKey(key) { return key + '@' + pageFolderUrl(); }
+
   function idb() {
     return new Promise(function (resolve, reject) {
       var req = indexedDB.open(IDB_NAME, 1);
@@ -2732,15 +2783,15 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     });
   }
   function rememberHandle(key, handle) {
-    return idbTx('readwrite', function (store) { return store.put(handle, key); })
+    return idbTx('readwrite', function (store) { return store.put(handle, handleKey(key)); })
       .catch(function () { /* private mode or IDB unavailable — not fatal */ });
   }
   function recallHandle(key) {
-    return idbTx('readonly', function (store) { return store.get(key); })
+    return idbTx('readonly', function (store) { return store.get(handleKey(key)); })
       .catch(function () { return undefined; });
   }
   function forgetHandle(key) {
-    return idbTx('readwrite', function (store) { return store.delete(key); })
+    return idbTx('readwrite', function (store) { return store.delete(handleKey(key)); })
       .catch(function () { /* ignore */ });
   }
   function isUsableHandle(h) {
@@ -2823,6 +2874,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var btn = $('reconnectBtn');
     btn.textContent = 'Reconnect to “' + saved.name + '”';
     btn.hidden = false;
+    var here = pageFolderName();
+    if (here && S.normKey(here) !== S.normKey(saved.name)) {
+      // Legitimate (the data folder may live elsewhere) but worth saying out
+      // loud, since it is what a half-finished copy looks like.
+      $('folderHint').textContent = 'This page is in “' + here + '”, and it last used the data folder “' +
+        saved.name + '”. Choose a different folder if that is not where this copy should save.';
+      $('folderHint').hidden = false;
+    }
     $('openFolderBtn').classList.remove('primary');
     $('openFolderBtn').textContent = 'Choose a different folder…';
     btn.addEventListener('click', async function () {
@@ -4330,7 +4389,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var label = (lead ? lead + ' ' : '') + base + (qualifier ? ' ' + qualifier : '');
     if (!$('gfName').dataset.userEdited) $('gfName').value = label;
     if (!$('gfCode').dataset.userEdited) $('gfCode').value = $('gfName').value;
-    if (!$('gfSubject').dataset.userEdited && key) $('gfSubject').value = key;
+    if (!$('gfSubject').dataset.userEdited && key) {
+      // Offer the column as the subject when it is already on the list; never
+      // invent an entry from a column heading.
+      var known = allSubjects().filter(function (l) { return S.normKey(l) === S.normKey(key); })[0];
+      if (known) fillSubjectSelect(known);
+    }
   }
 
   function renderLevelTicks() {
@@ -4352,8 +4416,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       suggestGroupIdentity();
     }, { single: true });
   }
-  ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
+  ['gfCode', 'gfName'].forEach(function (id) {
     $(id).addEventListener('input', function () { $(id).dataset.userEdited = '1'; });
+  });
+  $('gfSubject').addEventListener('change', function () {
+    $('gfSubject').dataset.userEdited = '1';
+    $('gfSubjectDrop').hidden = !S.norm($('gfSubject').value);
   });
   $('gfName').addEventListener('input', function () {
     // One name, one code — unless the admin has deliberately set a code.
@@ -4448,6 +4516,61 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     addDialogTeacher();
   });
 
+  /* Subjects are a list of their own, like teachers: typed once, picked from
+   * then on, and removable when one was a mistake. */
+  function allSubjects() {
+    var seen = {};
+    var out = [];
+    (model.subjectLabels || []).concat(model.groups.map(function (g) { return g.subject; }))
+      .forEach(function (t) {
+        var v = S.norm(t);
+        var k = S.normKey(v);
+        if (!v || seen[k]) return;
+        seen[k] = true;
+        out.push(v);
+      });
+    return out.sort(S.cmp);
+  }
+
+  function fillSubjectSelect(current) {
+    var cur = S.norm(current === undefined ? $('gfSubject').value : current);
+    var options = allSubjects();
+    if (cur && !options.some(function (o) { return S.normKey(o) === S.normKey(cur); })) options.push(cur);
+    $('gfSubject').innerHTML = '<option value="">— none —</option>' + options.map(function (o) {
+      return '<option value="' + esc(o) + '">' + esc(o) + '</option>';
+    }).join('');
+    $('gfSubject').value = cur;
+    $('gfSubjectDrop').hidden = !cur;
+  }
+
+  $('gfSubjectNew').addEventListener('click', function () {
+    var name = S.norm(prompt('Subject (e.g. History):') || '');
+    if (!name) return;
+    if (!allSubjects().some(function (t) { return S.normKey(t) === S.normKey(name); })) {
+      model.subjectLabels = (model.subjectLabels || []).concat([name]);
+      markDirty();
+    }
+    $('gfSubject').dataset.userEdited = '1';
+    fillSubjectSelect(name);
+  });
+
+  $('gfSubjectDrop').addEventListener('click', function () {
+    var cur = S.norm($('gfSubject').value);
+    if (!cur) return;
+    var used = model.groups.filter(function (g) {
+      return S.normKey(g.subject) === S.normKey(cur) && g.code !== editingGroupCode;
+    });
+    if (used.length && !confirm('"' + cur + '" is the subject of ' + used.length +
+      ' other class(es).\n\nOK — take it off the list (those classes keep the label)\n' +
+      'Cancel — leave it alone')) return;
+    model.subjectLabels = (model.subjectLabels || []).filter(function (t) {
+      return S.normKey(t) !== S.normKey(cur);
+    });
+    markDirty();
+    fillSubjectSelect('');
+    toast('"' + cur + '" removed from the subject list');
+  });
+
   function fillTeacherSelect(selected) {
     var avail = allTeachers().filter(function (t) {
       return !dialogTeachers.some(function (d) { return S.normKey(d) === S.normKey(t); });
@@ -4481,6 +4604,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         esc(s.id) + '"' + (out ? '' : ' checked') + ' title="Untick to take ' + esc(s.name) +
         ' out of this class"></td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td></tr>';
     }).join('');
+    $('gfMembersAll').hidden = !members.length;
+    $('gfMembersNone').hidden = !members.length;
     var keeping = members.length - dialogRemoved.size;
     $('gfMemberNote').textContent = members.length
       ? 'Untick anyone who should not be on this namelist — ' + keeping + ' of ' + members.length +
@@ -4494,6 +4619,15 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (b.checked) dialogRemoved.delete(b.dataset.id);
     else dialogRemoved.add(b.dataset.id);
     b.closest('tr').classList.toggle('out', !b.checked);
+    renderDialogMembers();
+  });
+
+  $('gfMembersAll').addEventListener('click', function () {
+    dialogRemoved.clear();
+    renderDialogMembers();
+  });
+  $('gfMembersNone').addEventListener('click', function () {
+    (ix.membersByGroup.get(editingGroupCode) || []).forEach(function (s) { dialogRemoved.add(s.id); });
     renderDialogMembers();
   });
 
@@ -4513,7 +4647,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       (pendingBulkAdd ? 'New class for ' + selectedIds.size + ' selected student(s)' : 'Add class');
     $('gfCode').value = group ? group.code : '';
     $('gfName').value = group ? (group.name || group.code) : '';
-    $('gfSubject').value = group ? group.subject : '';
+    fillSubjectSelect(group ? group.subject : '');
     showCodeRow(!!group && S.normKey(group.code) !== S.normKey(group.name || ''));
     dialogTeachers = group ? S.teacherNames(group).slice() : [];
     renderTeacherChips();
@@ -4733,12 +4867,25 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (candidates.length > MEM_CAND_CAP) {
       $('memCandMore').textContent = 'Showing first ' + MEM_CAND_CAP + ' of ' + candidates.length + ' — use search or the filters.';
     }
+    var allShown = shown.length > 0 && shown.every(function (s) { return candSelected.has(s.id); });
+    $('memCandCheckAll').checked = allShown;
+    $('memCandCheckAll').indeterminate = !allShown &&
+      shown.some(function (s) { return candSelected.has(s.id); });
     $('memAddSelBtn').disabled = candSelected.size === 0;
     $('memAddSelBtn').textContent = candSelected.size ? 'Add selected (' + candSelected.size + ')' : 'Add selected';
     $('memAddAllBtn').disabled = candidates.length === 0;
   }
 
   wireRowSelection($('memCandidates').querySelector('tbody'), candSelected, renderMemberships);
+
+  /* Same gesture as the Students tab: one box takes everything on show. */
+  $('memCandidates').querySelector('thead').addEventListener('change', function (ev) {
+    if (ev.target.id !== 'memCandCheckAll') return;
+    var shown = memCandidates().slice(0, MEM_CAND_CAP);
+    if (ev.target.checked) shown.forEach(function (s) { candSelected.add(s.id); });
+    else shown.forEach(function (s) { candSelected.delete(s.id); });
+    renderMemberships();
+  });
 
   $('memTable').addEventListener('click', function (ev) {
     var btn = ev.target.closest('button[data-act="remove"]');
@@ -5691,6 +5838,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   /* Test hooks: let automated tests drive the editor without folder access. */
   window.__testModel = function () { return model; };
+  window.__handleKeyForTest = handleKey;   // proves each copy remembers its own folder
   window.__loadModelForTest = function (m) {
     model = m;
     model.subjectKeys = model.subjectKeys || [];

@@ -77,6 +77,32 @@ await page.locator('.tabs button[data-tab="memberships"]').click();
 await page.selectOption('#memGroupSelect', 'S1 HIST test');
 check('an unchanged rule does not undo manual removals',
   parseInt(await page.locator('#memCount').innerText(), 10) === filled - 2);
+// select-all, both in the dialog and in the Group members candidate list
+await page.locator('.tabs button[data-tab="groups"]').click();
+await page.locator('#groupsTable tbody tr').first().locator('button[data-act="edit"]').click();
+await page.click('#gfMembersNone');
+check('Untick all clears every member at once',
+  (await page.locator('#gfMemberNote').innerText()).includes('0 of'),
+  await page.locator('#gfMemberNote').innerText());
+await page.click('#gfMembersAll');
+check('Tick all puts them back',
+  /(\d+) of \1 ticked/.test(await page.locator('#gfMemberNote').innerText()),
+  await page.locator('#gfMemberNote').innerText());
+await page.click('#groupCancelBtn');
+
+await page.locator('.tabs button[data-tab="memberships"]').click();
+await page.waitForTimeout(200);
+await page.fill('#memSearch', '1R2');
+await page.waitForTimeout(200);
+const shown = await page.locator('#memCandidates tbody tr').count();
+await page.locator('#memCandCheckAll').check();
+check('one box selects every candidate shown (' + shown + ')',
+  (await page.locator('#memAddSelBtn').innerText()).includes('(' + shown + ')'),
+  await page.locator('#memAddSelBtn').innerText());
+await page.locator('#memCandCheckAll').uncheck();
+check('and clears them again',
+  (await page.locator('#memAddSelBtn').innerText()) === 'Add selected');
+
 check('no JS errors', errors.length === 0, errors.slice(0, 2).join('|'));
 if (process.env.SHOT) {
   await page.locator('.tabs button[data-tab="groups"]').click();

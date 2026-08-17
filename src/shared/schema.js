@@ -33,6 +33,7 @@
     'AutoMatch', 'AutoPG', 'AutoTG', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
   var TEACHER_HEADERS = ['Name'];
+  var SUBJECT_HEADERS = ['Subject'];
   var SOURCE_HEADERS = ['Level', 'SourceFile', 'FilePattern', 'LastFile', 'LastImported', 'Mapping'];
 
   var STUDENT_FIELDS = {
@@ -158,7 +159,8 @@
   }
 
   function emptyModel() {
-    return { students: [], groups: [], memberships: [], subjectKeys: [], sources: [], teachers: [] };
+    return { students: [], groups: [], memberships: [], subjectKeys: [], sources: [],
+      teachers: [], subjectLabels: [] };
   }
 
   /* Match a header row against field aliases; returns { field: columnIndex }.
@@ -325,6 +327,21 @@
       });
     });
     model.teachers.sort(cmp);
+
+    /* Subject labels are a list of their own, so a subject typed once can be
+     * picked from then on — and any label already on a class belongs in it. */
+    var subjectSheet = findSheet(wb, 'Subjects');
+    if (subjectSheet) {
+      model.subjectLabels = readTable(subjectSheet, { name: ['subject', 'name'] }, ['name'], 'Subjects', [])
+        .map(function (r) { return r.name; });
+    }
+    model.groups.forEach(function (g) {
+      var label = norm(g.subject);
+      if (label && !model.subjectLabels.some(function (e) { return normKey(e) === normKey(label); })) {
+        model.subjectLabels.push(label);
+      }
+    });
+    model.subjectLabels.sort(cmp);
     return { model: model, warnings: warnings.concat(validateModel(model)) };
   }
 
@@ -391,6 +408,12 @@
     })));
     ws['!cols'] = [{ wch: 34 }];
     X.utils.book_append_sheet(wb, ws, 'Teachers');
+
+    ws = X.utils.aoa_to_sheet([SUBJECT_HEADERS].concat((model.subjectLabels || []).map(function (t) {
+      return [t];
+    })));
+    ws['!cols'] = [{ wch: 30 }];
+    X.utils.book_append_sheet(wb, ws, 'Subjects');
 
     ws = X.utils.aoa_to_sheet([SOURCE_HEADERS].concat((model.sources || []).map(function (s) {
       return [s.level, s.file, s.pattern, s.lastFile, s.lastImported, s.mapping];
@@ -1633,6 +1656,7 @@
     mergeStudents: mergeStudents,
     renameTeacher: renameTeacher,
     TEACHER_HEADERS: TEACHER_HEADERS,
+    SUBJECT_HEADERS: SUBJECT_HEADERS,
     STUDENT_HEADERS: STUDENT_HEADERS,
     GROUP_HEADERS: GROUP_HEADERS,
     MEMBERSHIP_HEADERS: MEMBERSHIP_HEADERS,

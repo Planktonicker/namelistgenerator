@@ -34,6 +34,8 @@ function buildSampleModel() {
   const model = S.emptyModel();
   model.subjectKeys = ['EL', 'MT', 'HMT', 'MA', 'SCI', 'HIST', 'GEOG', 'LIT'];
   model.teachers = [...new Set([...EL_TEACHERS, ...MA_TEACHERS, ...BAND_GROUPS.flatMap((g) => g.teachers)])].sort();
+  model.subjectLabels = ['English Language', 'Geography', 'History', 'Literature',
+    'Mathematics', 'Science'];
   model.sources = [
     {
       level: 'Sec 1', file: 'Sec 1 Subject Allocation_14 Jan.xlsx',

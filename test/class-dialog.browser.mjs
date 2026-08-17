@@ -240,6 +240,35 @@ check('Clear the map puts every branch back to the start',
   (await page.locator('#gfValueRow').isHidden()));
 await page.click('#groupCancelBtn');
 
+// the subject label is a list you add to, pick from, and prune
+await page.click('#addGroupBtn');
+check('the subject is picked from a list, not typed',
+  (await page.locator('#gfSubject').evaluate((e) => e.tagName)) === 'SELECT' &&
+  (await page.locator('#gfSubject option').allInnerTexts()).includes('History'),
+  (await page.locator('#gfSubject option').allInnerTexts()).join(','));
+page.removeAllListeners('dialog');
+page.on('dialog', (d) => (d.type() === 'prompt' ? d.accept('Computing') : d.accept()));
+await page.click('#gfSubjectNew');
+await page.waitForTimeout(150);
+check('a new subject is added and selected',
+  (await page.locator('#gfSubject').inputValue()) === 'Computing' &&
+  (await page.locator('#gfSubject option').allInnerTexts()).includes('Computing'));
+await page.click('#gfSubjectDrop');
+await page.waitForTimeout(150);
+check('and a wrong one can be taken off the list',
+  !(await page.locator('#gfSubject option').allInnerTexts()).includes('Computing') &&
+  (await page.locator('#gfSubject').inputValue()) === '');
+await page.selectOption('#gfSubject', 'History');
+check('an existing subject is picked in one go',
+  (await page.locator('#gfSubject').inputValue()) === 'History');
+await page.click('#groupCancelBtn');
+
+// the same subject list is offered to the next class
+await page.click('#addGroupBtn');
+check('the list survives into the next class',
+  (await page.locator('#gfSubject option').allInnerTexts()).includes('History'));
+await page.click('#groupCancelBtn');
+
 check('renaming a teacher updates their classes',
   (await page.locator('#groupsTable').innerText()).includes('Mr Cheng Xin Ze'));
 check('no JS errors', errors.length === 0, errors.slice(0, 2).join('|'));

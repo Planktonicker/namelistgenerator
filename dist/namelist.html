@@ -342,7 +342,18 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   .group-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
   .group-head .left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .group-head h3 { margin: 0; font-size: 16px; }
-  #searchBox { width: 100%; max-width: 520px; font-size: 18px; padding: 13px 16px; }
+  #teacherSelect { width: 100%; max-width: 520px; font-size: 18px; padding: 12px 14px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .filters select, .filters input { padding: 9px 12px; }
+  .filters input { flex: 1; min-width: 220px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .chips button {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 6px 13px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .chips button:hover { border-color: var(--accent); }
+  .chips button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .chips button .count { color: var(--muted); font-weight: 400; margin-left: 6px; }
   .result-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 12px; }
   .result-title h2 { font-size: 21px; margin: 0; }
   .tagline { color: var(--muted); font-size: 13px; margin-top: 2px; }
@@ -372,25 +383,31 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   <div id="app" hidden>
     <div class="tabs no-print">
       <button id="tabTeacherBtn" class="active">My namelists</button>
-      <button id="tabStudentBtn">Find a student</button>
+      <button id="tabAllBtn">All classes</button>
     </div>
 
     <section id="teacherTab">
       <div class="card no-print">
-        <label for="searchBox"><h2>Type your name to see your namelists</h2></label>
-        <input type="search" id="searchBox" placeholder="e.g. Mrs Lim" autocomplete="off">
-        <div class="suggestions" id="suggestions"></div>
-        <div class="teacher-chips" id="teacherChips"></div>
+        <label for="teacherSelect"><h2>Choose your name to see your namelists</h2></label>
+        <select id="teacherSelect"></select>
+        <div class="chips" id="myClassChips"></div>
       </div>
       <div id="teacherResults"></div>
     </section>
 
-    <section id="studentTab" hidden>
+    <section id="allTab" hidden>
       <div class="card no-print">
-        <label for="studentBox"><h2>Search for a student</h2></label>
-        <input type="search" id="studentBox" placeholder="Name, class, ID or tag (e.g. MA G3)" autocomplete="off">
+        <h2>Every class in the school</h2>
+        <div class="filters">
+          <select id="allLevel"></select>
+          <select id="allSubject"></select>
+          <select id="allTeacher"></select>
+          <input type="search" id="allSearch" placeholder="Class, teacher or a student's name" autocomplete="off">
+          <button type="button" id="allClear">Clear</button>
+        </div>
+        <p class="muted small" id="allCount" style="margin:10px 0 0"></p>
       </div>
-      <div id="studentResults"></div>
+      <div id="allResults"></div>
     </section>
   </div>
 
@@ -1977,73 +1994,90 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
 
   /* ---------- tabs ---------- */
   $('tabTeacherBtn').addEventListener('click', function () { switchTab('teacher'); });
-  $('tabStudentBtn').addEventListener('click', function () { switchTab('student'); });
+  $('tabAllBtn').addEventListener('click', function () { switchTab('all'); });
   function switchTab(which) {
     $('teacherTab').hidden = which !== 'teacher';
-    $('studentTab').hidden = which !== 'student';
+    $('allTab').hidden = which !== 'all';
     $('tabTeacherBtn').classList.toggle('active', which === 'teacher');
-    $('tabStudentBtn').classList.toggle('active', which === 'student');
+    $('tabAllBtn').classList.toggle('active', which === 'all');
   }
 
-  /* ---------- teacher view ---------- */
-  var searchBox = $('searchBox');
+  /* ---------- my namelists ---------- */
   var selectedTeacher = null;
+  var selectedClass = '';    // '' = every class this teacher takes
 
-  function renderChips() {
-    var chips = $('teacherChips');
+  function fillTeacherSelect() {
+    $('teacherSelect').innerHTML = '<option value="">— choose your name —</option>' +
+      ix.teachers.map(function (t) {
+        return '<option value="' + esc(t) + '">' + esc(t) + '</option>';
+      }).join('');
     if (!ix.teachers.length) {
-      chips.innerHTML = '<p class="muted">No teachers are assigned to any group yet.</p>';
-      return;
+      $('teacherSelect').innerHTML = '<option value="">— no teachers tagged to any class yet —</option>';
     }
-    chips.innerHTML = '';
-    ix.teachers.forEach(function (t) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = t;
-      b.addEventListener('click', function () { selectTeacher(t); });
-      chips.appendChild(b);
-    });
   }
 
-  function renderSuggestions() {
-    var q = searchBox.value.trim().toLowerCase();
-    var box = $('suggestions');
+  /* One chip per class the chosen teacher takes; clicking narrows the page to
+   * that class, so a teacher with eight namelists is not scrolling. */
+  function renderMyChips() {
+    var box = $('myClassChips');
     box.innerHTML = '';
-    $('teacherChips').style.display = q ? 'none' : '';
-    if (!q) return;
-    var matches = ix.teachers.filter(function (t) { return t.toLowerCase().indexOf(q) !== -1; });
-    matches.slice(0, 12).forEach(function (t, i) {
+    if (!selectedTeacher) return;
+    var groups = ix.groupsByTeacher.get(selectedTeacher) || [];
+    if (!groups.length) return;
+    var total = groups.reduce(function (n, g) {
+      return n + (ix.membersByGroup.get(g.code) || []).length;
+    }, 0);
+    function chip(code, label, count) {
       var b = document.createElement('button');
       b.type = 'button';
-      b.textContent = t;
-      if (i === 0) b.classList.add('hilite');
-      b.addEventListener('click', function () { selectTeacher(t); });
+      b.className = selectedClass === code ? 'on' : '';
+      b.innerHTML = esc(label) + '<span class="count">' + count + '</span>';
+      b.addEventListener('click', function () {
+        selectedClass = selectedClass === code ? '' : code;
+        renderMyChips();
+        renderTeacherResults();
+      });
       box.appendChild(b);
+    }
+    chip('', groups.length === 1 ? 'This class' : 'All ' + groups.length + ' classes', total);
+    groups.forEach(function (g) {
+      chip(g.code, g.name || g.code, (ix.membersByGroup.get(g.code) || []).length);
     });
-    if (!matches.length) box.innerHTML = '<p class="muted small">No teacher matches “' + esc(searchBox.value.trim()) + '”.</p>';
   }
 
   function selectTeacher(name) {
-    selectedTeacher = name;
-    searchBox.value = name;
-    $('suggestions').innerHTML = '';
-    $('teacherChips').style.display = 'none';
-    try { localStorage.setItem('namelist.lastTeacher', name); } catch (e) { /* private mode */ }
+    selectedTeacher = name || null;
+    selectedClass = '';
+    $('teacherSelect').value = name || '';
+    try {
+      if (name) localStorage.setItem('namelist.lastTeacher', name);
+    } catch (e) { /* private mode */ }
+    renderMyChips();
     renderTeacherResults();
   }
+
+  $('teacherSelect').addEventListener('change', function () {
+    selectTeacher($('teacherSelect').value);
+  });
 
   function renderTeacherResults() {
     var out = $('teacherResults');
     if (!selectedTeacher) { out.innerHTML = ''; return; }
-    var groups = ix.groupsByTeacher.get(selectedTeacher) || [];
-    var byLevel = S.groupsByLevelFor(ix, selectedTeacher);
+    var all = ix.groupsByTeacher.get(selectedTeacher) || [];
+    var groups = selectedClass ? all.filter(function (g) { return g.code === selectedClass; }) : all;
+    var byLevel = S.groupsByLevelFor(ix, selectedTeacher).map(function (bucket) {
+      return {
+        level: bucket.level,
+        groups: bucket.groups.filter(function (g) { return !selectedClass || g.code === selectedClass; }),
+      };
+    }).filter(function (bucket) { return bucket.groups.length; });
     var total = 0;
     var flat = [];   // print-button index -> group
     var html = '<div class="result-title"><h2>' + esc(selectedTeacher) + '</h2>' +
       '<span class="no-print">' +
       (groups.length ? '<button class="primary" id="printAllBtn">Print all namelists</button>' : '') +
       '</span></div>';
-    if (!groups.length) {
+    if (!all.length) {
       html += '<div class="card"><p class="empty">No classes are assigned to this name yet.</p></div>';
     }
 
@@ -2112,63 +2146,160 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     return '<span class="muted small">with ' + esc(others.join(', ')) + '</span>';
   }
 
-  searchBox.addEventListener('input', function () {
-    selectedTeacher = null;
-    $('teacherResults').innerHTML = '';
-    renderSuggestions();
-  });
-  searchBox.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Enter') {
-      var first = $('suggestions').querySelector('button');
-      if (first) selectTeacher(first.textContent);
-    }
-  });
-
-  renderChips();
+  fillTeacherSelect();
   try {
     var last = localStorage.getItem('namelist.lastTeacher');
     if (last && ix.groupsByTeacher.has(last)) selectTeacher(last);
   } catch (e) { /* private mode */ }
 
-  /* ---------- student lookup ---------- */
-  $('studentBox').addEventListener('input', renderStudentResults);
-  function renderStudentResults() {
-    var q = $('studentBox').value.trim().toLowerCase();
-    var out = $('studentResults');
-    if (!q) { out.innerHTML = ''; return; }
-    var matches = data.students.filter(function (s) {
-      return S.studentSearchText(s, data.subjectKeys || []).indexOf(q) !== -1;
-    });
-    if (!matches.length) {
-      out.innerHTML = '<div class="card"><p class="empty">No student matches “' + esc($('studentBox').value.trim()) + '”.</p></div>';
-      return;
-    }
-    var html = '';
-    matches.sort(S.byClassThenName).slice(0, 30).forEach(function (s) {
-      var groups = ix.groupsByStudent.get(s.id) || [];
-      html += '<div class="card"><div class="group-head"><div class="left"><h3>' + esc(s.name) + '</h3>' +
-        '<span class="badge plain">' + esc(s.class) + '</span>' +
-        (s.pg ? '<span class="badge plain">PG' + esc(s.pg) + '</span>' : '') +
-        '<span class="muted small">' + esc(s.id) + '</span></div></div>' +
-        (function () {
-          var summary = S.subjectSummary(s, data.subjectKeys || []);
-          return summary ? '<p class="tagline">' + esc(summary) + '</p>' : '';
-        })();
-      if (groups.length) {
-        html += '<table class="list"><thead><tr><th>Subject</th><th>Group</th><th>Teacher</th></tr></thead><tbody>';
-        groups.forEach(function (g) {
-          html += '<tr><td>' + esc(g.subject) + '</td><td>' + esc(g.name || g.code) + '</td><td>' +
-            esc(S.teacherNames(g).join(', ')) + '</td></tr>';
-        });
-        html += '</tbody></table>';
-      } else {
-        html += '<p class="empty">Not in any teaching group.</p>';
-      }
-      html += '</div>';
-    });
-    if (matches.length > 30) html += '<p class="muted small">Showing first 30 of ' + matches.length + ' matches — keep typing to narrow down.</p>';
-    out.innerHTML = html;
+  /* ---------- every class ----------
+   * The same namelists, browsable rather than searched by name: a teacher
+   * covering a colleague's class, or checking which group a student ended up
+   * in, does not need to know whose class it is. */
+  var expanded = {};
+
+  function fillFilter(el, values, allLabel) {
+    var cur = el.value;
+    el.innerHTML = '<option value="">' + esc(allLabel) + '</option>' + values.map(function (v) {
+      return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+    }).join('');
+    el.value = cur;
   }
+
+  function fillAllFilters() {
+    var levels = [], subjects = [];
+    data.groups.forEach(function (g) {
+      var lvl = S.groupLevel(g, ix.membersByGroup.get(g.code) || []);
+      if (lvl && levels.indexOf(lvl) === -1) levels.push(lvl);
+      if (S.norm(g.subject) && subjects.indexOf(g.subject) === -1) subjects.push(g.subject);
+    });
+    fillFilter($('allLevel'), levels.sort(S.cmp), 'Every level');
+    fillFilter($('allSubject'), subjects.sort(S.cmp), 'Every subject');
+    fillFilter($('allTeacher'), ix.teachers, 'Every teacher');
+  }
+
+  /* A query can name a student as well as a class — the class they are in is
+   * what the teacher is after either way. */
+  function studentMatches(q) {
+    if (!q) return null;
+    var keys = data.subjectKeys || [];
+    return data.students.filter(function (s) {
+      return S.studentSearchText(s, keys).indexOf(q) !== -1;
+    });
+  }
+
+  function renderAllResults() {
+    var q = $('allSearch').value.trim().toLowerCase();
+    var level = $('allLevel').value;
+    var subject = $('allSubject').value;
+    var teacher = $('allTeacher').value;
+    var hits = studentMatches(q) || [];
+    var viaStudent = {};
+    hits.forEach(function (s) {
+      (ix.groupsByStudent.get(s.id) || []).forEach(function (g) {
+        (viaStudent[g.code] = viaStudent[g.code] || []).push(s.name);
+      });
+    });
+
+    function passesFilters(g) {
+      var members = ix.membersByGroup.get(g.code) || [];
+      if (level && S.normKey(S.groupLevel(g, members)) !== S.normKey(level)) return false;
+      if (subject && S.normKey(g.subject) !== S.normKey(subject)) return false;
+      if (teacher && !S.teacherNames(g).some(function (t) { return t === teacher; })) return false;
+      return true;
+    }
+    function namesClass(g) {
+      return (g.name + ' ' + g.code + ' ' + g.subject + ' ' +
+        S.teacherNames(g).join(' ')).toLowerCase().indexOf(q) !== -1;
+    }
+    var pool = data.groups.filter(passesFilters);
+    var rows = pool;
+    var byStudent = false;
+    if (q) {
+      rows = pool.filter(namesClass);
+      /* Only when nothing is called that: then the query is read as a student,
+       * and the classes they are in are what the teacher wanted. */
+      if (!rows.length) {
+        rows = pool.filter(function (g) { return viaStudent[g.code]; });
+        byStudent = rows.length > 0;
+      }
+    }
+    rows = rows.sort(function (a, b) {
+      return S.cmp(S.groupLevel(a, ix.membersByGroup.get(a.code) || []),
+        S.groupLevel(b, ix.membersByGroup.get(b.code) || [])) ||
+        S.cmp(a.subject, b.subject) || S.cmp(a.name || a.code, b.name || b.code);
+    });
+
+    $('allCount').textContent = rows.length
+      ? rows.length + ' class' + (rows.length === 1 ? '' : 'es') + ' · ' +
+        rows.reduce(function (n, g) { return n + (ix.membersByGroup.get(g.code) || []).length; }, 0) +
+        ' student places' + (byStudent ? ' — classes that student is in' : '')
+      : 'No class matches those filters.';
+
+    var flat = [];
+    var html = rows.map(function (g) {
+      var members = ix.membersByGroup.get(g.code) || [];
+      var gi = flat.push(g) - 1;
+      var open = !!expanded[g.code];
+      var lvl = S.groupLevel(g, members);
+      var teachers = S.teacherNames(g);
+      var out = '<div class="card"><div class="group-head">' +
+        '<div class="left"><h3>' + esc(g.name || g.code) + '</h3>' +
+        (lvl ? '<span class="badge plain">' + esc(levelLabel(lvl)) + '</span>' : '') +
+        (g.subject ? '<span class="badge plain">' + esc(g.subject) + '</span>' : '') +
+        '<span class="badge">' + members.length + ' student' + (members.length === 1 ? '' : 's') + '</span>' +
+        (teachers.length ? '<span class="muted small">' + esc(teachers.join(', ')) + '</span>'
+          : '<span class="muted small">no teacher tagged</span>') +
+        (byStudent && viaStudent[g.code] ? '<span class="muted small">has ' +
+          esc(viaStudent[g.code].slice(0, 3).join(', ')) + '</span>' : '') +
+        '</div><span class="no-print">' +
+        '<button data-open="' + esc(g.code) + '">' + (open ? 'Hide list' : 'Show list') + '</button> ' +
+        '<button class="print-group" data-gi="' + gi + '">Print</button></span></div>';
+      if (open) {
+        if (members.length) {
+          var withTg = members.some(function (s) { return S.norm(s.tg); });
+          out += '<table class="list"><thead><tr><th style="width:40px">#</th><th>Name</th><th>Class</th>' +
+            (withTg ? '<th>TG/SG</th>' : '') + '<th>Student ID</th></tr></thead><tbody>';
+          members.forEach(function (s, i) {
+            out += '<tr><td>' + (i + 1) + '</td><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td>' +
+              (withTg ? '<td>' + esc(s.tg || '') + '</td>' : '') + '<td>' + esc(s.id) + '</td></tr>';
+          });
+          out += '</tbody></table>';
+        } else {
+          out += '<p class="empty">No students in this class yet.</p>';
+        }
+      }
+      return out + '</div>';
+    }).join('');
+
+    var box = $('allResults');
+    box.innerHTML = html;
+    box.querySelectorAll('button[data-open]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        expanded[b.dataset.open] = !expanded[b.dataset.open];
+        renderAllResults();
+      });
+    });
+    box.querySelectorAll('button.print-group').forEach(function (b) {
+      var g = flat[+b.dataset.gi];
+      b.addEventListener('click', function () {
+        printGroups([g], S.teacherNames(g).join(', '));
+      });
+    });
+  }
+
+  ['allLevel', 'allSubject', 'allTeacher'].forEach(function (id) {
+    $(id).addEventListener('change', renderAllResults);
+  });
+  $('allSearch').addEventListener('input', renderAllResults);
+  $('allClear').addEventListener('click', function () {
+    ['allLevel', 'allSubject', 'allTeacher'].forEach(function (id) { $(id).value = ''; });
+    $('allSearch').value = '';
+    renderAllResults();
+  });
+
+  fillAllFilters();
+  renderAllResults();
 })();
 </script>
 </body>

@@ -131,10 +131,13 @@ picker relists the new folder on the spot and each level keeps the file name it
 was pointed at.
 
 **Adding a student the school's file doesn't have yet.** Use **Add student** in
-the Students tab (a late transfer, a new enrolment). Fill in the details —
-class, gender, PG and each subject band; the student ID is suggested
-automatically as the next free slot in that class register (`1R1-27`). Such
-students are:
+the Students tab (a late transfer, a new enrolment). **The level is answered
+first and decides the rest**: class, gender, PG, TG/SG and the subject list are
+all dropdowns drawn from that level's students, and each subject offers only the
+groups that level runs — so a Sec 4 student is never offered 1R1, and Sec 1 is
+never offered POA. A class that does not exist yet can still be typed in through
+**Other…**, and the student ID is suggested as the next free slot in that class
+register (`1R1-27`). Such students are:
 
 - stored **only in the app's own `namelist.xlsx`** — the school's official file
   is never written to;
@@ -188,9 +191,13 @@ wall — the app works fine with read-only access to that folder.
 
 ### Daily use
 
-- **Teachers:** double-click the shortcut → type your name → your namelists appear.
-  **Print** any single group or all of them; printouts include a Remarks column for
-  marking. "Find a student" looks up any student by name, class, ID or tag.
+- **Teachers:** double-click the shortcut → **pick your name from the list** → your
+  classes appear as chips; click one to see just that namelist, or leave it on *All*
+  to see them all. **Print** any single class or all of them; printouts carry a
+  Remarks column for marking. The second tab, **All classes**, lists every class in
+  the school with filters for level, subject and teacher — useful when covering a
+  colleague — and its search box also accepts a student's name, which brings back
+  the classes that student is in.
 - **Admins:** open `admin.html` → pick the folder (Chrome asks once per session) →
   edit → **Save**. The moment you save, every teacher who reopens the page sees the
   update. Any group's namelist can also be printed from the Group members tab.
@@ -236,6 +243,8 @@ test/auto-update.browser.mjs  opening the editor refreshes levels by itself
 test/class-dialog.browser.mjs  teacher roster + building a class from criteria
 test/edit-class.browser.mjs    editing a class re-applies its rule; members untick
 test/coverage-changes.browser.mjs  coverage gaps, the change report, pasted staff
+test/teacher-page.browser.mjs  teacher dropdown, class chips, the All classes tab
+test/add-student.browser.mjs   level-first add-student dialog
 ```
 
 Requires only Node (no npm packages):
@@ -254,6 +263,8 @@ PLAYWRIGHT_CHROMIUM=/path/to/chromium node test/conflict.browser.mjs
 PLAYWRIGHT_CHROMIUM=... node test/class-dialog.browser.mjs
 PLAYWRIGHT_CHROMIUM=... node test/edit-class.browser.mjs
 PLAYWRIGHT_CHROMIUM=... node test/coverage-changes.browser.mjs
+PLAYWRIGHT_CHROMIUM=... node test/teacher-page.browser.mjs
+PLAYWRIGHT_CHROMIUM=... node test/add-student.browser.mjs
 PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \
   node test/allocation-format.browser.mjs
 PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \
@@ -381,19 +392,28 @@ already teach, and says what they will be teaching before you press OK.
 A class can be taught by several teachers; each of them sees it under their own
 name, with the others noted as co-teachers.
 
-Everything else about a class is ticked from what is actually in the data, with
-a running count of how many students the ticks currently cover. **The Level
-comes first and filters the rest**: choose Sec 4 and only Sec 4's form classes,
-subject groups, posting groups and subject columns are offered — Sec 1's 1R1–1R6
-are not in the way.
+The rest of a class is built as a **drill-down**: answer the level, and the
+subjects that level runs appear; pick a subject, and its groups appear; and so
+on down the branches, each one drawn only from what the answers above leave
+possible, with a count on every option and a running total underneath. Nothing
+you don't need is on screen:
+
+```
+LEVEL     ( ) Every level  (•) Sec 4  ( ) Sec 1
+             └ SUBJECT  ( ) Any subject  (•) POA  ( ) DT  ( ) Sci PC …
+                  └ GROUP    [x] POA G2   [ ] POA
+                       └ TG / SG  [ ] SG1  [x] SG2  [ ] SG3 …
+                            └ More filters…      (form class, PG)
+```
+
 
 | Field | What it does |
 |---|---|
 | **Level** | groups the class under that heading on the teacher page, *and* keeps it to that level's students |
 | **Must be taking** | pick a column, tick its groups — several ticks in one column mean "either" (`HIST G3` or `HIST G2`), and a second column narrows further (`TG = TG2`). A column with nothing ticked means *anyone taking that subject*, and the count line says so |
-| **PG** | tick one or more posting groups (always 1, 2, 3 — a file that writes `PG2` is read as `2`). Shown outright for Sec 1–2; from Sec 3 it sits behind **Additional options**, since upper-secondary subject groups already carry the posting group and ticking it there usually narrows a class by mistake |
-| **TG / SG** | tick tutorial / subject groups — the teaching group a student sits in, which need not follow the form class (SG3 can span 1R1–1R6). Hidden for schools whose files have no such column |
-| **Limit to classes** | tick the form classes |
+| **PG** | tick one or more posting groups (always 1, 2, 3 — a file that writes `PG2` is read as `2`) |
+| **TG / SG** | tick tutorial / subject groups — the teaching group a student sits in, which need not follow the form class (SG3 can span 1R1–1R6). Hidden for levels whose files have no such column |
+| **Form class** | tick the form classes |
 | **Members** | everyone currently on the namelist, each with a tick — untick anyone who should not be there |
 
 The class has **one name**, and that name is also its code — there is no second
@@ -403,6 +423,11 @@ not: classes discovered from a ministry-format file keep the school's own code
 code…** in the dialog, where it can also be set by hand if your school files
 expect a particular code. Renaming a class carries its code (and its students)
 along, unless you gave it a code of its own.
+
+From **Sec 3 upwards** a class is defined by its subject group, not by the form
+class or the posting group, so those two branches stay closed behind **More
+filters…** — one click away when they are genuinely meant, and open already for
+a class that uses them. Sec 1–2 show them outright.
 
 Ticking nothing means "any", and a student whose Level cell the office left
 blank is never excluded by the level — being unknown must not mean disappearing

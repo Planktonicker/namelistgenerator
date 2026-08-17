@@ -42,8 +42,9 @@ check('a gap names the subject group, not the raw column',
 await page.locator('#warningsList button', { hasText: 'Make a class for them' }).first().click();
 await page.waitForSelector('#groupDialog[open]');
 check('the class dialog opens with that subject group ticked',
-  (await page.locator('#gfAutoKey').inputValue()) === 'GEOG' &&
-  (await page.locator('#gfValueTicks label.on').innerText()).includes('GEOG G3'));
+  (await page.locator('#gfKeyTicks label.on').innerText()).startsWith('GEOG') &&
+  (await page.locator('#gfValueTicks label.on').innerText()).includes('GEOG G3'),
+  (await page.locator('#gfKeyTicks label.on').innerText()).replace(/\s+/g, ' '));
 check('and with those students already selected',
   (await page.locator('#groupDialogTitle').innerText()).includes('78 selected'),
   await page.locator('#groupDialogTitle').innerText());

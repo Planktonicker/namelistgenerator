@@ -373,6 +373,24 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   .ticks label.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
   .ticks input { margin: 0; accent-color: var(--accent); }
   .ticks .muted { font-weight: 400; }
+  /* The rule reads as a little tree: each answer opens the next branch. */
+  #gfGraphLabel { align-self: start; padding-top: 12px; }
+  .graph { display: flex; flex-direction: column; gap: 2px; }
+  .graph-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    position: relative; padding: 7px 0 7px 22px;
+  }
+  .graph-row + .graph-row::before {
+    content: ''; position: absolute; left: 7px; top: -6px; height: 26px; width: 11px;
+    border-left: 2px solid var(--line); border-bottom: 2px solid var(--line);
+    border-bottom-left-radius: 9px;
+  }
+  .graph-row + .graph-row.linked::before { border-color: var(--accent); }
+  .graph-key {
+    flex: 0 0 78px; font-size: 12px; font-weight: 700; letter-spacing: .02em;
+    text-transform: uppercase; color: var(--muted); padding-top: 6px;
+  }
+  .graph-row .ticks { flex: 1; margin-top: 0; }
   #gfMembers td:first-child { width: 28px; }
   #gfMembers tr.out td:not(:first-child) { text-decoration: line-through; color: var(--muted); }
   .warn-row { display: flex; align-items: baseline; gap: 8px; }
@@ -617,16 +635,21 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   <dialog id="studentDialog">
     <h2 id="studentDialogTitle">Add student</h2>
     <form class="fields" id="studentForm">
-      <label for="sfId">Student ID *</label><input type="text" id="sfId" required>
       <label for="sfName">Name *</label>
       <div>
         <input type="text" id="sfName" required style="width:100%">
         <p class="hint" id="sfSourceNote" style="margin:4px 0 0" hidden></p>
       </div>
-      <label for="sfClass">Class</label><input type="text" id="sfClass" list="classList">
-      <label for="sfLevel">Level</label><input type="text" id="sfLevel" list="levelList">
-      <label for="sfGender">Gender</label><input type="text" id="sfGender" list="genderList">
-      <label for="sfPg">PG</label><input type="text" id="sfPg" list="pgList">
+      <label for="sfId">Student ID *</label><input type="text" id="sfId" required>
+      <label for="sfLevel">Level</label>
+      <div>
+        <select id="sfLevel"></select>
+        <p class="hint" style="margin:4px 0 0">Everything below is filled from this level.</p>
+      </div>
+      <label for="sfClass">Class</label><select id="sfClass"></select>
+      <label for="sfGender">Gender</label><select id="sfGender"></select>
+      <label for="sfPg">PG</label><select id="sfPg"></select>
+      <label for="sfTg" id="sfTgLabel">TG / SG</label><select id="sfTg"></select>
       <p class="hint" id="sfAddedNote" style="grid-column: 1 / -1; margin: 0" hidden>
         This student is stored in the app's own file only — the school's official file is never written to.
         They are kept when a level is refreshed, and adopted automatically if the school later lists them.
@@ -651,45 +674,41 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
           <button type="button" id="gfTeacherNew" title="Add a teacher to the list">New…</button>
         </div>
       </div>
-      <label for="gfLevel">Level</label>
-      <div>
-        <select id="gfLevel"></select>
-        <p class="hint" style="margin:4px 0 0">Groups the class under this heading on the teacher page,
-          and keeps it to that level's students.</p>
+      <label id="gfGraphLabel">Who is in it</label>
+      <div class="graph" id="gfGraph">
+        <div class="graph-row" id="gfLevelRow">
+          <span class="graph-key">Level</span>
+          <div class="ticks" id="gfLevelTicks"></div>
+        </div>
+        <div class="graph-row" id="gfSubjectRow" hidden>
+          <span class="graph-key">Subject</span>
+          <div class="ticks" id="gfKeyTicks"></div>
+        </div>
+        <div class="graph-row" id="gfValueRow" hidden>
+          <span class="graph-key">Group</span>
+          <div class="ticks" id="gfValueTicks"></div>
+        </div>
+        <div class="graph-row" id="gfTgRow" hidden>
+          <span class="graph-key">TG / SG</span>
+          <div class="ticks" id="gfTgTicks"></div>
+        </div>
+        <div class="graph-row" id="gfClassRow" hidden>
+          <span class="graph-key">Form class</span>
+          <div class="ticks" id="gfClassTicks"></div>
+        </div>
+        <div class="graph-row" id="gfPgRow" hidden>
+          <span class="graph-key">PG</span>
+          <div class="ticks" id="gfPgTicks"></div>
+        </div>
+        <div class="graph-row" id="gfMoreRow" hidden>
+          <span class="graph-key"></span>
+          <button type="button" class="linklike" id="gfMoreBtn">More filters…</button>
+        </div>
+        <div id="gfCriteria"></div>
+        <p class="hint" style="margin:8px 0 0"><strong id="gfMatchCount"></strong>
+          Matching students are allocated when you press OK, and new students join after each
+          school-file update — you can always untick individuals below.</p>
       </div>
-      <label for="gfAutoKey">Must be taking</label>
-      <div>
-        <select id="gfAutoKey"></select>
-        <div class="ticks" id="gfValueTicks" hidden></div>
-        <div id="gfCriteria" style="margin-top:6px"></div>
-        <p class="hint" style="margin:4px 0 0">Pick a column, then tick the groups it should cover —
-          tick more than one to combine them (<code>HIST G3</code> and <code>HIST G2</code>). Choose
-          another column to narrow further (<code>TG</code> = tutorial group).</p>
-      </div>
-      <label id="gfMoreLabel" hidden></label>
-      <div id="gfMoreRow" hidden>
-        <button type="button" class="linklike" id="gfMoreBtn">Additional options — posting group…</button>
-      </div>
-      <label id="gfPgLabel">PG</label>
-      <div id="gfPgRow">
-        <div class="ticks" id="gfPgTicks"></div>
-        <p class="hint" style="margin:4px 0 0" id="gfPgHint">Nothing ticked means any posting group.</p>
-      </div>
-      <label id="gfTgLabel">TG / SG</label>
-      <div id="gfTgRow">
-        <div class="ticks" id="gfTgTicks"></div>
-        <p class="hint" style="margin:4px 0 0">Tutorial / subject group — a teaching group that need not
-          follow the form class (SG3 can span 1R1–1R6).</p>
-      </div>
-      <label>Limit to classes</label>
-      <div>
-        <div class="ticks" id="gfClassTicks"></div>
-        <p class="hint" style="margin:4px 0 0">Form classes only. Tick none for the whole level.</p>
-      </div>
-      <p class="hint" style="grid-column: 1 / -1; margin: 0">Every box you tick narrows the class;
-        ticking nothing means “any”. <strong id="gfMatchCount"></strong> Matching students are allocated
-        when you press OK, and new students join after each school-file update — you can always untick
-        individuals below.</p>
       <label>Members</label>
       <div>
         <p class="hint" id="gfMemberNote" style="margin:0 0 6px"></p>
@@ -3369,43 +3388,128 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     $('sfSourceNote').textContent = !src ? '' : edited
       ? 'The school file calls them \u201c' + src + '\u201d. Your version is kept on every update.'
       : 'Editing this keeps your version; the school file\u2019s spelling is still used to match them on updates.';
-    $('sfClass').value = student ? student.class : '';
-    $('sfLevel').value = student ? student.level : '';
-    $('sfGender').value = student ? student.gender : '';
-    $('sfPg').value = student ? student.pg : '';
-    $('sfSubjects').innerHTML = (model.subjectKeys || []).map(function (k, i) {
-      var v = (student && student.subjects && student.subjects[k]) || '';
-      return '<label for="sfSubj' + i + '">' + esc(k) + '</label>' +
-        '<input type="text" id="sfSubj' + i + '" data-subj="' + esc(k) + '" value="' + esc(v) + '">';
-    }).join('');
+    var levels = uniqueValues('level');
+    fillPick($('sfLevel'), levels, '— no level —',
+      student ? student.level : (levels.length === 1 ? levels[0] : ''));
+    renderStudentFields(student);
     $('studentDialog').showModal();
     if (student) $('sfId').focus();
     else $('sfName').focus();   // adding: the id fills itself in from the class
   }
 
-  /* Adding a student: once a class is typed, suggest the next free register
+  /* A select of what the data actually holds, with the student's own value
+   * kept even when this level has never seen it. */
+  function fillPick(sel, values, blankLabel, current, allowOther) {
+    var cur = S.norm(current === undefined ? sel.value : current);
+    var options = values.slice();
+    if (cur && !options.some(function (v) { return S.normKey(v) === S.normKey(cur); })) options.push(cur);
+    sel.innerHTML = '<option value="">' + esc(blankLabel) + '</option>' + options.map(function (v) {
+      return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+    }).join('') + (allowOther ? '<option value="__other">Other…</option>' : '');
+    sel.value = cur;
+  }
+
+  /* A class that does not exist yet (the first student of a new form class)
+   * still has to be enterable, so the class list keeps an "Other…" way in. */
+  $('sfClass').addEventListener('change', function () {
+    if ($('sfClass').value !== '__other') return;
+    var typed = S.norm(prompt('Class name:') || '');
+    var pool = studentLevelPool();
+    fillPick($('sfClass'), poolValues(pool, function (s) { return s.class; }), '— no class —',
+      typed, true);
+  });
+
+  /* Students of the level being edited — what the class, PG, TG/SG and
+   * subject choices are drawn from. A student whose level is blank sees
+   * everything, since there is nothing to narrow by. */
+  function studentLevelPool() {
+    var level = S.norm($('sfLevel').value);
+    if (!level) return model.students;
+    return model.students.filter(function (s) {
+      return S.normKey(s.level) === S.normKey(level);
+    });
+  }
+
+  function poolValues(pool, read) {
+    var seen = {};
+    pool.forEach(function (s) {
+      var v = S.norm(read(s));
+      if (v) seen[v] = true;
+    });
+    return Object.keys(seen).sort(S.cmp);
+  }
+
+  /* Everything under Level: refilled whenever the level changes, so a Sec 4
+   * student is never offered 1R1 or a subject Sec 4 does not take. */
+  function renderStudentFields(student, reset) {
+    var pool = studentLevelPool();
+    // On a level change the old level's answers are stale, so they are dropped
+    // rather than carried across.
+    var was = function (field) { return reset ? '' : (student ? student[field] : undefined); };
+    fillPick($('sfClass'), poolValues(pool, function (s) { return s.class; }), '— no class —',
+      was('class'), true);
+    fillPick($('sfGender'), poolValues(pool, function (s) { return s.gender; }), '—',
+      student ? student.gender : undefined);
+    fillPick($('sfPg'), poolValues(pool, function (s) { return S.normPg(s.pg); }), '— no PG —',
+      student ? student.pg : undefined);
+    var tgs = poolValues(pool, function (s) { return S.normTg(s.tg); });
+    fillPick($('sfTg'), tgs, '— none —', was('tg'));
+    var hideTg = !tgs.length && !(student && S.norm(student.tg));
+    $('sfTg').hidden = hideTg;
+    $('sfTgLabel').hidden = hideTg;
+
+    // Only the subject columns this level uses, each offering that level's
+    // own groups — Sec 4's POA options never appear under Sec 1.
+    var keys = (model.subjectKeys || []).filter(function (k) {
+      return pool.some(function (s) { return s.subjects && S.norm(s.subjects[k]); }) ||
+        (student && student.subjects && S.norm(student.subjects[k]));
+    });
+    $('sfSubjects').innerHTML = keys.map(function (k, i) {
+      return '<label for="sfSubj' + i + '">' + esc(k) + '</label>' +
+        '<select id="sfSubj' + i + '" data-subj="' + esc(k) + '"></select>';
+    }).join('');
+    keys.forEach(function (k, i) {
+      var values = poolValues(pool, function (s) { return s.subjects && s.subjects[k]; });
+      fillPick($('sfSubj' + i), values, '— not taking —',
+        (!reset && student && student.subjects && student.subjects[k]) || '');
+    });
+  }
+
+  $('sfLevel').addEventListener('change', function () {
+    var current = editingStudentId === null ? null : ix.studentsById.get(editingStudentId);
+    renderStudentFields(current, true);
+    suggestStudentId();
+  });
+
+  /* Adding a student: once a class is chosen, suggest the next free register
    * id for it, unless the admin has typed an id themselves. */
-  $('sfId').addEventListener('input', function () { $('sfId').dataset.userEdited = '1'; });
-  $('sfClass').addEventListener('input', function () {
+  function suggestStudentId() {
     if (editingStudentId !== null || $('sfId').dataset.userEdited) return;
     var cls = S.norm($('sfClass').value);
     $('sfId').value = cls ? S.nextFreeId(model, cls) : '';
-  });
+  }
+  $('sfId').addEventListener('input', function () { $('sfId').dataset.userEdited = '1'; });
+  $('sfClass').addEventListener('change', suggestStudentId);
 
   $('studentCancelBtn').addEventListener('click', function () { $('studentDialog').close(); });
   $('studentForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     var id = S.norm($('sfId').value);
     var subjects = {};
-    $('sfSubjects').querySelectorAll('input[data-subj]').forEach(function (inp) {
-      var v = S.norm(inp.value);
-      if (v) subjects[inp.dataset.subj] = v;
+    var existingSubjects = (editingStudentId !== null &&
+      ix.studentsById.get(editingStudentId) || {}).subjects || {};
+    Object.keys(existingSubjects).forEach(function (k) { subjects[k] = existingSubjects[k]; });
+    $('sfSubjects').querySelectorAll('select[data-subj]').forEach(function (sel) {
+      var v = S.norm(sel.value);
+      if (v) subjects[sel.dataset.subj] = v;
+      else delete subjects[sel.dataset.subj];
     });
     var existing = editingStudentId === null ? null : ix.studentsById.get(editingStudentId);
     var rec = {
       id: id, name: S.norm($('sfName').value), class: S.norm($('sfClass').value),
       level: S.norm($('sfLevel').value),
-      gender: S.norm($('sfGender').value), pg: S.norm($('sfPg').value),
+      gender: S.norm($('sfGender').value), pg: S.normPg($('sfPg').value),
+      tg: S.normTg($('sfTg').value),
       origin: existing ? existing.origin : S.ORIGIN_ADDED,
       sourceName: existing ? (existing.sourceName || existing.name) : S.norm($('sfName').value),
       subjects: subjects,
@@ -3567,8 +3671,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
    * pick Sec 4 and only Sec 4's classes, groups and subjects are on the table.
    * Students whose Level cell the office left blank stay in the pool — they
    * are excluded from nothing, here or in the rule itself. */
+  function currentLevel() { return dialogLevels[0] || ''; }
+  function currentKey() { return dialogKeys[0] || ''; }
+
   function dialogPool() {
-    var level = S.norm($('gfLevel').value);
+    var level = S.norm(currentLevel());
     if (!level) return model.students;
     return model.students.filter(function (s) {
       return !S.norm(s.level) || S.normKey(s.level) === S.normKey(level);
@@ -3599,8 +3706,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   }
 
   /* Only the subject columns this level actually uses. */
-  function fillKeySelect(want) {
-    var current = want === undefined ? $('gfAutoKey').value : want;
+  /* The subject branch: only the columns this level actually uses. */
+  function renderKeyTicks(want) {
+    if (want !== undefined) dialogKeys = want ? [want] : [];
     var pool = dialogPool();
     var keys = (model.subjectKeys || []).filter(function (k) {
       return pool.some(function (s) { return s.subjects && S.norm(s.subjects[k]); });
@@ -3608,32 +3716,74 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     // A column the level does not use is dropped — unless this class is
     // actually built on it, in which case it stays so it can be seen.
     var ruled = dialogCriteria.some(function (c) {
-      return S.normKey(c.key) === S.normKey(current) && c.values.length;
+      return S.normKey(c.key) === S.normKey(currentKey()) && c.values.length;
     });
-    if (current && ruled && keys.indexOf(current) === -1) keys.push(current);
-    $('gfAutoKey').innerHTML = '<option value="">(none — members added by hand)</option>' +
-      keys.map(function (k) {
-        return '<option value="' + esc(k) + '">' + esc(k) + '</option>';
-      }).join('');
-    $('gfAutoKey').value = keys.indexOf(current) === -1 ? '' : current;
+    if (currentKey() && ruled && keys.indexOf(currentKey()) === -1) keys.push(currentKey());
+    if (keys.indexOf(currentKey()) === -1) dialogKeys = [];
+    var counts = {};
+    keys.forEach(function (k) {
+      counts[k] = pool.filter(function (s) { return s.subjects && S.norm(s.subjects[k]); }).length;
+    });
+    var options = [{ value: '', label: 'Any subject' }].concat(keys.map(function (k) {
+      return { value: k, label: k, n: counts[k] };
+    }));
+    var chosen = dialogKeys.length ? dialogKeys : [''];
+    renderTicks($('gfKeyTicks'), options, chosen, function () {
+      dialogKeys = chosen.filter(Boolean);
+      renderValueTicks();
+      renderCriteria();
+      updateGraph();
+      suggestGroupIdentity();
+      updateMatchCount();
+    }, { single: true });
   }
 
+  /* Which branches are open, and the elbow that links them. */
+  function updateGraph() {
+    var levels = uniqueValues('level');
+    var upper = isUpperSecondary(currentLevel());
+    var picked = !levels.length || !!currentLevel();
+    var hasTg = tickOptions(function (s) { return S.normTg(s.tg); }, dialogTgs).length > 0;
+    /* Upper secondary is grouped by subject group, not by form class, so the
+     * form-class and PG branches are only there if asked for. */
+    var extras = moreShown || dialogClasses.length > 0 || dialogPgs.length > 0;
+    var rows = {
+      gfLevelRow: true,
+      gfSubjectRow: picked,
+      gfValueRow: picked && !!currentKey(),
+      gfTgRow: picked && hasTg,
+      gfClassRow: picked && (!upper || extras),
+      gfPgRow: picked && (!upper || extras),
+      gfMoreRow: picked && upper && !extras,
+    };
+    Object.keys(rows).forEach(function (id) {
+      $(id).hidden = !rows[id];
+      $(id).classList.toggle('linked', !!rows[id]);
+    });
+  }
+
+  var moreShown = false;
+
   function renderRuleTicks(wantKey) {
-    fillKeySelect(wantKey);
+    renderLevelTicks();
+    renderKeyTicks(wantKey);
     renderValueTicks();
     renderPgTicks();
     renderTgTicks();
     renderClassTicks();
     renderCriteria();
+    updateGraph();
     updateMatchCount();
   }
 
   /* One tick list. `options` are [{ value, label, n }]; `chosen` is the list of
    * ticked values, mutated in place by the caller's onChange. */
-  function renderTicks(el, options, chosen, onChange) {
+  function renderTicks(el, options, chosen, onChange, opts) {
+    var single = opts && opts.single;
     el.innerHTML = options.map(function (o, i) {
       var on = chosen.some(function (c) { return S.normKey(c) === S.normKey(o.value); });
-      return '<label class="' + (on ? 'on' : '') + '"><input type="checkbox" data-i="' + i + '"' +
+      return '<label class="' + (on ? 'on' : '') + '"><input type="' +
+        (single ? 'radio' : 'checkbox') + '" name="' + esc(el.id) + '-pick" data-i="' + i + '"' +
         (on ? ' checked' : '') + '>' + esc(o.label) +
         (o.n ? ' <span class="muted">' + o.n + '</span>' : '') + '</label>';
     }).join('');
@@ -3641,10 +3791,19 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       var box = ev.target.closest('input[data-i]');
       if (!box) return;
       var value = options[parseInt(box.dataset.i, 10)].value;
-      var at = chosen.findIndex(function (c) { return S.normKey(c) === S.normKey(value); });
-      if (box.checked && at === -1) chosen.push(value);
-      if (!box.checked && at !== -1) chosen.splice(at, 1);
-      box.closest('label').classList.toggle('on', box.checked);
+      if (single) {
+        // One answer per branch: picking one replaces whatever was there.
+        chosen.length = 0;
+        if (value) chosen.push(value);
+      } else {
+        var at = chosen.findIndex(function (c) { return S.normKey(c) === S.normKey(value); });
+        if (box.checked && at === -1) chosen.push(value);
+        if (!box.checked && at !== -1) chosen.splice(at, 1);
+      }
+      Array.prototype.forEach.call(el.querySelectorAll('label'), function (l) {
+        var input = l.querySelector('input');
+        l.classList.toggle('on', input.checked);
+      });
       onChange();
     };
   }
@@ -3671,10 +3830,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   }
 
   function renderValueTicks() {
-    var key = $('gfAutoKey').value;
+    var key = currentKey();
     var box = $('gfValueTicks');
-    box.hidden = !key;
-    if (!key) return;
+    if (!key) { box.innerHTML = ''; return; }
     var crit = dialogCriteria.find(function (c) { return S.normKey(c.key) === S.normKey(key); });
     if (!crit) { crit = { key: key, values: [] }; dialogCriteria.push(crit); }
     renderTicks(box, tickOptions(function (s) {
@@ -3686,42 +3844,26 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     });
   }
 
-  /* Sec 3 upwards, the subject group already carries the posting group, so PG
-   * is a trap rather than a filter: it is tucked behind "Additional options"
-   * unless the class actually uses it. Sec 1-2 keep it in plain sight. */
+  /* Sec 3 upwards a class is defined by its subject group, not by PG or by the
+   * form class, so those two branches stay closed until asked for. */
   function isUpperSecondary(level) {
     var m = /(\d+)/.exec(S.norm(level));
     return !!m && parseInt(m[1], 10) >= 3;
   }
 
-  var pgShown = false;
-
   function renderPgTicks() {
     renderTicks($('gfPgTicks'), tickOptions(function (s) { return S.normPg(s.pg); }, dialogPgs),
       dialogPgs, function () { suggestGroupIdentity(); updateMatchCount(); });
-    var upper = isUpperSecondary($('gfLevel').value);
-    var show = !upper || pgShown || dialogPgs.length > 0;
-    $('gfPgLabel').hidden = !show;
-    $('gfPgRow').hidden = !show;
-    $('gfMoreLabel').hidden = show;
-    $('gfMoreRow').hidden = show;
-    $('gfPgHint').textContent = upper
-      ? 'Upper secondary subject groups already carry the posting group — leave this alone unless you mean it.'
-      : 'Nothing ticked means any posting group.';
   }
 
   $('gfMoreBtn').addEventListener('click', function () {
-    pgShown = true;
-    renderPgTicks();
+    moreShown = true;
+    updateGraph();
   });
 
   function renderTgTicks() {
-    var options = tickOptions(function (s) { return S.normTg(s.tg); }, dialogTgs);
-    $('gfTgRow').hidden = !options.length;
-    $('gfTgLabel').hidden = !options.length;
-    if (!options.length) return;
-    renderTicks($('gfTgTicks'), options, dialogTgs,
-      function () { suggestGroupIdentity(); updateMatchCount(); });
+    renderTicks($('gfTgTicks'), tickOptions(function (s) { return S.normTg(s.tg); }, dialogTgs),
+      dialogTgs, function () { suggestGroupIdentity(); updateMatchCount(); });
   }
 
   function renderClassTicks() {
@@ -3733,7 +3875,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var first = dialogCriteria.filter(function (c) { return S.norm(c.key); })[0] || { key: '', values: [] };
     var key = first.key;
     var val = (first.values || []).join(' + ');
-    var lvl = S.norm($('gfLevel').value);
+    var lvl = S.norm(currentLevel());
     var pg = dialogPgs.join('/');
     var cls = dialogClasses.join('/');
     var base = val || key;
@@ -3747,15 +3889,26 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (!$('gfSubject').dataset.userEdited && key) $('gfSubject').value = key;
   }
 
-  $('gfAutoKey').addEventListener('change', function () {
-    renderValueTicks();
-    renderCriteria();
-    updateMatchCount();
-  });
-  $('gfLevel').addEventListener('change', function () {
-    renderRuleTicks();
-    suggestGroupIdentity();
-  });
+  function renderLevelTicks() {
+    var levels = uniqueValues('level');
+    var counts = {};
+    model.students.forEach(function (s) {
+      var v = S.norm(s.level);
+      if (v) counts[v] = (counts[v] || 0) + 1;
+    });
+    var options = [{ value: '', label: 'Every level' }].concat(levels.map(function (l) {
+      return { value: l, label: l, n: counts[l] };
+    }));
+    // "Every level" is the chip that is on when nothing is chosen.
+    var chosen = dialogLevels.length ? dialogLevels : [''];
+    renderTicks($('gfLevelTicks'), options, chosen, function () {
+      dialogLevels = chosen.filter(Boolean);
+      /* A different level means different subjects, groups and classes, so the
+       * branches below are re-read rather than left showing the old level's. */
+      renderRuleTicks();
+      suggestGroupIdentity();
+    }, { single: true });
+  }
   ['gfCode', 'gfName', 'gfSubject'].forEach(function (id) {
     $(id).addEventListener('input', function () { $(id).dataset.userEdited = '1'; });
   });
@@ -3778,12 +3931,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   var dialogCriteria = [];   // [{ key, values: [] }] — columns ANDed, ticks ORed
   var dialogPgs = [];
   var dialogTgs = [];
+  var dialogLevels = [];    // 0 or 1 entry — the branch the graph starts from
+  var dialogKeys = [];      // 0 or 1 entry — the subject column being narrowed
 
   /* The rule exactly as the boxes are ticked right now. */
   function dialogRule() {
     return {
       code: S.norm($('gfCode').value),
-      level: S.norm($('gfLevel').value),
+      level: S.norm(currentLevel()),
       autoMatch: S.matchersToString(dialogCriteria),
       autoPg: dialogPgs.join(', '),
       autoTg: dialogTgs.join(', '),
@@ -3794,7 +3949,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   /* The column on show has its own ticks; the chips are the other columns
    * this class is also narrowed by, each removable. */
   function renderCriteria() {
-    var current = S.normKey($('gfAutoKey').value);
+    var current = S.normKey(currentKey());
     var others = dialogCriteria.filter(function (c) {
       return c.values.length && S.normKey(c.key) !== current;
     });
@@ -3921,15 +4076,13 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     renderTeacherChips();
     fillTeacherSelect();
     var levels = uniqueValues('level');
-    $('gfLevel').innerHTML = '<option value="">— any level —</option>' + levels.map(function (l) {
-      return '<option value="' + esc(l) + '">' + esc(l) + '</option>';
-    }).join('');
-    $('gfLevel').value = group ? (group.level || '') : (levels.length === 1 ? levels[0] : '');
+    var startLevel = group ? S.norm(group.level) : (levels.length === 1 ? levels[0] : '');
+    dialogLevels = startLevel ? [startLevel] : [];
     dialogCriteria = group ? S.matchers(group) : [];
     dialogPgs = group ? S.splitList(group.autoPg) : [];
-    pgShown = dialogPgs.length > 0;
     dialogTgs = group ? S.splitList(group.autoTg) : [];
     dialogClasses = group ? S.splitList(group.autoClasses) : [];
+    moreShown = dialogPgs.length > 0 || dialogClasses.length > 0;
     dialogRemoved = new Set();
     // Open on the column the class is already built around, so its ticks show.
     var prefilled = pendingPrefill;
@@ -3971,7 +4124,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     }
     var rec = {
       code: code, name: name, subject: S.norm($('gfSubject').value),
-      teachers: dialogTeachers.slice(), level: S.norm($('gfLevel').value),
+      teachers: dialogTeachers.slice(), level: S.norm(currentLevel()),
       autoMatch: S.matchersToString(dialogCriteria),
       autoPg: dialogPgs.join(', '),
       autoTg: dialogTgs.join(', '),

@@ -120,9 +120,9 @@ check('a school code is kept and shown, since the name does not carry it',
   (await page.locator('#gfCode').inputValue()) === 'K300',
   await page.locator('#gfCode').inputValue());
 check('the rule opens on its own column, already ticked',
-  (await page.locator('#gfAutoKey').inputValue()).includes('English Language') &&
+  (await page.locator('#gfKeyTicks label.on').innerText()).includes('English Language') &&
   (await page.locator('#gfValueTicks label.on').count()) === 1,
-  await page.locator('#gfAutoKey').inputValue());
+  (await page.locator('#gfKeyTicks label.on').innerText()).replace(/\s+/g, ' '));
 check('the mislabelled "Year" column was held back as an issue',
   (await page.locator('#warningsList').innerText()).includes('not a subject column'),
   (await page.locator('#warningsList').innerText()).split('\n')[0]);
@@ -146,9 +146,13 @@ t.on('pageerror', (e) => tErr.push(String(e)));
 await t.goto('file://' + demo + '/namelist.html');
 await t.evaluate(() => localStorage.clear());
 await t.reload();
-await t.fill('#searchBox', 'Mrs Wong');
-await t.locator('.suggestions button').first().click();
+await t.selectOption('#teacherSelect', 'Mrs Wong');
 await t.waitForSelector('#teacherResults .card');
+check('the teacher picks their name from a list, not free text',
+  (await t.locator('#teacherSelect').evaluate((e) => e.tagName)) === 'SELECT');
+check('their classes are chips they can narrow to',
+  (await t.locator('#myClassChips button').count()) === 3,
+  (await t.locator('#myClassChips').innerText()).replace(/\s+/g, ' '));
 check('teacher sees only her own classes',
   (await t.locator('#teacherResults .card').count()) === 2);
 check('classes are grouped under a level heading',
@@ -158,6 +162,26 @@ check('a co-taught class names the other teacher',
   (await t.locator('#teacherResults').innerText()).includes('with Mr Tan'));
 const rows = await t.locator('#teacherResults .card').first().locator('tbody tr').count();
 check('her namelist has the right students (' + rows + ')', rows === 82 || rows === 37);
+// clicking a chip narrows the page to that one class
+await t.locator('#myClassChips button').nth(1).click();
+check('a chip shows just that class',
+  (await t.locator('#teacherResults .card').count()) === 1);
+await t.locator('#myClassChips button').first().click();
+
+// the All classes tab lists every class, filterable
+await t.click('#tabAllBtn');
+const allText = await t.locator('#allCount').innerText();
+check('All classes lists the whole school', /^5\d classes/.test(allText), allText);
+await t.selectOption('#allTeacher', 'Mr Tan');
+check('filtering by teacher narrows it',
+  (await t.locator('#allResults .card').count()) === 1,
+  await t.locator('#allCount').innerText());
+await t.click('#allClear');
+await t.fill('#allSearch', 'K341');
+check('searching finds a class by its code',
+  (await t.locator('#allResults .card').count()) === 1,
+  await t.locator('#allCount').innerText());
+
 check('teacher page: no JS errors', tErr.length === 0);
 if (tErr.length) console.log(tErr);
 

@@ -115,7 +115,7 @@ check('opens the folder and loads namelist.xlsx', (await page.locator('#countStu
 // ---- clean save (no conflict) ----
 await page.click('#addStudentBtn');
 await page.fill('#sfName', 'Alpha Admin');
-await page.fill('#sfClass', '1R1');
+await page.selectOption('#sfClass', '1R1');
 await page.click('#studentForm button[type="submit"]');
 let sawDialog = null;
 page.on('dialog', async (d) => { sawDialog = d.message(); await d.accept(); });
@@ -146,7 +146,7 @@ await page.evaluate(() => {
 // admin makes another change in the HTML, unaware
 await page.click('#addStudentBtn');
 await page.fill('#sfName', 'Beta Admin');
-await page.fill('#sfClass', '1R2');
+await page.selectOption('#sfClass', '1R2');
 await page.click('#studentForm button[type="submit"]');
 
 // ---- conflict: Cancel path ----

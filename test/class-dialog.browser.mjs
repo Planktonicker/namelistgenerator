@@ -60,25 +60,31 @@ check('teachers are PICKED, not typed',
   (await page.locator('#gfTeacher').evaluate((e) => e.tagName)) === 'SELECT');
 check('the new teacher is in the picker',
   (await page.locator('#gfTeacher option').allInnerTexts()).includes('Cheng Xin Ze'));
-check('there is only ONE level field now',
-  (await page.locator('#gfAutoLevel').count()) === 0 && (await page.locator('#gfLevel').count()) === 1);
-check('level is a dropdown of levels in the data',
-  (await page.locator('#gfLevel').evaluate((e) => e.tagName)) === 'SELECT');
+check('the rule starts as a level branch and nothing else',
+  (await page.locator('#gfLevelTicks label').count()) > 1 &&
+  (await page.locator('#gfValueRow').isHidden()),
+  (await page.locator('#gfLevelTicks').innerText()).replace(/\s+/g, ' '));
+await page.locator('#gfLevelTicks label').filter({ hasText: /^1\b/ }).first().click();
 check('PG is a tick list, with no PG2-style labels',
   (await page.locator('#gfPgTicks label').allInnerTexts()).every((t) => /^[123]\b/.test(t.trim())),
   (await page.locator('#gfPgTicks').innerText()).replace(/\s+/g, ' '));
 check('classes are ticked, not typed',
   (await page.locator('#gfClassTicks label').count()) > 0 &&
   (await page.locator('#gfClassTicks').innerText()).includes('1R1'));
-check('TG/SG is its own tick row, not a subject column',
-  (await page.locator('#gfAutoKey option').allInnerTexts()).every((t) => !/^(TG|SG)$/.test(t)) &&
+check('TG/SG is its own branch, not a subject column',
+  (await page.locator('#gfKeyTicks label').allInnerTexts()).every((t) => !/^(TG|SG)\b/.test(t.trim())) &&
   (await page.locator('#gfTgTicks label').count()) > 0,
   (await page.locator('#gfTgTicks').innerText()).replace(/\s+/g, ' '));
 
 // build the class the screenshot was attempting: HIST G3 students in TG2
 await page.selectOption('#gfTeacher', 'Cheng Xin Ze');
 await page.click('#gfTeacherAdd');
-await page.selectOption('#gfAutoKey', 'HIST');
+check('the group branch is closed until a subject is picked',
+  await page.locator('#gfValueRow').isHidden());
+await page.locator('#gfKeyTicks label').filter({ hasText: /^HIST\b/ }).first().click();
+check('picking a subject opens its groups',
+  !(await page.locator('#gfValueRow').isHidden()) &&
+  (await page.locator('#gfValueTicks').innerText()).includes('HIST G3'));
 await page.locator('#gfValueTicks label', { hasText: 'HIST G3' }).first().click();
 await page.locator('#gfTgTicks label').filter({ hasText: /^SG2\b/ }).first().click();
 check('a subject group and a subject band combine',
@@ -140,7 +146,7 @@ check('the class now lists that teacher too',
 await page.locator('.tabs button[data-tab="groups"]').click();
 // several values in ONE column: HIST G3 or HIST G2
 await page.locator('#groupsTable tbody tr').first().locator('button[data-act="edit"]').click();
-await page.selectOption('#gfAutoKey', 'HIST');
+await page.locator('#gfKeyTicks label').filter({ hasText: /^HIST\b/ }).first().click();
 await page.locator('#gfValueTicks label', { hasText: 'HIST G2' }).first().click();
 const bothCount = await page.locator('#gfMatchCount').innerText();
 await page.click('#groupForm button[type="submit"]');
@@ -174,7 +180,7 @@ await page.evaluate(() => {   // a second level appears in the data
 });
 await page.click('#groupCancelBtn');
 await page.click('#addGroupBtn');
-await page.selectOption('#gfLevel', 'Sec 4');
+await page.locator('#gfLevelTicks label').filter({ hasText: /^Sec 4\b/ }).first().click();
 check('choosing a level limits the classes to that level',
   (await page.locator('#gfClassTicks').innerText()).includes('4E1') &&
   !(await page.locator('#gfClassTicks').innerText()).includes('1R1'),
@@ -182,21 +188,24 @@ check('choosing a level limits the classes to that level',
 check('and the TG/SG groups', (await page.locator('#gfTgTicks').innerText()).includes('SG5') &&
   !(await page.locator('#gfTgTicks').innerText()).includes('SG1'));
 check('and the subject columns on offer',
-  (await page.locator('#gfAutoKey option').allInnerTexts()).includes('POA') &&
-  !(await page.locator('#gfAutoKey option').allInnerTexts()).includes('HIST'),
-  (await page.locator('#gfAutoKey option').allInnerTexts()).join(','));
-check('upper secondary hides PG behind additional options',
-  (await page.locator('#gfPgRow').isHidden()) && !(await page.locator('#gfMoreRow').isHidden()));
+  (await page.locator('#gfKeyTicks').innerText()).includes('POA') &&
+  !(await page.locator('#gfKeyTicks').innerText()).includes('HIST'),
+  (await page.locator('#gfKeyTicks').innerText()).replace(/\s+/g, ' '));
+check('upper secondary hides PG and form class behind More filters',
+  (await page.locator('#gfPgRow').isHidden()) &&
+  (await page.locator('#gfClassRow').isHidden()) &&
+  !(await page.locator('#gfMoreRow').isHidden()));
 await page.click('#gfMoreBtn');
-check('but it is one click away when it is really meant',
-  !(await page.locator('#gfPgRow').isHidden()) &&
-  (await page.locator('#gfPgHint').innerText()).includes('already carry the posting group'));
-await page.selectOption('#gfLevel', '1');
+check('but they are one click away when really meant',
+  !(await page.locator('#gfPgRow').isHidden()) && !(await page.locator('#gfClassRow').isHidden()));
+await page.locator('#gfLevelTicks label').filter({ hasText: /^1\b/ }).first().click();
 check('switching back restores the other level',
   (await page.locator('#gfClassTicks').innerText()).includes('1R1') &&
-  (await page.locator('#gfAutoKey option').allInnerTexts()).includes('HIST'));
-check('lower secondary shows PG outright',
-  !(await page.locator('#gfPgRow').isHidden()) && (await page.locator('#gfMoreRow').isHidden()));
+  (await page.locator('#gfKeyTicks').innerText()).includes('HIST'));
+check('lower secondary shows PG and form class outright',
+  !(await page.locator('#gfPgRow').isHidden()) &&
+  !(await page.locator('#gfClassRow').isHidden()) &&
+  (await page.locator('#gfMoreRow').isHidden()));
 await page.click('#groupCancelBtn');
 
 check('renaming a teacher updates their classes',

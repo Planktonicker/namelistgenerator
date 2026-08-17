@@ -38,7 +38,7 @@ await page.fill('#groupSearch', 'S1 HIST test');
 await page.locator('#groupsTable tbody tr').first().locator('button[data-act="edit"]').click();
 check('the dialog lists the current members up front',
   (await page.locator('#gfMemberNote').innerText()).includes('156 of 156 ticked'));
-await page.selectOption('#gfAutoKey', 'HIST');
+await page.locator('#gfKeyTicks label').filter({ hasText: /^HIST\b/ }).first().click();
 await page.locator('#gfValueTicks label', { hasText: 'HIST G3' }).first().click();
 check('the live count says how many the rule takes',
   /\d+ students match this right now/.test(await page.locator('#gfMatchCount').innerText()),

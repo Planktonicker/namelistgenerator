@@ -2958,7 +2958,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     selectedClass = '';
     $('teacherSelect').value = name || '';
     try {
-      if (name) localStorage.setItem('namelist.lastTeacher', name);
+      if (name) localStorage.setItem(LAST_TEACHER_KEY, name);
     } catch (e) { /* private mode */ }
     suggesting = {};
     renderMyChips();
@@ -2977,8 +2977,12 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
    * changed by a teacher; the admin decides. */
   var pending = [];          // not yet sent, or sent and not yet decided
   var suggesting = {};       // group code -> the card is in suggest mode
-  var PENDING_KEY = 'namelist.requests@' +
-    location.href.replace(/[^/]*$/, '').replace(/#.*$/, '');
+  var PAGE_FOLDER = location.href.replace(/[^/]*$/, '').replace(/#.*$/, '');
+  var PENDING_KEY = 'namelist.requests@' + PAGE_FOLDER;
+  /* Per folder, like the pending list: two copies of the namelist on one
+   * staff-room PC — this year's and last year's — should not overwrite each
+   * other's idea of who is looking at it. */
+  var LAST_TEACHER_KEY = 'namelist.lastTeacher@' + PAGE_FOLDER;
 
   function loadPending() {
     try {
@@ -3294,7 +3298,8 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   fillTeacherSelect();
   loadPending();
   try {
-    var last = localStorage.getItem('namelist.lastTeacher');
+    var last = localStorage.getItem(LAST_TEACHER_KEY) ||
+      localStorage.getItem('namelist.lastTeacher');   // what earlier copies wrote
     if (last && ix.groupsByTeacher.has(last)) selectTeacher(last);
   } catch (e) { /* private mode */ }
 

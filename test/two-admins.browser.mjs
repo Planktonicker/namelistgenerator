@@ -232,20 +232,30 @@ await page.evaluate(() => {
   window.__fs.put('data/presence/zzz.txt', blob);
   const old = new TextEncoder().encode(JSON.stringify({ name: 'Long Gone', at: Date.now() - 600000 }));
   window.__fs.put('data/presence/old.txt', old);
+  // a note from a machine whose clock runs a few minutes fast is not stale
+  const fast = new TextEncoder().encode(JSON.stringify({ name: 'Mr Fastclock', at: Date.now() + 240000 }));
+  window.__fs.put('data/presence/fast.txt', fast);
+  // and one nobody has touched for a day is genuinely abandoned
+  const dead = new TextEncoder().encode(JSON.stringify({ name: 'Yesterday', at: Date.now() - 90000000 }));
+  window.__fs.put('data/presence/dead.txt', dead);
 });
 await page.evaluate(() => window.__beatNowForTest());
 await page.waitForTimeout(300);
 check('the topbar says who else is editing',
-  (await page.locator('#presenceChip').innerText()).includes('Mrs Wong'),
+  (await page.evaluate(() => window.__presenceForTest().some((p) => p.name === 'Mrs Wong'))) &&
+  /editing/.test(await page.locator('#presenceChip').innerText()),
   await page.locator('#presenceChip').innerText());
 check('an editor that was closed is not counted',
   !(await page.locator('#presenceChip').innerText()).includes('Long Gone'));
+check('but a colleague whose clock runs fast still counts',
+  (await page.evaluate(() => window.__presenceForTest().some((p) => p.name === 'Mr Fastclock'))));
+check('and their note is not deleted out from under them',
+  await page.evaluate(() => window.__fs.list().includes('data/presence/fast.txt')));
 check('and this editor announces itself too',
   (await page.evaluate(() => window.__fs.list().filter((p) =>
-    p.startsWith('data/presence/') && p !== 'data/presence/zzz.txt' &&
-    p !== 'data/presence/old.txt').length)) === 1);
-check('the stale note is tidied away',
-  (await page.evaluate(() => window.__fs.list().includes('data/presence/old.txt'))) === false);
+    p.startsWith('data/presence/') && !/zzz|old|fast|dead/.test(p)).length)) === 1);
+check('a note nobody has touched for a day is tidied away',
+  (await page.evaluate(() => window.__fs.list().includes('data/presence/dead.txt'))) === false);
 
 check('no JS errors', errors.length === 0, errors.slice(0, 2).join(' | '));
 if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });

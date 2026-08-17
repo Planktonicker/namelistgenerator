@@ -289,9 +289,23 @@ await page.click('#groupCancelBtn');
 
 check('renaming a teacher updates their classes',
   (await page.locator('#groupsTable').innerText()).includes('Mr Cheng Xin Ze'));
-check('no JS errors', errors.length === 0, errors.slice(0, 2).join('|'));
+/* Adding a teacher from inside the class dialog changes the roster whether or
+ * not the class itself is saved, so the model has unsaved work either way. */
 await page.locator('.tabs button[data-tab="groups"]').click();
 await page.click('#addGroupBtn');
+await page.waitForSelector('#groupDialog[open]');
+await page.evaluate(() => { window.__testSetClean(); });
+await page.click('#gfTeacherNew');
+await page.waitForTimeout(200);
+check('a teacher added from the class dialog leaves the roster unsaved',
+  (await page.locator('#dirtyNote').innerText()).includes('Unsaved'),
+  await page.locator('#dirtyNote').innerText());
+// Esc, rather than Cancel, must still clear the bulk-add intent
+await page.keyboard.press('Escape');
+await page.waitForFunction(() => !document.getElementById('groupDialog').open);
+check('Esc closes the dialog', true);
+
+check('no JS errors', errors.length === 0, errors.slice(0, 2).join('|'));
 await browser.close();
 console.log(failures.length ? 'FAILURES: ' + failures.length : 'All dialog checks passed');
 process.exit(failures.length ? 1 : 0);

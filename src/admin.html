@@ -1516,6 +1516,12 @@
    * to work on the same thing can see each other first. */
   var PRESENCE_BEAT = 20000;
   var PRESENCE_STALE = 75000;
+  /* Two machines on a shared drive rarely agree on the time. A note stamped in
+   * the future is a clock running fast, not a stale one, and deleting other
+   * people's notes on the strength of our own clock is how an admin whose PC
+   * is a few minutes out becomes permanently invisible. Only clear away notes
+   * that are old beyond any plausible skew. */
+  var PRESENCE_ABANDONED = 24 * 60 * 60 * 1000;
   var meId = Math.random().toString(36).slice(2, 10);
   var myName = '';
   var lastBeat = 0;
@@ -1540,8 +1546,9 @@
         if (entry.kind !== 'file' || entry.name === meId + '.txt') continue;
         try {
           var rec = JSON.parse(await (await entry.getFile()).text());
-          if (Date.now() - rec.at < PRESENCE_STALE) seen.push(rec);
-          else stale.push(entry.name);
+          var age = Date.now() - rec.at;
+          if (age < PRESENCE_STALE) seen.push(rec);
+          if (age > PRESENCE_ABANDONED) stale.push(entry.name);
         } catch (e) { stale.push(entry.name); }
       }
       othersHere = seen;
@@ -1789,7 +1796,10 @@
   });
 
   window.addEventListener('beforeunload', function (e) {
-    if (dirty && !autosaveOn) { e.preventDefault(); e.returnValue = ''; }
+    /* Also when a save is blocked or held back: autosave being ON is no
+     * comfort if it is not going to run. */
+    var willNotSave = !autosaveOn || saveBlocked || requireManualFirstSave;
+    if (dirty && willNotSave) { e.preventDefault(); e.returnValue = ''; }
   });
 
   /* ================= printing ================= */
@@ -1813,6 +1823,10 @@
   /* ================= shared refresh ================= */
 
   function refresh() {
+    /* Re-rendering throws away the element that had focus. A keyboard user
+     * working down a list of requests would otherwise be sent back to the top
+     * of the page after every one. */
+    var hadFocus = document.activeElement && document.activeElement.id;
     ix = S.buildIndexes(model);
     $('countStudents').textContent = model.students.length;
     $('countGroups').textContent = model.groups.length;
@@ -1849,6 +1863,11 @@
     if (currentTab === 'teachers') renderTeachers();
     if (currentTab === 'requests') renderRequests();
     if (currentTab === 'sources') renderSources();
+
+    if (hadFocus && document.activeElement === document.body) {
+      var back = document.getElementById(hadFocus);
+      if (back && typeof back.focus === 'function') back.focus();
+    }
   }
 
   /* Things the admin can act on rather than only read: each holds a label and
@@ -2001,14 +2020,19 @@
   /* Click a row to toggle it; Shift+click selects the range since the last
    * clicked row. Row checkboxes are display-only (pointer-events: none). */
   function wireRowSelection(tbody, set, onChange) {
-    var last = -1;
+    /* Remembered as an id, not a row number: searching or filtering between
+     * the two clicks would otherwise make Shift+click select a completely
+     * different stretch of the list — which then feeds Delete. */
+    var lastId = '';
     tbody.addEventListener('click', function (ev) {
       var tr = ev.target.closest('tr[data-id]');
       if (!tr || ev.target.closest('button')) return;
       var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-id]'));
       var idx = rows.indexOf(tr);
+      var last = -1;
+      rows.forEach(function (r, i) { if (r.dataset.id === lastId) last = i; });
       var willSelect = !set.has(tr.dataset.id);
-      if (ev.shiftKey && last >= 0 && last < rows.length) {
+      if (ev.shiftKey && last >= 0) {
         var a = Math.min(last, idx), b = Math.max(last, idx);
         for (var k = a; k <= b; k++) {
           if (willSelect) set.add(rows[k].dataset.id); else set.delete(rows[k].dataset.id);
@@ -2016,7 +2040,7 @@
       } else {
         if (willSelect) set.add(tr.dataset.id); else set.delete(tr.dataset.id);
       }
-      last = idx;
+      lastId = tr.dataset.id;
       onChange();
     });
   }
@@ -3280,6 +3304,7 @@
     if (!name) return;
     if (!model.teachers.some(function (t) { return S.normKey(t) === S.normKey(name); })) {
       model.teachers.push(name);
+      markDirty();          // the roster changed, whether or not the class is saved
     }
     fillTeacherSelect(name);
     addDialogTeacher();
@@ -3457,7 +3482,17 @@
     requestAnimationFrame(layoutGraph);
     $('gfTeacher').focus();
   }
-  $('groupCancelBtn').addEventListener('click', function () { pendingBulkAdd = false; $('groupDialog').close(); });
+  $('groupCancelBtn').addEventListener('click', function () { $('groupDialog').close(); });
+  // Esc and the backdrop close the dialog without going through Cancel.
+  $('groupDialog').addEventListener('close', function () { pendingBulkAdd = false; });
+
+  /* Enter from a <select> submits the form it sits in, so choosing a teacher
+   * and pressing Enter saved the whole class instead of adding the chip. */
+  $('groupForm').addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter' || ev.target.tagName !== 'SELECT') return;
+    ev.preventDefault();
+    if (ev.target.id === 'gfTeacher') $('gfTeacherAdd').click();
+  });
   $('groupForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     var name = S.norm($('gfName').value);
@@ -4159,7 +4194,13 @@
     $('sfName').value = S.norm(r.name).toUpperCase();
     var level = S.norm(g.level) || S.groupLevel(g, ix.membersByGroup.get(g.code) || []);
     if (level) {
-      $('sfLevel').value = level;
+      // A brand-new level, or one written differently from any student's, is
+      // not in the list yet — setting .value would quietly do nothing.
+      var pick = $('sfLevel');
+      if (!Array.prototype.some.call(pick.options, function (o) { return o.value === level; })) {
+        pick.appendChild(new Option(level, level));
+      }
+      pick.value = level;
       renderStudentFields(null, true);
     }
     /* The combination the class implies: its own subject column, set to the
@@ -5015,6 +5056,8 @@
   window.__syncNowForTest = syncWithFile;  // the poll, without waiting for the timer
   window.__resetFileHandleForTest = function () { fileHandle = null; loadedLastModified = null; };
   window.__beatNowForTest = function () { lastBeat = 0; return beatPresence(); };
+  window.__presenceForTest = function () { return othersHere; };
+  window.__testSetClean = function () { setDirty(false); };
   window.__loadModelForTest = function (m) {
     model = m;
     model.subjectKeys = model.subjectKeys || [];

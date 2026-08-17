@@ -7,42 +7,38 @@
 <link rel="stylesheet" href="shared/fonts.css">
 <link rel="stylesheet" href="shared/styles.css">
 <style>
-  .teacher-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-  .teacher-chips button {
-    border-radius: 999px;
-    padding: 6px 16px;
-    background: var(--accent-soft);
-    border-color: transparent;
-    color: var(--accent);
-    box-shadow: none;
-  }
-  .teacher-chips button:hover { background: var(--accent); color: var(--accent-ink); }
-  .suggestions { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
-  .suggestions button { text-align: left; border: none; background: none; box-shadow: none; padding: 8px 12px; border-radius: 8px; }
-  .suggestions button:hover, .suggestions button.hilite { background: var(--accent-soft); }
+  .teacher-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-4); }
   .group-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
   .group-head .left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .group-head h3 { margin: 0; font-size: 16px; }
-  #teacherSelect { width: 100%; max-width: 520px; font-size: 18px; padding: 12px 14px; }
+  .group-head h3 { margin: 0; font-size: var(--fs-md); }
+  #teacherSelect { width: 100%; max-width: 520px; font-size: var(--fs-lg); padding: var(--sp-3) var(--sp-4); }
   .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .filters select, .filters input { padding: 9px 12px; }
   .filters input { flex: 1; min-width: 220px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-  .chips button {
-    border: 1px solid var(--line); background: #fff; border-radius: 999px;
-    padding: 6px 13px; font-size: 13px; font-weight: 600; cursor: pointer;
+  /* One chip, three places that draw them. */
+  .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+  .chips button, .teacher-chips button {
+    border: 1px solid var(--line-strong); background: var(--surface);
+    border-radius: var(--r-full); padding: 5px 14px;
+    font-size: var(--fs-sm); font-weight: 600; cursor: pointer; box-shadow: none;
   }
-  .chips button:hover { border-color: var(--accent); }
-  .chips button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .chips button:hover, .teacher-chips button:hover {
+    border-color: var(--accent); background: var(--accent-soft); color: var(--accent);
+  }
+  .chips button.on {
+    background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+  }
   .chips button .count { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .chips button.on .count { color: rgba(255, 255, 255, 0.8); }
   .result-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 12px; }
-  .result-title h2 { font-size: 21px; margin: 0; }
-  .tagline { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .result-title h2 { font-size: var(--fs-xl); margin: 0; }
+  .tagline { color: var(--muted); font-size: var(--fs-sm); margin-top: 2px; }
   .level-head {
     display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
-    margin: 22px 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--red);
+    margin: var(--sp-5) 0 var(--sp-3); padding-bottom: var(--sp-2);
+    border-bottom: 2px solid var(--red);
   }
-  .level-head h3 { margin: 0; font-size: 17px; color: var(--accent); }
+  .level-head h3 { margin: 0; font-size: var(--fs-lg); color: var(--accent); }
 
   /* suggestions */
   .namelist .nl-act { width: 1%; white-space: nowrap; }
@@ -53,12 +49,12 @@
   .sg-row input.why { flex: 1; min-width: 180px; }
   .sg-box { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 12px; }
   .tray { border-left: 4px solid var(--accent); }
+  .tray h2 { font-size: var(--fs-md); }
   .tray ul { margin: 8px 0 0; padding-left: 20px; }
   .tray li { margin: 3px 0; }
   .tray .done { color: var(--muted); }
   #sendText { width: 100%; min-height: 210px; font-family: ui-monospace, Menlo, Consolas, monospace;
     font-size: 12px; white-space: pre; overflow-wrap: normal; overflow-x: auto; }
-  .send-ways { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
 </style>
 </head>
 <body>

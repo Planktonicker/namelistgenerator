@@ -34,11 +34,7 @@
 /* Shared look for the namelist pages.
  * Palette: navy blue, red, white. Typeface: Inter (embedded via fonts.css). */
 :root {
-  --bg: #f4f6fa;
-  --surface: #ffffff;
-  --ink: #1a2233;
-  --muted: #5a6478;
-  --line: #e1e6ef;
+  /* ---- brand: navy and red, as the school uses them ---- */
   --accent: #1e3a70;        /* navy */
   --accent-dark: #14294f;
   --accent-ink: #ffffff;
@@ -46,11 +42,67 @@
   --red: #c8102e;
   --red-dark: #9e0c24;
   --red-soft: #fbe9ec;
-  --warn-bg: #fbe9ec;
-  --warn-ink: #7c1023;
+
+  /* ---- neutrals ---- */
+  --bg: #f4f6fa;
+  --surface: #ffffff;
+  --ink: #1a2233;
+  --muted: #5a6478;
+  --line: #e1e6ef;
+  --line-strong: #c7d0de;
+
+  /* ---- status ----
+   * Kept apart from the brand on purpose. Warning, danger and "this is our
+   * red" used to be one colour, so a delete button, a things-to-check box and
+   * the header rule all shouted equally loudly and none of them stood out. */
+  --ok: #1a7f37;
+  --ok-soft: #e7f4ea;
+  --ok-ink: #10592a;
+  --info: var(--accent);
+  --info-soft: var(--accent-soft);
+  --warn: #a15c07;
+  --warn-soft: #fdf3e3;
+  --warn-ink: #6f3d02;
   --danger: #c8102e;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(20, 41, 79, 0.07), 0 1px 6px rgba(20, 41, 79, 0.05);
+  --danger-soft: #fbe9ec;
+  --danger-ink: #7c1023;
+  --warn-bg: var(--warn-soft);      /* older rules still name this */
+
+  /* ---- rows: three states a tired eye can actually tell apart ---- */
+  --zebra: #f5f7fb;
+  --row-hover: #e8eef8;
+  --row-selected: #cfdcf3;
+
+  /* ---- spacing ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* ---- type: five sizes, not eleven ---- */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 20px;
+
+  /* ---- shape ---- */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-full: 999px;
+  --radius: var(--r-md);            /* older rules still name this */
+
+  --shadow-1: 0 1px 2px rgba(20, 41, 79, 0.06);
+  --shadow-2: 0 1px 2px rgba(20, 41, 79, 0.07), 0 1px 6px rgba(20, 41, 79, 0.05);
+  --shadow-3: 0 12px 40px rgba(23, 34, 44, 0.25);
+  --shadow: var(--shadow-2);        /* older rules still name this */
+
+  /* Two rings so the focus is visible on a white card and on a navy bar. */
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px #4368a8;
+
+  --edge-idle: #c8cfdd;             /* mind-map branch not taken; read by JS */
 }
 
 * { box-sizing: border-box; }
@@ -94,10 +146,19 @@ main { max-width: 1160px; margin: 0 auto; padding: 22px 24px 90px; }
   margin-bottom: 16px;
 }
 
-h2 { font-size: 17px; font-weight: 600; margin: 0 0 10px; }
-h3 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
+h2 { font-size: var(--fs-lg); font-weight: 600; margin: 0 0 var(--sp-3); letter-spacing: -0.01em; }
+h3 { font-size: var(--fs-md); font-weight: 600; margin: 0 0 var(--sp-2); }
 .muted { color: var(--muted); }
-.small { font-size: 13px; }
+.small { font-size: var(--fs-sm); }
+
+/* Micro-copy under a control. Defined here rather than in one page's own
+   block, because both pages write it. */
+.hint { font-size: var(--fs-sm); color: var(--muted); margin: var(--sp-1) 0 0; }
+.hint strong { color: var(--ink); font-weight: 600; }
+.hint.warn { color: var(--warn-ink); }
+
+/* A row of ways to do the same thing — used by both pages. */
+.send-ways { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0 var(--sp-1); }
 
 input[type="text"], input[type="search"], select {
   font: inherit;
@@ -108,35 +169,54 @@ input[type="text"], input[type="search"], select {
   background: var(--surface);
   min-width: 0;
 }
-input[type="text"]:focus, input[type="search"]:focus, select:focus {
+input[type="text"]:focus, input[type="search"]:focus, select:focus,
+textarea:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
+}
+
+/* Keyboard focus was visible on text boxes and nothing else — not buttons,
+   not tabs, not the chips, and not the class-builder nodes, whose real radio
+   is hidden off-screen. */
+button:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
+.ticks label:focus-within,
+.chips button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--r-sm);
 }
 input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
 
 button {
   font: inherit;
-  padding: 8px 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  font-weight: 500;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
-  box-shadow: 0 1px 1px rgba(23, 34, 44, 0.04);
+  box-shadow: var(--shadow-1);
+  transition: background-color .12s ease, border-color .12s ease;
 }
-button:hover { background: var(--accent-soft); border-color: #c9d9e8; }
+button:hover { background: var(--accent-soft); border-color: var(--accent); }
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
+  font-weight: 600;
 }
-button.primary:hover { background: var(--accent-dark); }
+button.primary:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
 button.primary:disabled {
   background: #9aa6bd;
   border-color: #9aa6bd;
   cursor: default;
 }
-button.danger { color: var(--danger); }
+/* Destructive used to differ from an ordinary button by text colour alone. */
+button.danger { color: var(--danger); border-color: #eec3cb; }
+button.danger:hover { background: var(--danger-soft); border-color: var(--danger); }
 button.linklike {
   border: none;
   background: none;
@@ -156,21 +236,25 @@ table.list {
 }
 table.list th, table.list td {
   text-align: left;
-  padding: 7px 10px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--line);
-  vertical-align: top;
+  vertical-align: middle;
 }
 table.list th {
-  font-size: 12px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--muted);
-  border-bottom: 2px solid var(--line);
+  border-bottom: 2px solid var(--line-strong);
   white-space: nowrap;
 }
-table.list tbody tr:nth-child(even) td { background: #fafbfd; }
-table.list tbody tr:hover td { background: var(--accent-soft); }
-table.list tr.selected td { background: #dde6f6 !important; }
+/* The old stripe was #fafbfd on white — invisible on a projector or an
+   older screen — and hover and selected were two blues nobody could tell
+   apart while working quickly. */
+table.list tbody tr:nth-child(even) td { background: var(--zebra); }
+table.list tbody tr:hover td { background: var(--row-hover); }
+table.list tr.selected td { background: var(--row-selected) !important; }
 table.list th.sortable { cursor: pointer; user-select: none; }
 table.list th.sortable:hover { color: var(--accent); }
 table.list th.sortable::after { content: " ↕"; opacity: 0.4; }
@@ -204,24 +288,59 @@ th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; p
 .badge.added { background: var(--red-soft); color: var(--red-dark); font-size: 11px; padding: 0 8px; }
 /* Something is waiting for the admin, rather than merely being counted. */
 .badge.hot { background: var(--red); color: #fff; }
-.badge.left { background: #eceff1; color: var(--muted); font-size: 11px; padding: 0 8px; }
+.badge.left { background: #eceff1; color: var(--muted); font-size: var(--fs-xs); padding: 0 8px; }
 
-.warnings {
-  background: var(--warn-bg);
-  color: var(--warn-ink);
-  border: 1px solid #f2c2cc;
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  margin-bottom: 16px;
+/* ---- notices ----
+   Three of these can be on screen at once. They now differ by severity
+   rather than all being the same weight of shout: a coloured spine on the
+   left, a soft ground, and the action on the right. */
+.warnings, .notice, .banner {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--muted);
+  border-radius: var(--r-sm);
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-3);
+  background: var(--surface);
+  font-size: var(--fs-sm);
 }
-.warnings ul { margin: 6px 0 0; padding-left: 20px; }
+.warnings {                       /* things to check — amber, not alarm-red */
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+  border-color: #ecd9b6;
+  border-left-color: var(--warn);
+}
+.warnings ul { margin: var(--sp-2) 0 0; padding-left: 20px; }
+.warnings li { margin: 3px 0; }
 .warnings summary { cursor: pointer; font-weight: 600; }
+.notice, .banner.info {           /* something happened, nothing is wrong */
+  background: var(--info-soft);
+  color: var(--ink);
+  border-color: #cfdcf3;
+  border-left-color: var(--info);
+}
+.banner.attn {                    /* waiting on a decision */
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+  border-color: #f2c2cc;
+  border-left-color: var(--danger);
+}
+.banner.ok {
+  background: var(--ok-soft);
+  color: var(--ok-ink);
+  border-color: #c6e4ce;
+  border-left-color: var(--ok);
+}
 
+/* Framed rather than a lone grey sentence adrift in white space. */
 .empty {
   color: var(--muted);
-  padding: 30px 10px;
+  padding: var(--sp-6) var(--sp-4);
   text-align: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  background: #fbfcfe;
 }
+.empty strong { color: var(--ink); }
 
 .tabs {
   display: flex;
@@ -279,15 +398,41 @@ th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; p
 
 dialog {
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(23, 34, 44, 0.25);
-  padding: 22px 24px;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-3);
+  padding: var(--sp-5);
   max-width: 620px;
   width: calc(100vw - 60px);
+  /* A long form used to push its own OK button off the bottom of the screen. */
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 dialog::backdrop { background: rgba(18, 30, 42, 0.5); }
-dialog form.fields { display: grid; grid-template-columns: 150px 1fr; gap: 10px 12px; align-items: center; }
-dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; grid-column: 1 / -1; }
+dialog > h2 {
+  margin: calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  position: sticky;
+  top: calc(var(--sp-5) * -1);
+  z-index: 2;
+}
+dialog form.fields { display: grid; grid-template-columns: 150px 1fr; gap: var(--sp-3); align-items: center; }
+/* Stays in reach however long the form is. */
+dialog .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin: var(--sp-5) calc(var(--sp-5) * -1) calc(var(--sp-5) * -1);
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  position: sticky;
+  bottom: calc(var(--sp-5) * -1);
+  grid-column: 1 / -1;
+  z-index: 2;
+}
 
 .toast {
   position: fixed;
@@ -309,9 +454,14 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
 /* ---- printing ---- */
 .print-sheet { display: none; }
 
+/* Paper: the printed namelist is a real deliverable here, not an
+   afterthought — it goes up on a wall and gets marked on. */
+@page { size: A4; margin: 14mm 12mm; }
+
 @media print {
   html, body { background: #fff; font-size: 12px; }
-  .no-print, .app-header, .tabs, .toolbar, .selbar, .toast, .warnings { display: none !important; }
+  .no-print, .app-header, .tabs, .toolbar, .selbar, .toast, .warnings,
+  .notice, .banner { display: none !important; }
   main { max-width: none; padding: 0; }
   .card { border: none; box-shadow: none; padding: 0; margin-bottom: 18px; break-inside: avoid-page; }
   .scrolly { max-height: none; overflow: visible; }
@@ -356,33 +506,99 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
 .nl-sub { margin: -6px 0 10px; font-size: 12px; color: var(--muted); }
 
 @media print {
-  .namelist-band td, .namelist th, .namelist td { border: 1px solid #000; }
-  .namelist thead th { background: #fff; }
+  /* Black on every cell was the heaviest grid a printer can draw. */
+  .namelist-band td, .namelist th, .namelist td { border: 1px solid #444; }
+  .namelist thead th { background: #fff; border-bottom: 1.5px solid #111; }
   .namelist tbody tr { page-break-inside: avoid; }
+  /* A class that runs over a page break keeps its column headings. */
+  .namelist thead { display: table-header-group; }
+  .namelist tfoot { display: table-footer-group; }
+  /* …and its banner never ends up stranded at the foot of the page before it. */
+  .namelist-band, .nl-sub { break-after: avoid; page-break-after: avoid; }
 }
 
 </style>
 <style>
-  .topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  /* Eight controls used to sit in one undifferentiated row. Now: what the
+     app is doing on the left, what you can do about it on the right. */
+  .topbar {
+    display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+    margin-bottom: var(--sp-4); padding: var(--sp-2) var(--sp-3);
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-md); box-shadow: var(--shadow-1);
+  }
   .topbar .spacer { flex: 1; }
+  .topbar-status, .topbar-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+  .topbar-actions { gap: var(--sp-2); }
+  /* Save-state used to be bare prose whose width changed as it updated,
+     nudging every button after it along the row. */
+  #dirtyNote {
+    display: inline-flex; align-items: center; gap: 6px;
+    min-width: 15ch; padding: 3px 10px;
+    border-radius: var(--r-full); background: #eef1f6; color: var(--muted);
+    font-size: var(--fs-sm); white-space: nowrap;
+  }
+  #dirtyNote::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: currentColor; flex: none;
+  }
+  #dirtyNote:empty { display: none; }
+  #dirtyNote.dirty { background: var(--warn-soft); color: var(--warn-ink); }
+  #dirtyNote.saved { background: var(--ok-soft); color: var(--ok-ink); }
+  #dirtyNote.warn { background: var(--danger-soft); color: var(--danger-ink); font-weight: 600; }
+  /* Live-collaboration status read as two stray hyperlinks. */
+  .statchip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 11px; border-radius: var(--r-full);
+    border: 1px solid var(--line-strong); background: var(--surface);
+    color: var(--accent); font-size: var(--fs-sm); font-weight: 600;
+    box-shadow: none;
+  }
+  .statchip::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ok); flex: none;
+  }
+  #mergedNote::before { background: var(--accent); }
   .mem-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   @media (max-width: 860px) { .mem-grid { grid-template-columns: 1fr; } }
   #startScreen .card, #setupScreen .card { max-width: 660px; margin: 40px auto; }
   .bigbtn { font-size: 17px; padding: 12px 24px; }
-  .notice { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
-  .unsupported { background: var(--red-soft); color: var(--red-dark); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
-  dialog label { font-weight: 600; font-size: 14px; }
+  /* .notice / .banner / .warnings are shared now — see styles.css. */
+  .notice, .banner { display: flex; align-items: center; gap: var(--sp-3); }
+  .notice > span:first-child, .banner > span:first-child { flex: 1; }
+  .unsupported {
+    background: var(--danger-soft); color: var(--danger-ink);
+    border: 1px solid #f2c2cc; border-left: 4px solid var(--danger);
+    border-radius: var(--r-sm); padding: var(--sp-3) var(--sp-4); margin: var(--sp-3) 0;
+  }
+  dialog label { font-weight: 600; font-size: var(--fs-sm); }
   dialog input[type="text"], dialog select { width: 100%; }
   .import-map { display: grid; grid-template-columns: 170px 1fr; gap: 8px 12px; align-items: center; margin: 10px 0; }
   .tagcols { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0 2px; }
   .tagcols label { font-weight: 500; font-size: 13px; white-space: nowrap; cursor: pointer; }
   td.actions { white-space: nowrap; text-align: right; }
+  /* Register ids like "1R1-01" are one token, not two lines. */
+  #studentsTable td:nth-child(2) { white-space: nowrap; font-variant-numeric: tabular-nums; }
   td.tags { font-size: 13px; color: var(--muted); }
   td.subj { font-size: 13px; white-space: nowrap; }
   .tablewrap { overflow-x: auto; }
+  /* 150+ students: the column headings need to stay put while you scroll. */
+  .tablewrap.tall { max-height: 62vh; overflow-y: auto; }
+  .tablewrap.tall table.list thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--surface); box-shadow: 0 1px 0 var(--line-strong);
+  }
   table.list.selectable tbody { user-select: none; cursor: pointer; }
   .rowcheck { pointer-events: none; }
-  .hint { font-size: 13px; color: var(--muted); margin: 4px 0 0; }
+  /* .hint is shared now. A standalone teaching paragraph gets a little
+     framing so it reads as guidance rather than as part of the data. */
+  .callout {
+    background: var(--info-soft); border-left: 3px solid var(--accent);
+    border-radius: 0 var(--r-sm) var(--r-sm) 0;
+    padding: var(--sp-3) var(--sp-4); margin: 0 0 var(--sp-4);
+    font-size: var(--fs-sm); color: var(--ink);
+  }
+  .callout strong { font-weight: 600; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
   .chips:empty { display: none; }
   .chips .chip {
@@ -425,7 +641,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   .graph {
     position: relative; overflow: auto; max-height: 62vh;
     border: 1px solid var(--line); border-radius: 12px;
-    background: #fbfcfe radial-gradient(var(--line) 1px, transparent 1px) 0 0 / 22px 22px;
+    background: var(--surface) radial-gradient(var(--line) 1px, transparent 1px) 0 0 / 22px 22px;
     padding: 4px;
   }
   .graph-canvas { position: relative; min-width: 100%; min-height: 120px; }
@@ -451,7 +667,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   #tcTicks {
     display: flex; flex-direction: column; gap: 14px;
     max-height: 46vh; overflow-y: auto;
-    padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe;
+    padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg);
   }
   .tc-level { display: flex; flex-direction: column; gap: 7px; }
   .tc-key {
@@ -471,7 +687,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   .warn-row .actions { margin-left: auto; white-space: nowrap; }
 
   /* teachers' suggestions */
-  .req { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 10px 0; }
+  .req { border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--sp-3) var(--sp-4); margin: var(--sp-3) 0; background: var(--surface); }
   .req.settled { opacity: .6; }
   .req-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .req-head h4 { margin: 0; font-size: 15px; }
@@ -480,10 +696,16 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   .req .tag { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
     padding: 2px 8px; border-radius: 999px; }
   .req .tag.add { background: var(--accent-soft); color: var(--accent); }
-  .req .tag.remove { background: #fdeaea; color: #a12; }
+  .req .tag.remove { background: var(--danger-soft); color: var(--danger-ink); }
   /* the student editor */
-  .namelink { font-weight: 600; color: var(--ink); text-align: left; }
+  .namelink {
+    font-weight: 600; color: var(--ink); text-align: left;
+    white-space: nowrap;              /* a name is not a place to break a line */
+    text-decoration: none; padding: 0;
+  }
   .namelink:hover { color: var(--accent); text-decoration: underline; }
+  td.actions .linklike { text-decoration: none; }
+  td.actions .linklike:hover { text-decoration: underline; }
   .fields .subhead {
     grid-column: 1 / -1; margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--line);
     font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
@@ -493,7 +715,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   /* two admins at once */
   .clash-bar { display: flex; align-items: center; gap: 12px; }
   .clash-bar button { margin-left: auto; }
-  .clash { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+  .clash { border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--sp-3); margin: var(--sp-2) 0; }
   .clash-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
   .clash-opt { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 14px; }
   #presenceChip { color: var(--accent); font-weight: 600; }
@@ -568,27 +790,33 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   <!-- ============ main editor ============ -->
   <section id="mainScreen" hidden>
     <div class="topbar">
-      <span class="badge" id="folderName"></span>
-      <span class="muted small" id="dirtyNote"></span>
-      <button class="linklike" id="presenceChip" hidden></button>
-      <button class="linklike" id="mergedNote" hidden title="What has come in from other admins"></button>
+      <div class="topbar-status">
+        <span class="badge" id="folderName"></span>
+        <span class="muted small" id="dirtyNote"></span>
+        <button class="statchip" id="presenceChip" hidden></button>
+        <button class="statchip" id="mergedNote" hidden title="What has come in from other admins"></button>
+      </div>
       <span class="spacer"></span>
-      <button id="importBtn">Import…</button>
-      <button id="reloadBtn">Reload from file</button>
-      <label class="autosave" title="Save a few seconds after each change">
-        <input type="checkbox" id="autosaveBox" checked> Autosave
-      </label>
-      <button class="primary" id="saveBtn" disabled>Save</button>
+      <div class="topbar-actions">
+        <button id="importBtn">Import…</button>
+        <button id="reloadBtn">Reload from file</button>
+        <label class="autosave" title="Save a few seconds after each change">
+          <input type="checkbox" id="autosaveBox" checked> Autosave
+        </label>
+        <button class="primary" id="saveBtn" disabled>Save</button>
+      </div>
     </div>
 
-    <div class="notice" id="updateCheckBar" hidden>
-      <span id="updateCheckText"></span>
-      <button id="updateCheckBtn" hidden></button>
-    </div>
-
-    <div class="notice clash-bar" id="syncBar" hidden>
+    <!-- Most urgent first: something waiting on a decision, then what the app
+         did by itself, then what is worth a look. -->
+    <div class="banner attn clash-bar" id="syncBar" hidden>
       <span id="syncText"></span>
       <button class="primary" id="syncReviewBtn">Review them…</button>
+    </div>
+
+    <div class="banner info" id="updateCheckBar" hidden>
+      <span id="updateCheckText"></span>
+      <button id="updateCheckBtn" hidden></button>
     </div>
 
     <div class="warnings" id="warningsBox" hidden>
@@ -625,11 +853,11 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         <button class="primary" id="addStudentBtn">Add student</button>
       </div>
       <div class="card">
-        <p class="hint no-print"><strong>Click a name</strong> (or double-click the row) to open a student and
+        <p class="callout no-print"><strong>Click a name</strong> (or double-click the row) to open a student and
           change their name, class or subjects. Clicking anywhere else on a row selects it — hold <strong>Shift</strong>
           for a range, or use the header checkbox for everything shown — and the bar below assigns the selection to a
           class. Click any column header, including a subject, to sort; students not taking that subject sort last.</p>
-        <div class="tablewrap">
+        <div class="tablewrap tall">
           <table class="list selectable" id="studentsTable">
             <thead></thead>
             <tbody></tbody>
@@ -733,7 +961,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         <input type="file" id="reqFileInput" accept=".txt,.json,text/plain" hidden>
       </div>
       <div class="card">
-        <p class="hint">Teachers cannot change anything themselves — they send suggestions from
+        <p class="callout">Teachers cannot change anything themselves — they send suggestions from
           <code>namelist.html</code>, and each one waits here for you. An <strong>add</strong> opens the
           usual student form with the name and the class filled in, so you can correct the spelling
           before it is created.</p>
@@ -4484,8 +4712,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     else if (dirty) {
       note = (autosaveOn && !requireManualFirstSave) ? 'Unsaved — saving shortly' : 'Unsaved changes';
     } else if (savedAt) note = 'Saved ' + savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    /* The words are what the app has always said — and what the tests read.
+     * The colour and the dot are the fast version of the same sentence. */
     $('dirtyNote').textContent = note;
     $('dirtyNote').classList.toggle('warn', !!saveBlocked);
+    $('dirtyNote').classList.toggle('dirty', !saveBlocked && dirty);
+    $('dirtyNote').classList.toggle('saved', !saveBlocked && !dirty && !!savedAt);
   }
 
   function scheduleAutosave() {
@@ -5717,7 +5949,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         parts.push('<path d="M' + from.cx + ' ' + from.bottom +
           ' C' + from.cx + ' ' + (from.bottom + dy) +
           ' ' + to.cx + ' ' + (to.top - dy) + ' ' + to.cx + ' ' + to.top +
-          '" fill="none" stroke="' + (on ? 'var(--accent)' : '#c8cfdd') +
+          '" fill="none" stroke="' + (on ? 'var(--accent)' : 'var(--edge-idle)') +
           '" stroke-width="' + (on ? 2.2 : 1) + '" opacity="' + (on ? 1 : 0.5) + '"/>');
       });
       parts.push('<circle cx="' + from.cx + '" cy="' + from.bottom +

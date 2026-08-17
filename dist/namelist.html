@@ -34,11 +34,7 @@
 /* Shared look for the namelist pages.
  * Palette: navy blue, red, white. Typeface: Inter (embedded via fonts.css). */
 :root {
-  --bg: #f4f6fa;
-  --surface: #ffffff;
-  --ink: #1a2233;
-  --muted: #5a6478;
-  --line: #e1e6ef;
+  /* ---- brand: navy and red, as the school uses them ---- */
   --accent: #1e3a70;        /* navy */
   --accent-dark: #14294f;
   --accent-ink: #ffffff;
@@ -46,11 +42,67 @@
   --red: #c8102e;
   --red-dark: #9e0c24;
   --red-soft: #fbe9ec;
-  --warn-bg: #fbe9ec;
-  --warn-ink: #7c1023;
+
+  /* ---- neutrals ---- */
+  --bg: #f4f6fa;
+  --surface: #ffffff;
+  --ink: #1a2233;
+  --muted: #5a6478;
+  --line: #e1e6ef;
+  --line-strong: #c7d0de;
+
+  /* ---- status ----
+   * Kept apart from the brand on purpose. Warning, danger and "this is our
+   * red" used to be one colour, so a delete button, a things-to-check box and
+   * the header rule all shouted equally loudly and none of them stood out. */
+  --ok: #1a7f37;
+  --ok-soft: #e7f4ea;
+  --ok-ink: #10592a;
+  --info: var(--accent);
+  --info-soft: var(--accent-soft);
+  --warn: #a15c07;
+  --warn-soft: #fdf3e3;
+  --warn-ink: #6f3d02;
   --danger: #c8102e;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(20, 41, 79, 0.07), 0 1px 6px rgba(20, 41, 79, 0.05);
+  --danger-soft: #fbe9ec;
+  --danger-ink: #7c1023;
+  --warn-bg: var(--warn-soft);      /* older rules still name this */
+
+  /* ---- rows: three states a tired eye can actually tell apart ---- */
+  --zebra: #f5f7fb;
+  --row-hover: #e8eef8;
+  --row-selected: #cfdcf3;
+
+  /* ---- spacing ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* ---- type: five sizes, not eleven ---- */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 20px;
+
+  /* ---- shape ---- */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-full: 999px;
+  --radius: var(--r-md);            /* older rules still name this */
+
+  --shadow-1: 0 1px 2px rgba(20, 41, 79, 0.06);
+  --shadow-2: 0 1px 2px rgba(20, 41, 79, 0.07), 0 1px 6px rgba(20, 41, 79, 0.05);
+  --shadow-3: 0 12px 40px rgba(23, 34, 44, 0.25);
+  --shadow: var(--shadow-2);        /* older rules still name this */
+
+  /* Two rings so the focus is visible on a white card and on a navy bar. */
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px #4368a8;
+
+  --edge-idle: #c8cfdd;             /* mind-map branch not taken; read by JS */
 }
 
 * { box-sizing: border-box; }
@@ -94,10 +146,19 @@ main { max-width: 1160px; margin: 0 auto; padding: 22px 24px 90px; }
   margin-bottom: 16px;
 }
 
-h2 { font-size: 17px; font-weight: 600; margin: 0 0 10px; }
-h3 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
+h2 { font-size: var(--fs-lg); font-weight: 600; margin: 0 0 var(--sp-3); letter-spacing: -0.01em; }
+h3 { font-size: var(--fs-md); font-weight: 600; margin: 0 0 var(--sp-2); }
 .muted { color: var(--muted); }
-.small { font-size: 13px; }
+.small { font-size: var(--fs-sm); }
+
+/* Micro-copy under a control. Defined here rather than in one page's own
+   block, because both pages write it. */
+.hint { font-size: var(--fs-sm); color: var(--muted); margin: var(--sp-1) 0 0; }
+.hint strong { color: var(--ink); font-weight: 600; }
+.hint.warn { color: var(--warn-ink); }
+
+/* A row of ways to do the same thing — used by both pages. */
+.send-ways { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0 var(--sp-1); }
 
 input[type="text"], input[type="search"], select {
   font: inherit;
@@ -108,35 +169,54 @@ input[type="text"], input[type="search"], select {
   background: var(--surface);
   min-width: 0;
 }
-input[type="text"]:focus, input[type="search"]:focus, select:focus {
+input[type="text"]:focus, input[type="search"]:focus, select:focus,
+textarea:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
+}
+
+/* Keyboard focus was visible on text boxes and nothing else — not buttons,
+   not tabs, not the chips, and not the class-builder nodes, whose real radio
+   is hidden off-screen. */
+button:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
+.ticks label:focus-within,
+.chips button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--r-sm);
 }
 input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
 
 button {
   font: inherit;
-  padding: 8px 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  font-weight: 500;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
-  box-shadow: 0 1px 1px rgba(23, 34, 44, 0.04);
+  box-shadow: var(--shadow-1);
+  transition: background-color .12s ease, border-color .12s ease;
 }
-button:hover { background: var(--accent-soft); border-color: #c9d9e8; }
+button:hover { background: var(--accent-soft); border-color: var(--accent); }
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
+  font-weight: 600;
 }
-button.primary:hover { background: var(--accent-dark); }
+button.primary:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
 button.primary:disabled {
   background: #9aa6bd;
   border-color: #9aa6bd;
   cursor: default;
 }
-button.danger { color: var(--danger); }
+/* Destructive used to differ from an ordinary button by text colour alone. */
+button.danger { color: var(--danger); border-color: #eec3cb; }
+button.danger:hover { background: var(--danger-soft); border-color: var(--danger); }
 button.linklike {
   border: none;
   background: none;
@@ -156,21 +236,25 @@ table.list {
 }
 table.list th, table.list td {
   text-align: left;
-  padding: 7px 10px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--line);
-  vertical-align: top;
+  vertical-align: middle;
 }
 table.list th {
-  font-size: 12px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--muted);
-  border-bottom: 2px solid var(--line);
+  border-bottom: 2px solid var(--line-strong);
   white-space: nowrap;
 }
-table.list tbody tr:nth-child(even) td { background: #fafbfd; }
-table.list tbody tr:hover td { background: var(--accent-soft); }
-table.list tr.selected td { background: #dde6f6 !important; }
+/* The old stripe was #fafbfd on white — invisible on a projector or an
+   older screen — and hover and selected were two blues nobody could tell
+   apart while working quickly. */
+table.list tbody tr:nth-child(even) td { background: var(--zebra); }
+table.list tbody tr:hover td { background: var(--row-hover); }
+table.list tr.selected td { background: var(--row-selected) !important; }
 table.list th.sortable { cursor: pointer; user-select: none; }
 table.list th.sortable:hover { color: var(--accent); }
 table.list th.sortable::after { content: " ↕"; opacity: 0.4; }
@@ -204,24 +288,59 @@ th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; p
 .badge.added { background: var(--red-soft); color: var(--red-dark); font-size: 11px; padding: 0 8px; }
 /* Something is waiting for the admin, rather than merely being counted. */
 .badge.hot { background: var(--red); color: #fff; }
-.badge.left { background: #eceff1; color: var(--muted); font-size: 11px; padding: 0 8px; }
+.badge.left { background: #eceff1; color: var(--muted); font-size: var(--fs-xs); padding: 0 8px; }
 
-.warnings {
-  background: var(--warn-bg);
-  color: var(--warn-ink);
-  border: 1px solid #f2c2cc;
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  margin-bottom: 16px;
+/* ---- notices ----
+   Three of these can be on screen at once. They now differ by severity
+   rather than all being the same weight of shout: a coloured spine on the
+   left, a soft ground, and the action on the right. */
+.warnings, .notice, .banner {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--muted);
+  border-radius: var(--r-sm);
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-3);
+  background: var(--surface);
+  font-size: var(--fs-sm);
 }
-.warnings ul { margin: 6px 0 0; padding-left: 20px; }
+.warnings {                       /* things to check — amber, not alarm-red */
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+  border-color: #ecd9b6;
+  border-left-color: var(--warn);
+}
+.warnings ul { margin: var(--sp-2) 0 0; padding-left: 20px; }
+.warnings li { margin: 3px 0; }
 .warnings summary { cursor: pointer; font-weight: 600; }
+.notice, .banner.info {           /* something happened, nothing is wrong */
+  background: var(--info-soft);
+  color: var(--ink);
+  border-color: #cfdcf3;
+  border-left-color: var(--info);
+}
+.banner.attn {                    /* waiting on a decision */
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+  border-color: #f2c2cc;
+  border-left-color: var(--danger);
+}
+.banner.ok {
+  background: var(--ok-soft);
+  color: var(--ok-ink);
+  border-color: #c6e4ce;
+  border-left-color: var(--ok);
+}
 
+/* Framed rather than a lone grey sentence adrift in white space. */
 .empty {
   color: var(--muted);
-  padding: 30px 10px;
+  padding: var(--sp-6) var(--sp-4);
   text-align: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  background: #fbfcfe;
 }
+.empty strong { color: var(--ink); }
 
 .tabs {
   display: flex;
@@ -279,15 +398,41 @@ th.checkcol, td.checkcol { width: 34px; text-align: center; padding-left: 6px; p
 
 dialog {
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(23, 34, 44, 0.25);
-  padding: 22px 24px;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-3);
+  padding: var(--sp-5);
   max-width: 620px;
   width: calc(100vw - 60px);
+  /* A long form used to push its own OK button off the bottom of the screen. */
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 dialog::backdrop { background: rgba(18, 30, 42, 0.5); }
-dialog form.fields { display: grid; grid-template-columns: 150px 1fr; gap: 10px 12px; align-items: center; }
-dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; grid-column: 1 / -1; }
+dialog > h2 {
+  margin: calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  position: sticky;
+  top: calc(var(--sp-5) * -1);
+  z-index: 2;
+}
+dialog form.fields { display: grid; grid-template-columns: 150px 1fr; gap: var(--sp-3); align-items: center; }
+/* Stays in reach however long the form is. */
+dialog .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin: var(--sp-5) calc(var(--sp-5) * -1) calc(var(--sp-5) * -1);
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  position: sticky;
+  bottom: calc(var(--sp-5) * -1);
+  grid-column: 1 / -1;
+  z-index: 2;
+}
 
 .toast {
   position: fixed;
@@ -309,9 +454,14 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
 /* ---- printing ---- */
 .print-sheet { display: none; }
 
+/* Paper: the printed namelist is a real deliverable here, not an
+   afterthought — it goes up on a wall and gets marked on. */
+@page { size: A4; margin: 14mm 12mm; }
+
 @media print {
   html, body { background: #fff; font-size: 12px; }
-  .no-print, .app-header, .tabs, .toolbar, .selbar, .toast, .warnings { display: none !important; }
+  .no-print, .app-header, .tabs, .toolbar, .selbar, .toast, .warnings,
+  .notice, .banner { display: none !important; }
   main { max-width: none; padding: 0; }
   .card { border: none; box-shadow: none; padding: 0; margin-bottom: 18px; break-inside: avoid-page; }
   .scrolly { max-height: none; overflow: visible; }
@@ -356,49 +506,51 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
 .nl-sub { margin: -6px 0 10px; font-size: 12px; color: var(--muted); }
 
 @media print {
-  .namelist-band td, .namelist th, .namelist td { border: 1px solid #000; }
-  .namelist thead th { background: #fff; }
+  /* Black on every cell was the heaviest grid a printer can draw. */
+  .namelist-band td, .namelist th, .namelist td { border: 1px solid #444; }
+  .namelist thead th { background: #fff; border-bottom: 1.5px solid #111; }
   .namelist tbody tr { page-break-inside: avoid; }
+  /* A class that runs over a page break keeps its column headings. */
+  .namelist thead { display: table-header-group; }
+  .namelist tfoot { display: table-footer-group; }
+  /* …and its banner never ends up stranded at the foot of the page before it. */
+  .namelist-band, .nl-sub { break-after: avoid; page-break-after: avoid; }
 }
 
 </style>
 <style>
-  .teacher-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-  .teacher-chips button {
-    border-radius: 999px;
-    padding: 6px 16px;
-    background: var(--accent-soft);
-    border-color: transparent;
-    color: var(--accent);
-    box-shadow: none;
-  }
-  .teacher-chips button:hover { background: var(--accent); color: var(--accent-ink); }
-  .suggestions { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
-  .suggestions button { text-align: left; border: none; background: none; box-shadow: none; padding: 8px 12px; border-radius: 8px; }
-  .suggestions button:hover, .suggestions button.hilite { background: var(--accent-soft); }
+  .teacher-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-4); }
   .group-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
   .group-head .left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .group-head h3 { margin: 0; font-size: 16px; }
-  #teacherSelect { width: 100%; max-width: 520px; font-size: 18px; padding: 12px 14px; }
+  .group-head h3 { margin: 0; font-size: var(--fs-md); }
+  #teacherSelect { width: 100%; max-width: 520px; font-size: var(--fs-lg); padding: var(--sp-3) var(--sp-4); }
   .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .filters select, .filters input { padding: 9px 12px; }
   .filters input { flex: 1; min-width: 220px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-  .chips button {
-    border: 1px solid var(--line); background: #fff; border-radius: 999px;
-    padding: 6px 13px; font-size: 13px; font-weight: 600; cursor: pointer;
+  /* One chip, three places that draw them. */
+  .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+  .chips button, .teacher-chips button {
+    border: 1px solid var(--line-strong); background: var(--surface);
+    border-radius: var(--r-full); padding: 5px 14px;
+    font-size: var(--fs-sm); font-weight: 600; cursor: pointer; box-shadow: none;
   }
-  .chips button:hover { border-color: var(--accent); }
-  .chips button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .chips button:hover, .teacher-chips button:hover {
+    border-color: var(--accent); background: var(--accent-soft); color: var(--accent);
+  }
+  .chips button.on {
+    background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+  }
   .chips button .count { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .chips button.on .count { color: rgba(255, 255, 255, 0.8); }
   .result-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 12px; }
-  .result-title h2 { font-size: 21px; margin: 0; }
-  .tagline { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .result-title h2 { font-size: var(--fs-xl); margin: 0; }
+  .tagline { color: var(--muted); font-size: var(--fs-sm); margin-top: 2px; }
   .level-head {
     display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
-    margin: 22px 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--red);
+    margin: var(--sp-5) 0 var(--sp-3); padding-bottom: var(--sp-2);
+    border-bottom: 2px solid var(--red);
   }
-  .level-head h3 { margin: 0; font-size: 17px; color: var(--accent); }
+  .level-head h3 { margin: 0; font-size: var(--fs-lg); color: var(--accent); }
 
   /* suggestions */
   .namelist .nl-act { width: 1%; white-space: nowrap; }
@@ -409,12 +561,12 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   .sg-row input.why { flex: 1; min-width: 180px; }
   .sg-box { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 12px; }
   .tray { border-left: 4px solid var(--accent); }
+  .tray h2 { font-size: var(--fs-md); }
   .tray ul { margin: 8px 0 0; padding-left: 20px; }
   .tray li { margin: 3px 0; }
   .tray .done { color: var(--muted); }
   #sendText { width: 100%; min-height: 210px; font-family: ui-monospace, Menlo, Consolas, monospace;
     font-size: 12px; white-space: pre; overflow-wrap: normal; overflow-x: auto; }
-  .send-ways { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
 </style>
 </head>
 <body>

@@ -335,14 +335,20 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
 }
 .namelist-band td:nth-child(3) { width: 45%; white-space: normal; }
 .namelist-band .nl-pax { text-align: right; font-weight: 400; }
+.namelist { table-layout: auto; }
 .namelist th, .namelist td { border: 1px solid #333; padding: 5px 8px; }
 .namelist thead th {
   background: var(--accent-soft); font-size: 12px; letter-spacing: .02em; text-align: left;
 }
-.namelist .nl-sn { width: 46px; text-align: right; }
-.namelist .nl-class { width: 68px; }
-.namelist .nl-gender { width: 62px; text-align: center; }
-.namelist .nl-note { width: 26%; }
+/* `width: 1%` with nowrap shrinks a column to its own content, so Name is as
+ * wide as the longest name and no wider; Note takes whatever is left over. */
+.namelist .nl-sn, .namelist .nl-class, .namelist .nl-gender, .namelist .nl-name {
+  width: 1%; white-space: nowrap;
+}
+.namelist .nl-sn { text-align: right; }
+.namelist .nl-gender { text-align: center; }
+.namelist .nl-name { padding-right: 22px; }      /* a little air after the name */
+.namelist .nl-note { width: auto; min-width: 110px; }
 .namelist .nl-empty { text-align: center; color: var(--muted); }
 .nl-sub { margin: -6px 0 10px; font-size: 12px; color: var(--muted); }
 

@@ -498,6 +498,10 @@ at is what comes out of the printer:
 │  45  │ 3S2   │ EDGAR KAUNG ZARNI HEIN   │ M      │             │
 ```
 
+The **Name column is as wide as the longest name in that class** and no wider —
+a margin after it, and the Note column takes whatever is left, so there is room
+to write beside short names and nothing is truncated beside long ones.
+
 The banner names the level, the posting/subject group and the subject, with the
 head count on the right — read from the class's own rule, or off its students
 when it has none. **S/N is the school's own serial number**, captured from the

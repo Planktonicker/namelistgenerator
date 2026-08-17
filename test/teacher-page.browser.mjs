@@ -16,6 +16,10 @@ const win = {};
 new Function('window', dataJs)(win);
 const second = win.NAMELIST_DATA.groups.find((g) => g.code === 'MA-1R4');
 second.teachers = second.teachers.concat(['Mrs Lim Bee Leng']);
+/* One long name in the English class, to watch the Name column follow it. */
+const inEnglish = win.NAMELIST_DATA.memberships.find((m) => m.groupCode === 'EL-1R1');
+win.NAMELIST_DATA.students.find((s) => s.id === inEnglish.studentId).name =
+  'NURUL AISYAH BINTE MOHAMED FAIZAL RAHMAN';
 writeFileSync(join(demo, 'data.js'),
   'window.NAMELIST_DATA = ' + JSON.stringify(win.NAMELIST_DATA) + ';\n');
 
@@ -54,6 +58,27 @@ check('clicking a chip narrows the page to that class',
   await page.locator('#myClassChips button.on').innerText());
 await page.locator('#myClassChips button').first().click();
 check('the "all" chip puts them back', (await page.locator('#teacherResults .card').count()) === 2);
+
+// the namelist is the school's layout, with the Name column sized to its names
+const cols = await page.evaluate(() => {
+  const cards = Array.from(document.querySelectorAll('#teacherResults .card'));
+  return cards.map((card) => {
+    const row = card.querySelector('.namelist tbody tr');
+    const cell = (cls) => Math.round(card.querySelector('.' + cls).getBoundingClientRect().width);
+    const longest = Math.max(...Array.from(card.querySelectorAll('.nl-name')).map((c) => c.scrollWidth));
+    return { head: card.querySelector('.namelist thead').innerText.replace(/\s+/g, ' ').trim(),
+      name: cell('nl-name'), note: cell('nl-note'), longest: longest, cells: row.children.length };
+  });
+});
+check('the namelist carries the school\'s columns',
+  cols.every((c) => c.head === 'S/N Class Name Gender Note' && c.cells === 5), cols[0].head);
+check('the Name column is as wide as its longest name, plus a margin',
+  cols.every((c) => c.name >= c.longest && c.name <= c.longest + 40),
+  cols.map((c) => c.name + ' vs ' + c.longest).join(' / '));
+check('a class of short names gets a narrow Name column, and Note takes the rest',
+  Math.min.apply(null, cols.map((c) => c.name)) < Math.max.apply(null, cols.map((c) => c.name)) &&
+  cols.every((c) => c.note > 110),
+  cols.map((c) => 'name ' + c.name + ', note ' + c.note).join(' / '));
 
 // the choice is remembered for next time
 await page.reload();

@@ -30,7 +30,7 @@
   var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Gender', 'PG', 'Origin'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teacher', 'AutoSubject', 'AutoValue', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
-  var SOURCE_HEADERS = ['Level', 'FilePattern', 'LastFile', 'LastImported'];
+  var SOURCE_HEADERS = ['Level', 'SourceFile', 'FilePattern', 'LastFile', 'LastImported'];
 
   var STUDENT_FIELDS = {
     id: ['studentid', 'id', 'studentno', 'indexno', 'regno', 'nric'],
@@ -55,6 +55,7 @@
   };
   var SOURCE_FIELDS = {
     level: ['level'],
+    file: ['sourcefile'],
     pattern: ['filepattern', 'pattern'],
     lastFile: ['lastfile'],
     lastImported: ['lastimported'],
@@ -225,9 +226,9 @@
     X.utils.book_append_sheet(wb, ws, 'Memberships');
 
     ws = X.utils.aoa_to_sheet([SOURCE_HEADERS].concat((model.sources || []).map(function (s) {
-      return [s.level, s.pattern, s.lastFile, s.lastImported];
+      return [s.level, s.file, s.pattern, s.lastFile, s.lastImported];
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 30 }, { wch: 40 }, { wch: 22 }];
+    ws['!cols'] = [{ wch: 12 }, { wch: 42 }, { wch: 30 }, { wch: 42 }, { wch: 22 }];
     X.utils.book_append_sheet(wb, ws, 'Sources');
 
     return wb;
@@ -512,6 +513,60 @@
     return best;
   }
 
+  /* The stable part of a filename, so a level pointed at
+   * "Sec 1 Allocation_14 Jan.xlsx" can still recognise
+   * "Sec 1 Allocation_5 Aug.xlsx" as the same list under a new name.
+   * Deliberately conservative: only trailing parentheticals and
+   * day+month stamps are dropped, never bare numbers (which are often
+   * years or cohorts that belong to the name). */
+  function derivePattern(filename) {
+    var base = norm(filename).replace(/\.(xlsx|xlsm|xlsb|xls|csv)$/i, '');
+    base = base.replace(/\s*\([^)]*\)\s*$/, '');
+    base = base.replace(
+      /[\s_.\-]*(?:updated\s*)?\d{1,2}\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:\s*\d{2,4})?$/i, '');
+    return base.replace(/[\s_.\-]+$/, '').trim();
+  }
+
+  function findByName(files, name) {
+    var want = normKey(name);
+    if (!want) return null;
+    var hit = null;
+    (files || []).forEach(function (f) {
+      if (!/^~\$/.test(f.name) && normKey(f.name) === want) hit = f;
+    });
+    return hit;
+  }
+
+  /* Work out what a level's chosen source file is doing right now.
+   *   status 'none'      no file chosen yet
+   *          'current'   chosen file present, unchanged since last import
+   *          'stale'     chosen file present and modified since last import
+   *          'renamed'   chosen file present, but a newer similarly-named
+   *                      file exists (the office saved under a new name)
+   *          'missing-alt' chosen file gone, a similarly-named one exists
+   *          'missing'   nothing in the folder matches
+   * `file` is the file to import from, `alt` a suggested replacement. */
+  function resolveSource(files, source) {
+    var pattern = norm(source.pattern) || derivePattern(source.file || '');
+    var chosen = findByName(files, source.file);
+    var newest = pattern ? findNewestMatch(files, pattern) : null;
+    var lastMs = source.lastImported ? new Date(source.lastImported).getTime() : 0;
+    if (isNaN(lastMs)) lastMs = 0;
+
+    // Sources saved before files were chosen explicitly only have a pattern.
+    if (!norm(source.file) && newest) chosen = newest;
+
+    if (!chosen) {
+      if (!norm(source.file) && !pattern) return { status: 'none', file: null, alt: null };
+      return newest ? { status: 'missing-alt', file: null, alt: newest }
+                    : { status: 'missing', file: null, alt: null };
+    }
+    var alt = (newest && normKey(newest.name) !== normKey(chosen.name) &&
+      newest.lastModified > chosen.lastModified) ? newest : null;
+    if (alt) return { status: 'renamed', file: chosen, alt: alt };
+    return { status: chosen.lastModified > lastMs ? 'stale' : 'current', file: chosen, alt: null };
+  }
+
   /* "EL G3" already names its subject; "CHINESE" under HMT does not — show
    * the key when the value doesn't already start with it. */
   function displayPair(key, value) {
@@ -605,6 +660,9 @@
     studentSearchText: studentSearchText,
     applyLevelUpdate: applyLevelUpdate,
     findNewestMatch: findNewestMatch,
+    derivePattern: derivePattern,
+    findByName: findByName,
+    resolveSource: resolveSource,
     groupHasRule: groupHasRule,
     matchesRule: matchesRule,
     autoFillGroup: autoFillGroup,

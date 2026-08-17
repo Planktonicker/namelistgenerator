@@ -67,17 +67,27 @@ dated `Sec 4_Final Classlist` versions) can live anywhere — a private admin sh
 like `S:\_Admin\...` is fine, and they are never modified or exposed to teachers.
 In the **School files** tab:
 
-1. **Add level** once per level, with a filename pattern (e.g. `Sec 1 Subject Allocation`).
-   The mapping is saved inside `namelist.xlsx`, so all admins share it.
-2. When files change: **Choose school files folder…** → pick the folder. The newest
-   file matching each pattern is found automatically — dated renames need no config
-   change — and levels with a file newer than their last import are flagged.
-3. Click **Update…** on a level. The right sheet, header row and columns are detected
-   automatically; you see a summary (how many students, which classes) before anything
-   changes. Students are matched **by name**, so their IDs and group memberships are
-   kept; only that level's classes are touched, only the subject columns present in
-   the file are refreshed, and you decide whether students who dropped off the list
-   are removed. Then press **Save** as usual.
+1. **Choose school files folder…** → pick the folder (once per device; afterwards the
+   button reconnects it with a single permission click).
+2. **Add Sec 1–5** creates the five levels in one go (or **Add level** for anything
+   else). For each, click **Choose file…** and pick which file in the folder is that
+   level's namelist — **the files can be named anything**. The choice is stored in
+   `namelist.xlsx`, so every admin on every device sees the same assignment; only the
+   folder connection is per-device, which means drive letters and UNC paths don't
+   matter.
+3. Picking a file imports it straight away. The right sheet, header row and columns are
+   detected automatically; you see a summary (how many students, which classes) before
+   anything changes. Students are matched **by name**, so their IDs and group
+   memberships are kept; only that level's classes are touched, only the subject
+   columns present in the file are refreshed, and you decide whether students who
+   dropped off the list are removed. Then press **Save** as usual.
+4. Afterwards the Status column keeps each level honest:
+   - *up to date* — nothing to do
+   - *updated <date>* — the same file changed since the last import; **Update all**
+     refreshes every such level at once
+   - *newer file under another name* — the office saved a new version under a new
+     name; the app suggests it but never switches silently, so one click confirms
+   - *file not found* — the chosen file is gone; pick again
 
 Running the same file twice is harmless — everyone matches, nothing changes.
 

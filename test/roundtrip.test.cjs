@@ -202,6 +202,77 @@ test('nextFreeId continues a class register without clashing', () => {
   assert.strictEqual(S.nextFreeId(model, ''), 'S-01');
 });
 
+test('derivePattern keeps the stable part of real school filenames', () => {
+  const cases = [
+    ['Sec 1 Subject Allocation_14 Jan.xlsx', 'Sec 1 Subject Allocation'],
+    ['Sec 2 Subject Allocation_13Jan.xlsx', 'Sec 2 Subject Allocation'],
+    ['2026_Sec 4_Final Classlist (updated 21 July).xlsx', '2026_Sec 4_Final Classlist'],
+    ['2026_Sec 4_Final Classlist (updated 1 July).xlsx', '2026_Sec 4_Final Classlist'],
+    ['Sec 3 Subject Grouping List.xlsx', 'Sec 3 Subject Grouping List'],
+    ['2026_Sec 5N Subject Combi.xlsx', '2026_Sec 5N Subject Combi'],  // trailing text kept
+    ['Class list 2026.xlsx', 'Class list 2026'],                      // bare year NOT stripped
+  ];
+  cases.forEach(([input, expected]) => {
+    assert.strictEqual(S.derivePattern(input), expected, input);
+  });
+});
+
+test('resolveSource reports up-to-date, stale, renamed, and missing files', () => {
+  const files = [
+    { name: 'Sec 1 Subject Allocation_14 Jan.xlsx', lastModified: 1000 },
+    { name: 'Sec 2 Subject Allocation_13Jan.xlsx', lastModified: 1000 },
+    { name: '~$Sec 1 Subject Allocation_14 Jan.xlsx', lastModified: 9999 },
+  ];
+  // never imported -> stale (there is something to import)
+  let r = S.resolveSource(files, { level: 'Sec 1', file: 'Sec 1 Subject Allocation_14 Jan.xlsx', pattern: '', lastImported: '' });
+  assert.strictEqual(r.status, 'stale');
+  assert.strictEqual(r.file.name, 'Sec 1 Subject Allocation_14 Jan.xlsx');
+
+  // imported after the file's timestamp -> current
+  r = S.resolveSource(files, {
+    level: 'Sec 1', file: 'Sec 1 Subject Allocation_14 Jan.xlsx', pattern: '',
+    lastImported: new Date(5000).toISOString(),
+  });
+  assert.strictEqual(r.status, 'current');
+
+  // the office saves a newer file under a new name -> offered as a switch,
+  // never applied silently
+  const renamed = files.concat([{ name: 'Sec 1 Subject Allocation_5 Aug.xlsx', lastModified: 8000 }]);
+  r = S.resolveSource(renamed, {
+    level: 'Sec 1', file: 'Sec 1 Subject Allocation_14 Jan.xlsx', pattern: '',
+    lastImported: new Date(5000).toISOString(),
+  });
+  assert.strictEqual(r.status, 'renamed');
+  assert.strictEqual(r.alt.name, 'Sec 1 Subject Allocation_5 Aug.xlsx');
+  assert.strictEqual(r.file.name, 'Sec 1 Subject Allocation_14 Jan.xlsx');
+
+  // chosen file deleted, a similar one remains
+  r = S.resolveSource(renamed, {
+    level: 'Sec 1', file: 'Sec 1 Subject Allocation_OLD.xlsx', pattern: 'Sec 1 Subject Allocation',
+    lastImported: new Date(5000).toISOString(),
+  });
+  assert.strictEqual(r.status, 'missing-alt');
+  assert.strictEqual(r.alt.name, 'Sec 1 Subject Allocation_5 Aug.xlsx');
+
+  // nothing resembling it
+  r = S.resolveSource(files, { level: 'Sec 5', file: 'Sec 5 Combi.xlsx', pattern: '', lastImported: '' });
+  assert.strictEqual(r.status, 'missing');
+
+  // no file chosen yet
+  r = S.resolveSource(files, { level: 'Sec 5', file: '', pattern: '', lastImported: '' });
+  assert.strictEqual(r.status, 'none');
+
+  // a source saved before explicit file choice existed still resolves by pattern
+  r = S.resolveSource(files, { level: 'Sec 2', file: '', pattern: 'Sec 2 Subject Allocation', lastImported: '' });
+  assert.strictEqual(r.status, 'stale');
+  assert.strictEqual(r.file.name, 'Sec 2 Subject Allocation_13Jan.xlsx');
+
+  // an arbitrary name works fine — it is just an exact match
+  const odd = [{ name: 'whatever the office called it.xlsx', lastModified: 700 }];
+  r = S.resolveSource(odd, { level: 'Sec 3', file: 'whatever the office called it.xlsx', pattern: '', lastImported: '' });
+  assert.strictEqual(r.status, 'stale');
+});
+
 test('findNewestMatch picks the latest matching file and skips lock files', () => {
   const files = [
     { name: 'Sec 1 Subject Allocation_14 Jan.xlsx', lastModified: 100 },

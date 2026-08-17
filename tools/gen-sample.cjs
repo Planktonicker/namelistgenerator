@@ -34,7 +34,10 @@ function buildSampleModel() {
   const model = S.emptyModel();
   model.subjectKeys = ['TG', 'EL', 'MT', 'HMT', 'MA', 'SCI', 'HIST', 'GEOG', 'LIT'];
   model.sources = [
-    { level: 'Sec 1', pattern: 'Sec 1 Subject Allocation', lastFile: '', lastImported: '' },
+    {
+      level: 'Sec 1', file: 'Sec 1 Subject Allocation_14 Jan.xlsx',
+      pattern: 'Sec 1 Subject Allocation', lastFile: '', lastImported: '',
+    },
   ];
 
   CLASSES.forEach((cls, c) => {

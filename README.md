@@ -138,6 +138,19 @@ students are:
   updates them in place, keeps their ID and group memberships, and flips them
   to file-sourced — no duplicate is created.
 
+**Editing a student's name.** Names can be corrected at any time from
+**Edit** in the Students tab — including for students that came from the
+school's file. The app remembers the spelling the file uses separately from the
+one you type, so your correction is kept on every later import instead of being
+overwritten, and the student still matches their row in the file. Such a
+student carries an **edited** badge; hovering it shows what the office calls
+them. If the office later adopts the same spelling, the two simply converge.
+
+The one case the app will not decide for you is the office renaming somebody
+whose name you never touched — "Nur Aisyah" becoming "Nur Aisyah Bte Rahman"
+could be a rewrite or a different student. That produces two records, a
+**possible duplicate** warning naming both, and **Merge** to settle it.
+
 That adoption is deliberately forgiving, because a student entered by hand and
 the same student typed by the office rarely match character for character. As
 well as an exact name match, a student added in the app is recognised when the

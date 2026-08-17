@@ -27,7 +27,7 @@
   var ORIGIN_FILE = 'file';
   var ORIGIN_ADDED = 'added';
 
-  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'Origin'];
+  var STUDENT_HEADERS = ['StudentID', 'Name', 'Class', 'Level', 'Gender', 'PG', 'Origin', 'SourceName'];
   var GROUP_HEADERS = ['GroupCode', 'GroupName', 'Subject', 'Teachers', 'Level',
     'AutoMatch', 'AutoPG', 'AutoClasses'];
   var MEMBERSHIP_HEADERS = ['StudentID', 'GroupCode'];
@@ -42,6 +42,7 @@
     gender: ['gender', 'sex'],
     pg: ['pg', 'postinggroup', 'stream'],
     origin: ['origin'],
+    sourceName: ['sourcename'],
   };
 
   /* Only used when mapping a raw school file: a register number is a way to
@@ -208,13 +209,15 @@
     for (var r = 1; r < rows.length; r++) {
       var row = rows[r];
       if (!row || isBlankRow(row)) continue;
-      var rec = { id: '', name: '', class: '', level: '', gender: '', pg: '', origin: '', subjects: {} };
+      var rec = { id: '', name: '', class: '', level: '', gender: '', pg: '', origin: '', sourceName: '', subjects: {} };
       Object.keys(STUDENT_FIELDS).forEach(function (f) {
         rec[f] = f in idx ? norm(row[idx[f]]) : '';
       });
       // Files written before the Origin column existed: assume the students
       // came from the school file (the pre-existing behaviour).
       if (rec.origin !== ORIGIN_ADDED) rec.origin = ORIGIN_FILE;
+      // Blank SourceName means the displayed name is still the file's own.
+      if (!rec.sourceName) rec.sourceName = rec.name;
       if (!rec.id || !rec.name) {
         warnings.push('Sheet "Students" row ' + (r + 1) + ': missing ' +
           (!rec.id ? 'id' : 'name') + ' — row skipped.');
@@ -280,10 +283,11 @@
 
     var keys = model.subjectKeys || [];
     ws = X.utils.aoa_to_sheet([STUDENT_HEADERS.concat(keys)].concat(model.students.map(function (s) {
-      return [s.id, s.name, s.class, s.level, s.gender, s.pg, s.origin || ORIGIN_FILE]
+      return [s.id, s.name, s.class, s.level, s.gender, s.pg, s.origin || ORIGIN_FILE,
+        s.sourceName === s.name ? '' : s.sourceName]
         .concat(keys.map(function (k) { return (s.subjects && s.subjects[k]) || ''; }));
     })));
-    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 5 }, { wch: 8 }]
+    ws['!cols'] = [{ wch: 12 }, { wch: 28 }, { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 5 }, { wch: 8 }, { wch: 28 }]
       .concat(keys.map(function () { return { wch: 12 }; }));
     X.utils.book_append_sheet(wb, ws, 'Students');
 
@@ -355,18 +359,27 @@
     /* Two records for one person: the office spelling a name differently from
      * the admin, in a way the importer's matcher did not catch. Cheap to spot
      * afterwards, and merging is one click. */
-    var byToken = {};
+    var byBucket = {};
     model.students.forEach(function (s) {
-      var key = nameTokens(s.name).join(' ');
-      if (!key) return;
-      (byToken[key] = byToken[key] || []).push(s);
+      var bucket = normKey(s.class) || normKey(s.level) || '*';
+      (byBucket[bucket] = byBucket[bucket] || []).push(s);
     });
-    Object.keys(byToken).forEach(function (key) {
-      var group = byToken[key];
-      if (group.length < 2) return;
-      warnings.push('Possible duplicate: ' + group.map(function (s) {
-        return s.name + ' (' + (s.class || 'no class') + ', ' + s.id + ')';
-      }).join(' and ') + ' — merge them from the Students tab if they are the same person.');
+    var reported = {};
+    Object.keys(byBucket).forEach(function (bucket) {
+      var list = byBucket[bucket];
+      for (var i = 0; i < list.length; i++) {
+        for (var j = i + 1; j < list.length; j++) {
+          // One name containing the other ("Nur Aisyah" / "Nur Aisyah Bte
+          // Rahman") is usually the office rewriting a name, not two people.
+          if (!tokensOverlap(nameTokens(list[i].name), nameTokens(list[j].name))) continue;
+          var key = [list[i].id, list[j].id].sort().join('|');
+          if (reported[key]) continue;
+          reported[key] = true;
+          warnings.push('Possible duplicate: ' + list[i].name + ' (' + list[i].id + ') and ' +
+            list[j].name + ' (' + list[j].id + ') in ' + (list[i].class || 'no class') +
+            ' — select both in the Students tab and press Merge if they are one person.');
+        }
+      }
     });
 
     /* A student in no class at all shows up on nobody's namelist — exactly
@@ -745,7 +758,7 @@
         id: id, name: name, class: cls,
         level: cell(row, 'level'),
         gender: cell(row, 'gender'), pg: cell(row, 'pg'),
-        origin: ORIGIN_FILE, subjects: subjects,
+        origin: ORIGIN_FILE, sourceName: name, subjects: subjects,
       });
     }
     return { students: students, warnings: warnings };
@@ -801,9 +814,15 @@
     var byNameClass = {};
     var byName = {};
     pool.forEach(function (s) {
-      var nk = normKey(s.name);
-      byNameClass[nk + '|' + s.class] = s;
-      byName[nk] = nk in byName ? null : s;   // null marks an ambiguous name
+      /* Both the displayed name and the one the school's file last used, so a
+       * name corrected here still matches the file it came from. */
+      var keys = [normKey(s.name)];
+      var src = normKey(s.sourceName);
+      if (src && src !== keys[0]) keys.push(src);
+      keys.forEach(function (nk) {
+        if (!(nk + '|' + s.class in byNameClass)) byNameClass[nk + '|' + s.class] = s;
+        byName[nk] = nk in byName ? null : s;   // null marks an ambiguous name
+      });
     });
     var addedPool = pool.filter(function (s) { return s.origin === ORIGIN_ADDED; });
 
@@ -843,7 +862,11 @@
       }
       if (m) {
         matched[m.id] = true;
-        m.name = imp.name;
+        /* A name edited here is the admin's correction and is kept; only the
+         * file's own spelling is refreshed. */
+        var wasFilesOwn = !norm(m.sourceName) || normKey(m.name) === normKey(m.sourceName);
+        m.sourceName = imp.name;
+        if (wasFilesOwn) m.name = imp.name;
         m.origin = ORIGIN_FILE;   // adopted: the school's file now lists them
         if (imp.class) m.class = imp.class;
         if (imp.level) m.level = imp.level;
@@ -859,7 +882,8 @@
         var newId = freeId(imp.class);
         model.students.push({
           id: newId, name: imp.name, class: imp.class, level: imp.level,
-          gender: imp.gender, pg: imp.pg, origin: ORIGIN_FILE, subjects: imp.subjects,
+          gender: imp.gender, pg: imp.pg, origin: ORIGIN_FILE,
+          sourceName: imp.sourceName || imp.name, subjects: imp.subjects,
         });
         addedIds.push(newId);
         added++;
@@ -925,7 +949,7 @@
       if (s.id === loserId) loser = s;
     });
     if (!keeper || !loser || keeper === loser) return null;
-    ['class', 'level', 'gender', 'pg'].forEach(function (f) {
+    ['class', 'level', 'gender', 'pg', 'sourceName'].forEach(function (f) {
       if (!norm(keeper[f]) && norm(loser[f])) keeper[f] = loser[f];
     });
     keeper.subjects = keeper.subjects || {};

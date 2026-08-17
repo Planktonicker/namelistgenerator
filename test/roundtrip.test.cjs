@@ -58,7 +58,7 @@ test('header aliases, subject columns, and messy input are tolerated', () => {
   assert.strictEqual(model.students.length, 2);
   assert.deepStrictEqual(model.subjectKeys, ['EL', 'MT']);
   assert.deepStrictEqual(model.students[0],
-    { id: 's001', name: 'Alice Tan', class: '1R1', level: '1', gender: 'F', pg: '3', origin: 'file', subjects: { EL: 'EL G3', MT: 'CL G2' } });
+    { id: 's001', name: 'Alice Tan', class: '1R1', level: '1', gender: 'F', pg: '3', origin: 'file', sourceName: 'Alice Tan', subjects: { EL: 'EL G3', MT: 'CL G2' } });
   assert.deepStrictEqual(model.students[1].subjects, { EL: 'EL G2' });
   assert.ok(warnings.some((w) => w.includes('row 5')), 'expected a skipped-row warning');
 });
@@ -93,7 +93,7 @@ test('importStudents: auto-IDs, subject columns, skipped rows', () => {
   assert.deepStrictEqual(res.students[0].subjects, { TG: 'TG1', EL: 'EL G3', MT: 'CL G2' });
   assert.deepStrictEqual(res.students[1].subjects, { TG: 'TG2', EL: 'EL G2' }); // empty cell omitted
   assert.deepStrictEqual(res.students[2],
-    { id: '1R2-01', name: 'Carol', class: '1R2', level: '', gender: 'F', pg: '1', origin: 'file', subjects: { TG: 'TG1', EL: 'EL G1', MT: 'ML G1' } });
+    { id: '1R2-01', name: 'Carol', class: '1R2', level: '', gender: 'F', pg: '1', origin: 'file', sourceName: 'Carol', subjects: { TG: 'TG1', EL: 'EL G1', MT: 'ML G1' } });
   assert.strictEqual(res.warnings.length, 1);
   assert.ok(res.warnings[0].includes('no name'));
 });
@@ -403,6 +403,48 @@ test('a teacher\'s classes are bucketed by level, in level order', () => {
   assert.deepStrictEqual(buckets[1].groups.map((x) => x.code), ['B']);
   // a group with neither level nor members files under "" and sorts last
   assert.strictEqual(S.groupLevel({ level: '' }, []), '');
+});
+
+test('a name edited here survives later imports and still matches', () => {
+  const stu = (id, name, sourceName) =>
+    ({ id, name, class: '1R1', level: '1', gender: '', pg: '', origin: 'file', sourceName, subjects: {} });
+  const model = {
+    students: [stu('1R1-01', 'Nur Aisyah Binte Rahman', 'Nur Aisyah Bte Rahman')],
+    groups: [{ code: 'G', name: 'G', subject: '', teachers: ['T'], level: '', autoMatch: '', autoPg: '', autoClasses: '' }],
+    memberships: [{ studentId: '1R1-01', groupCode: 'G' }],
+    subjectKeys: [], sources: [],
+  };
+  // the file still spells it the old way: must match, must not overwrite
+  const r = S.applyLevelUpdate(model, [stu('x', 'Nur Aisyah Bte Rahman', 'Nur Aisyah Bte Rahman')], []);
+  assert.strictEqual(model.students.length, 1);
+  assert.strictEqual(r.added, 0);
+  assert.deepStrictEqual(r.missingIds, []);
+  assert.strictEqual(model.students[0].name, 'Nur Aisyah Binte Rahman');   // the admin's correction stands
+  assert.strictEqual(model.students[0].sourceName, 'Nur Aisyah Bte Rahman');
+  assert.strictEqual(model.memberships.length, 1);
+
+  // a student whose name was never edited still follows the file
+  const plain = {
+    students: [stu('1R1-02', 'Bob Lim', 'Bob Lim')],
+    groups: [], memberships: [], subjectKeys: [], sources: [],
+  };
+  S.applyLevelUpdate(plain, [stu('y', 'Bob Lim', 'Bob Lim')], []);
+  assert.strictEqual(plain.students.length, 1);
+
+  /* The office renaming somebody nobody edited is genuinely ambiguous — it
+   * could be a rewrite or a different person — so it is reported rather than
+   * guessed, and Merge settles it. */
+  const renamed = {
+    students: [stu('1R1-03', 'Nur Aisyah', 'Nur Aisyah')],
+    groups: [], memberships: [], subjectKeys: [], sources: [],
+  };
+  S.applyLevelUpdate(renamed, [stu('z', 'Nur Aisyah Bte Rahman', 'Nur Aisyah Bte Rahman')], []);
+  assert.strictEqual(renamed.students.length, 2);
+  assert.ok(S.validateModel(renamed).some((w) => w.includes('Possible duplicate')),
+    'the pair should be flagged for merging');
+  const merged = S.mergeStudents(renamed, '1R1-03', renamed.students[1].id);
+  assert.ok(merged);
+  assert.strictEqual(renamed.students.length, 1);
 });
 
 test('validation flags duplicates and dangling memberships', () => {

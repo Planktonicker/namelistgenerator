@@ -275,7 +275,11 @@
     <h2 id="studentDialogTitle">Add student</h2>
     <form class="fields" id="studentForm">
       <label for="sfId">Student ID *</label><input type="text" id="sfId" required>
-      <label for="sfName">Name *</label><input type="text" id="sfName" required>
+      <label for="sfName">Name *</label>
+      <div>
+        <input type="text" id="sfName" required style="width:100%">
+        <p class="hint" id="sfSourceNote" style="margin:4px 0 0" hidden></p>
+      </div>
       <label for="sfClass">Class</label><input type="text" id="sfClass" list="classList">
       <label for="sfLevel">Level</label><input type="text" id="sfLevel" list="levelList">
       <label for="sfGender">Gender</label><input type="text" id="sfGender" list="genderList">
@@ -1076,6 +1080,9 @@
         '<td class="checkcol"><input type="checkbox" class="rowcheck" tabindex="-1"' + (sel ? ' checked' : '') + '></td>' +
         '<td>' + esc(s.id) + '</td><td>' + esc(s.name) +
         (s.origin === S.ORIGIN_ADDED ? ' <span class="badge added" title="Added in this app — not in the school\'s file">added</span>' : '') +
+        (s.sourceName && S.normKey(s.sourceName) !== S.normKey(s.name)
+          ? ' <span class="badge plain" title="The school file calls them: ' + esc(s.sourceName) +
+            '. Your version is kept on every update.">edited</span>' : '') +
         '</td><td>' + esc(s.class) + '</td><td>' + esc(s.level) + '</td>' +
         '<td>' + esc(s.gender) + '</td><td>' + esc(s.pg) + '</td>' +
         keys.map(function (k) {
@@ -1214,6 +1221,12 @@
     else delete $('sfId').dataset.userEdited;
     $('sfId').value = student ? student.id : '';
     $('sfName').value = student ? student.name : '';
+    var src = student && student.sourceName;
+    var edited = src && S.normKey(src) !== S.normKey(student.name);
+    $('sfSourceNote').hidden = !src || student.origin === S.ORIGIN_ADDED;
+    $('sfSourceNote').textContent = !src ? '' : edited
+      ? 'The school file calls them \u201c' + src + '\u201d. Your version is kept on every update.'
+      : 'Editing this keeps your version; the school file\u2019s spelling is still used to match them on updates.';
     $('sfClass').value = student ? student.class : '';
     $('sfLevel').value = student ? student.level : '';
     $('sfGender').value = student ? student.gender : '';
@@ -1252,6 +1265,7 @@
       level: S.norm($('sfLevel').value),
       gender: S.norm($('sfGender').value), pg: S.norm($('sfPg').value),
       origin: existing ? existing.origin : S.ORIGIN_ADDED,
+      sourceName: existing ? (existing.sourceName || existing.name) : S.norm($('sfName').value),
       subjects: subjects,
     };
     if (!id || !rec.name) return;

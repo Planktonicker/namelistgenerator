@@ -80,7 +80,7 @@ function buildSampleModel() {
         LIT: 'LIT ' + g,
       };
       if (n % 7 === 0) subjects.HMT = n % 3 === 0 ? 'CHINESE' : 'MALAY';
-      const student = { id, name, class: cls, level: '1', gender, pg, origin: S.ORIGIN_FILE, subjects };
+      const student = { id, name, class: cls, level: '1', gender, pg, origin: S.ORIGIN_FILE, sourceName: name, subjects };
       model.students.push(student);
 
       model.memberships.push({ studentId: id, groupCode: 'EL-' + cls });

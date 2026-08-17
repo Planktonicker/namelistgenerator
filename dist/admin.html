@@ -481,6 +481,15 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     padding: 2px 8px; border-radius: 999px; }
   .req .tag.add { background: var(--accent-soft); color: var(--accent); }
   .req .tag.remove { background: #fdeaea; color: #a12; }
+  /* two admins at once */
+  .clash-bar { display: flex; align-items: center; gap: 12px; }
+  .clash-bar button { margin-left: auto; }
+  .clash { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+  .clash-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .clash-opt { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 14px; }
+  #presenceChip { color: var(--accent); font-weight: 600; }
+  #conflictList { max-height: 52vh; overflow-y: auto; }
+
   .req-match { margin: 10px 0 0; font-size: 13px; }
   .req-cand { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
   .req-cand > span:first-child { min-width: 190px; font-weight: 600; }
@@ -552,6 +561,8 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     <div class="topbar">
       <span class="badge" id="folderName"></span>
       <span class="muted small" id="dirtyNote"></span>
+      <button class="linklike" id="presenceChip" hidden></button>
+      <button class="linklike" id="mergedNote" hidden title="What has come in from other admins"></button>
       <span class="spacer"></span>
       <button id="importBtn">Import…</button>
       <button id="reloadBtn">Reload from file</button>
@@ -564,6 +575,11 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
     <div class="notice" id="updateCheckBar" hidden>
       <span id="updateCheckText"></span>
       <button id="updateCheckBtn" hidden></button>
+    </div>
+
+    <div class="notice clash-bar" id="syncBar" hidden>
+      <span id="syncText"></span>
+      <button class="primary" id="syncReviewBtn">Review them…</button>
     </div>
 
     <div class="warnings" id="warningsBox" hidden>
@@ -931,6 +947,20 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         <button type="submit" class="primary">Add them</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="conflictDialog">
+    <h2>Both of you changed the same thing</h2>
+    <p class="hint" id="conflictCount"></p>
+    <div class="send-ways" style="margin:10px 0">
+      <button type="button" id="conflictAllMine">Keep all mine</button>
+      <button type="button" id="conflictAllTheirs">Take all theirs</button>
+    </div>
+    <div id="conflictList"></div>
+    <div class="actions">
+      <button type="button" id="conflictCancelBtn">Decide later</button>
+      <button type="button" class="primary" id="conflictGoBtn">Apply</button>
+    </div>
   </dialog>
 
   <dialog id="pasteRequestDialog">
@@ -2765,6 +2795,289 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       '<th>Gender</th><th>Note</th>' + extraHead + '</tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
+  /* ---- merging two admins' work -------------------------------------
+   * Two people with the folder open are editing two copies of the same
+   * workbook. Whoever saves second used to win outright, which meant the other
+   * one's afternoon survived only as a file in backups/. Instead every save
+   * (and, while the editor is open, every few seconds) is a three-way merge:
+   *
+   *   base   what the file said when we last read or wrote it
+   *   mine   what is in this browser now
+   *   theirs what the file says at this moment
+   *
+   * A field only one of us touched is taken from whoever touched it, so two
+   * admins working on different students, different classes, or even different
+   * fields of the same student all land together with nothing to decide. Only
+   * the same field, changed by both to different values, is a genuine clash —
+   * and those come back as a list for the admin to settle rather than being
+   * resolved behind their back.
+   */
+
+  var MERGE_SPECS = [
+    { name: 'students', key: 'id', noun: 'student',
+      label: function (r) { return r.name || r.id; },
+      fields: ['name', 'class', 'level', 'gender', 'pg', 'tg', 'sn', 'origin', 'sourceName', 'status'],
+      maps: ['subjects'] },
+    { name: 'groups', key: 'code', noun: 'class',
+      label: function (r) { return r.name || r.code; },
+      fields: ['name', 'subject', 'level', 'autoMatch', 'autoPg', 'autoTg', 'autoClasses'],
+      sets: ['teachers'] },
+    { name: 'sources', key: 'level', noun: 'level file',
+      label: function (r) { return levelLabel(r.level); },
+      fields: ['file', 'pattern', 'lastFile', 'lastImported', 'mapping'] },
+    { name: 'requests', key: 'id', noun: 'request',
+      label: function (r) { return r.name || r.id; },
+      fields: ['made', 'teacher', 'group', 'action', 'name', 'studentId', 'reason',
+        'status', 'decided', 'note'] },
+  ];
+
+  var FIELD_LABELS = {
+    name: 'Name', class: 'Class', level: 'Level', gender: 'Gender', pg: 'PG', tg: 'TG/SG',
+    sn: 'S/N', origin: 'Origin', sourceName: 'Spelling in the file', status: 'On the roll',
+    subject: 'Subject', autoMatch: 'Rule', autoPg: 'Rule: PG', autoTg: 'Rule: TG/SG',
+    autoClasses: 'Rule: classes', teachers: 'Teachers', file: 'File', pattern: 'File pattern',
+    lastFile: 'Last file used', lastImported: 'Last imported', mapping: 'Column mapping',
+    made: 'Sent', teacher: 'Teacher', group: 'Class', action: 'Action', studentId: 'Student',
+    reason: 'Reason', decided: 'Decided', note: 'Note',
+  };
+
+  function cloneModel(m) { return JSON.parse(JSON.stringify(m)); }
+
+  function fieldLabel(f) { return FIELD_LABELS[f] || f; }
+
+  function indexBy(list, key) {
+    var out = {};
+    (list || []).forEach(function (r) { out[r[key]] = r; });
+    return out;
+  }
+
+  /* The one decision this whole thing rests on: given what the field was and
+   * what each side made of it, what should it be now? */
+  function pick3(b, m, t) {
+    if (normKey(m) === normKey(t)) return { value: m };
+    if (normKey(m) === normKey(b)) return { value: t, from: 'theirs' };
+    if (normKey(t) === normKey(b)) return { value: m, from: 'mine' };
+    return { value: m, clash: true, mine: m, theirs: t };
+  }
+
+  /* Adds and removals against the shared ancestor, so two people adding
+   * different teachers to one class end up with both. */
+  function mergeSet(base, mine, theirs) {
+    var has = function (list, v) {
+      return (list || []).some(function (e) { return normKey(e) === normKey(v); });
+    };
+    var out = [];
+    (mine || []).concat(theirs || []).forEach(function (v) {
+      if (has(out, v)) return;
+      var inM = has(mine, v), inT = has(theirs, v), inB = has(base, v);
+      // in both: keep. in one only: an addition if the ancestor lacked it,
+      // otherwise the other side deleted it and the deletion stands.
+      if ((inM && inT) || !inB) out.push(v);
+    });
+    return out;
+  }
+
+  function mergeMap(spec, key, label, bm, mm, tm, out) {
+    bm = bm || {}; mm = mm || {}; tm = tm || {};
+    var keys = [];
+    [mm, tm, bm].forEach(function (o) {
+      Object.keys(o).forEach(function (k) { if (keys.indexOf(k) === -1) keys.push(k); });
+    });
+    var res = {};
+    keys.forEach(function (k) {
+      var got = pick3(norm(bm[k]), norm(mm[k]), norm(tm[k]));
+      if (got.clash) {
+        out.conflicts.push({ collection: spec.name, noun: spec.noun, key: key, label: label,
+          map: 'subjects', field: k, fieldLabel: k, mine: got.mine, theirs: got.theirs });
+      }
+      if (got.value) res[k] = got.value;
+    });
+    return res;
+  }
+
+  function mergeRecord(spec, b, m, t, out) {
+    var rec = {};
+    var label = spec.label(m) || spec.label(t);
+    Object.keys(m).forEach(function (k) { rec[k] = m[k]; });
+    Object.keys(t).forEach(function (k) { if (!(k in rec)) rec[k] = t[k]; });
+    spec.fields.forEach(function (f) {
+      var got = pick3(b ? b[f] : undefined, m[f], t[f]);
+      rec[f] = got.value === undefined ? '' : got.value;
+      if (got.clash) {
+        out.conflicts.push({ collection: spec.name, noun: spec.noun, key: m[spec.key],
+          label: label, field: f, fieldLabel: fieldLabel(f), mine: got.mine, theirs: got.theirs });
+      } else if (got.from === 'theirs') {
+        out.changes.push(spec.noun + ' ' + label + ': ' + fieldLabel(f) + ' ' +
+          (norm(b && b[f]) || '—') + ' → ' + (norm(t[f]) || '—'));
+      }
+    });
+    (spec.sets || []).forEach(function (f) {
+      rec[f] = mergeSet(b && b[f], m[f], t[f]);
+    });
+    (spec.maps || []).forEach(function (f) {
+      rec[f] = mergeMap(spec, m[spec.key], label, b && b[f], m[f], t[f], out);
+    });
+    return rec;
+  }
+
+  /* Everything about a record the merge looks at, as one string — used only to
+   * tell "they deleted something nobody had touched" from "they deleted
+   * something I had just edited". */
+  function recordSig(spec, r) {
+    if (!r) return '';
+    return spec.fields.map(function (f) { return normKey(r[f]); }).join('') +
+      (spec.sets || []).map(function (f) { return (r[f] || []).map(normKey).sort().join(','); }).join('') +
+      (spec.maps || []).map(function (f) {
+        var o = r[f] || {};
+        return Object.keys(o).sort().map(function (k) { return k + '=' + normKey(o[k]); }).join(',');
+      }).join('');
+  }
+
+  function mergeCollection(spec, base, mine, theirs, out) {
+    var b = indexBy(base[spec.name], spec.key);
+    var m = indexBy(mine[spec.name], spec.key);
+    var t = indexBy(theirs[spec.name], spec.key);
+    var order = [];
+    (mine[spec.name] || []).forEach(function (r) { order.push(r[spec.key]); });
+    (theirs[spec.name] || []).forEach(function (r) {
+      if (order.indexOf(r[spec.key]) === -1) order.push(r[spec.key]);
+    });
+    var res = [];
+    order.forEach(function (k) {
+      var bb = b[k], mm = m[k], tt = t[k];
+      if (mm && tt) { res.push(mergeRecord(spec, bb, mm, tt, out)); return; }
+      if (mm && !tt) {
+        if (!bb) { res.push(mm); return; }                       // I added it
+        if (recordSig(spec, bb) === recordSig(spec, mm)) return;  // they deleted, I hadn't touched it
+        /* They deleted something I had just edited. Nothing disappears on a
+         * guess: it is kept, and offered for deletion in the review. */
+        out.conflicts.push({ collection: spec.name, noun: spec.noun, key: k,
+          label: spec.label(mm), field: '', fieldLabel: 'Deleted by them',
+          mine: 'keep (you edited it)', theirs: 'delete', kind: 'delete-theirs' });
+        res.push(mm);
+        return;
+      }
+      if (!mm && tt) {
+        if (!bb) {                                               // they added it
+          res.push(tt);
+          out.changes.push(spec.noun + ' ' + spec.label(tt) + ': added');
+          return;
+        }
+        if (recordSig(spec, bb) === recordSig(spec, tt)) return;  // I deleted, they hadn't touched it
+        out.conflicts.push({ collection: spec.name, noun: spec.noun, key: k,
+          label: spec.label(tt), field: '', fieldLabel: 'Deleted by you',
+          mine: 'delete', theirs: 'keep (they edited it)', kind: 'delete-mine', record: tt });
+        return;
+      }
+    });
+    return res;
+  }
+
+  /* Both of us added a student and the app handed us the same register id.
+   * If the names differ they are two different children, so mine is moved to a
+   * free id before anything is matched up by id. */
+  function reconcileNewIds(base, mine, theirs, out) {
+    var b = indexBy(base.students, 'id');
+    var t = indexBy(theirs.students, 'id');
+    var used = {};
+    [base, mine, theirs].forEach(function (mm) {
+      (mm.students || []).forEach(function (s) { used[s.id] = true; });
+    });
+    (mine.students || []).forEach(function (s) {
+      var other = t[s.id];
+      if (b[s.id] || !other || normKey(other.name) === normKey(s.name)) return;
+      var i = 1, id;
+      do { id = (s.class || 'S') + '-' + (i < 10 ? '0' : '') + i; i++; } while (used[id]);
+      used[id] = true;
+      var was = s.id;
+      s.id = id;
+      (mine.memberships || []).forEach(function (x) { if (x.studentId === was) x.studentId = id; });
+      (mine.requests || []).forEach(function (r) { if (r.studentId === was) r.studentId = id; });
+      out.renamed.push(s.name + ': ' + was + ' → ' + id +
+        ' (that id went to ' + other.name + ')');
+    });
+  }
+
+  function mergeModels(base, mine, theirs) {
+    var out = { changes: [], conflicts: [], renamed: [] };
+    mine = cloneModel(mine);
+    theirs = cloneModel(theirs);
+    base = cloneModel(base);
+    reconcileNewIds(base, mine, theirs, out);
+
+    var model = emptyModel();
+    MERGE_SPECS.forEach(function (spec) {
+      model[spec.name] = mergeCollection(spec, base, mine, theirs, out);
+    });
+
+    model.subjectKeys = mergeSet(base.subjectKeys, mine.subjectKeys, theirs.subjectKeys);
+    model.teachers = mergeSet(base.teachers, mine.teachers, theirs.teachers).sort(cmp);
+    model.subjectLabels = mergeSet(base.subjectLabels, mine.subjectLabels, theirs.subjectLabels).sort(cmp);
+
+    /* A membership is in or out, so adds and removals both apply and there is
+     * nothing to disagree about — beyond one of us removing what the other
+     * kept, where the removal stands. */
+    var pairKey = function (x) { return x.studentId + ' ' + x.groupCode; };
+    var bp = {}, mp = {}, tp = {};
+    (base.memberships || []).forEach(function (x) { bp[pairKey(x)] = true; });
+    (mine.memberships || []).forEach(function (x) { mp[pairKey(x)] = true; });
+    (theirs.memberships || []).forEach(function (x) { tp[pairKey(x)] = true; });
+    var seen = {};
+    model.memberships = (mine.memberships || []).concat(theirs.memberships || [])
+      .filter(function (x) {
+        var k = pairKey(x);
+        if (seen[k]) return false;
+        seen[k] = true;
+        return (mp[k] && tp[k]) || !bp[k];
+      });
+    var addedByThem = model.memberships.filter(function (x) {
+      var k = pairKey(x);
+      return tp[k] && !mp[k] && !bp[k];
+    }).length;
+    if (addedByThem) out.changes.push(addedByThem + ' student place(s) added to classes');
+
+    // whatever the merge decided, no membership may point at nothing
+    var haveStudent = indexBy(model.students, 'id');
+    var haveGroup = indexBy(model.groups, 'code');
+    model.memberships = model.memberships.filter(function (x) {
+      return haveStudent[x.studentId] && haveGroup[x.groupCode];
+    });
+
+    out.model = model;
+    return out;
+  }
+
+  /* Apply one reviewed decision to an already-merged model. */
+  function resolveConflict(model, conflict, takeTheirs) {
+    var spec = MERGE_SPECS.filter(function (s) { return s.name === conflict.collection; })[0];
+    if (!spec) return false;
+    var list = model[conflict.collection] || [];
+    var at = -1;
+    list.forEach(function (r, i) { if (r[spec.key] === conflict.key) at = i; });
+    if (conflict.kind === 'delete-theirs') {
+      if (takeTheirs && at !== -1) list.splice(at, 1);
+    } else if (conflict.kind === 'delete-mine') {
+      if (takeTheirs && at === -1) list.push(cloneModel(conflict.record));
+      if (!takeTheirs && at !== -1) list.splice(at, 1);
+    } else {
+      if (at === -1) return false;
+      var value = takeTheirs ? conflict.theirs : conflict.mine;
+      if (conflict.map) {
+        list[at][conflict.map] = list[at][conflict.map] || {};
+        if (norm(value)) list[at][conflict.map][conflict.field] = value;
+        else delete list[at][conflict.map][conflict.field];
+      } else {
+        list[at][conflict.field] = value;
+      }
+    }
+    var haveStudent = indexBy(model.students, 'id');
+    var haveGroup = indexBy(model.groups, 'code');
+    model.memberships = (model.memberships || []).filter(function (x) {
+      return haveStudent[x.studentId] && haveGroup[x.groupCode];
+    });
+    return true;
+  }
+
   /* ---- teacher suggestions ------------------------------------------
    * A teacher's page is read-only and usually has no write permission on the
    * shared folder, so a suggestion travels as text: a readable summary for the
@@ -2950,6 +3263,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     STATUS_LEFT: STATUS_LEFT,
     hasLeft: hasLeft,
     REQUEST_HEADERS: REQUEST_HEADERS,
+    cloneModel: cloneModel,
+    mergeModels: mergeModels,
+    resolveConflict: resolveConflict,
+    fieldLabel: fieldLabel,
     requestId: requestId,
     requestLine: requestLine,
     requestsToText: requestsToText,
@@ -3268,6 +3585,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       model = res.model;
       loadWarnings = res.warnings;
       loadedLastModified = f.lastModified;
+      noteBase();
       setDirty(false);
       enterMain();
       toast('Loaded ' + model.students.length + ' students, ' + model.groups.length + ' groups');
@@ -3279,6 +3597,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   function enterMain() {
     show('mainScreen');
     refresh();
+    if (!baseModel) noteBase();
+    startSync();
+    beatPresence();
     if (!autoUpdateRan) {
       autoUpdateRan = true;
       autoUpdateFromSchoolFiles().catch(function () { /* never block the editor */ });
@@ -3466,6 +3787,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
        * version to compare against: the first Save writes a fresh copy here. */
       fileHandle = null;
       loadedLastModified = null;
+      baseModel = null;      // a different folder's file is not our ancestor
       setDirty(true);
       enterMain();
       toast('Carried over ' + model.students.length + ' students and ' + model.groups.length +
@@ -3506,6 +3828,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         'at its file again before relying on the automatic updates.'];
       fileHandle = null;
       loadedLastModified = null;
+      baseModel = null;      // a different folder's file is not our ancestor
       setDirty(true);
       enterMain();
       toast('Rebuilt ' + model.students.length + ' students from data.js — press Save');
@@ -3578,6 +3901,221 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     await writeFile(h, bytes);
   }
 
+  /* ---- keeping two admins in step ----------------------------------
+   * There is no server here, so nothing can relay one admin's keystrokes to
+   * another. What there is is a file both of them can see, which is enough for
+   * the part that matters: while the editor is open it watches namelist.xlsx,
+   * and the moment the other admin saves, their work is merged into this page
+   * — field by field, against the version both started from. Two people on
+   * different students, or even on different fields of one student, never
+   * notice each other beyond a line saying what arrived. Only the same field
+   * changed by both is held back for a decision.
+   */
+  var SYNC_POLL = 8000;
+  var baseModel = null;        // the file as we last read or wrote it
+  var openConflicts = [];      // clashes waiting to be settled
+  var mergedIn = [];           // what has arrived from other people this session
+  var syncTimer = null;
+  var syncing = false;
+
+  function noteBase() { baseModel = S.cloneModel(model); }
+
+  async function readModelFromFile(file) {
+    var wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    return S.workbookToModel(wb).model;
+  }
+
+  /* Fold whatever is in the file into what is on screen. Returns the merge
+   * result, or null when the file has not moved. */
+  async function mergeFromFile(file) {
+    if (!baseModel) return null;
+    var theirs = await readModelFromFile(file);
+    var out = S.mergeModels(baseModel, model, theirs);
+    var settled = JSON.stringify(out.model) === JSON.stringify(theirs);
+    model = out.model;
+    baseModel = S.cloneModel(theirs);
+    loadedLastModified = file.lastModified;
+    if (out.conflicts.length) openConflicts = openConflicts.concat(out.conflicts);
+    mergedIn = mergedIn.concat(out.changes).concat(out.renamed);
+    /* If the merge produced exactly what is on disk we have nothing of our own
+     * left to publish — which is what stops two editors saving at each other
+     * in circles. */
+    setDirty(!settled);
+    renderSyncNote();
+    refresh();
+    return out;
+  }
+
+  /* Called on a timer while the editor sits open. Skipped mid-dialog: nobody
+   * wants the form under their hands rebuilt while they are typing into it. */
+  async function syncWithFile() {
+    if (syncing || !fileHandle || !baseModel) return null;
+    if (document.querySelector('dialog[open]')) return null;
+    syncing = true;
+    try {
+      var f = await fileHandle.getFile();
+      if (loadedLastModified === null || f.lastModified === loadedLastModified) return null;
+      var out = await mergeFromFile(f);
+      if (!out) return null;
+      var n = out.changes.length + out.renamed.length;
+      if (out.conflicts.length) {
+        toast(out.conflicts.length + ' change(s) need your decision — see the bar above');
+      } else if (n) {
+        toast(n + ' change' + (n === 1 ? '' : 's') + ' from another admin merged in');
+      }
+      return out;
+    } catch (err) {
+      // A half-written file on a network share reads as garbage; try again next tick.
+      return null;
+    } finally {
+      syncing = false;
+    }
+  }
+
+  function startSync() {
+    clearInterval(syncTimer);
+    syncTimer = setInterval(function () {
+      syncWithFile();
+      beatPresence();
+    }, SYNC_POLL);
+  }
+
+  function renderSyncNote() {
+    var bar = $('syncBar');
+    bar.hidden = !openConflicts.length;
+    if (openConflicts.length) {
+      $('syncText').textContent = openConflicts.length === 1
+        ? 'Another admin changed something you also changed. Yours is in effect until you decide.'
+        : openConflicts.length + ' changes by another admin clash with yours. ' +
+          'Yours are in effect until you decide.';
+    }
+    var log = $('mergedNote');
+    log.hidden = !mergedIn.length;
+    log.textContent = mergedIn.length
+      ? mergedIn.length + ' change' + (mergedIn.length === 1 ? '' : 's') + ' from others'
+      : '';
+  }
+
+  $('syncReviewBtn').addEventListener('click', function () { openConflictDialog(); });
+  $('mergedNote').addEventListener('click', function () {
+    if (!mergedIn.length) return;
+    alert('Merged in from other admins this session:\n\n' + mergedIn.slice(-40).join('\n'));
+  });
+
+  function openConflictDialog() {
+    var box = $('conflictList');
+    box.innerHTML = openConflicts.map(function (c, i) {
+      return '<div class="clash" data-i="' + i + '">' +
+        '<div class="clash-head"><strong>' + esc(c.label) + '</strong>' +
+        '<span class="muted small">' + esc(c.noun) + ' · ' + esc(c.fieldLabel) + '</span></div>' +
+        '<label class="clash-opt"><input type="radio" name="c' + i + '" value="mine" checked> ' +
+        '<span>Yours: <strong>' + esc(c.mine || '—') + '</strong></span></label>' +
+        '<label class="clash-opt"><input type="radio" name="c' + i + '" value="theirs"> ' +
+        '<span>Theirs: <strong>' + esc(c.theirs || '—') + '</strong></span></label>' +
+        '</div>';
+    }).join('');
+    $('conflictCount').textContent = 'Everything else from the other admin has already been ' +
+      'merged in. ' + (openConflicts.length === 1
+        ? 'This one could not be, because you both changed it — pick which version stands.'
+        : 'These ' + openConflicts.length + ' could not be, because you both changed them — ' +
+          'pick which version stands.') +
+      ' Yours is kept unless you say otherwise.';
+    $('conflictDialog').showModal();
+  }
+
+  $('conflictAllMine').addEventListener('click', function () {
+    $('conflictList').querySelectorAll('input[value="mine"]').forEach(function (r) { r.checked = true; });
+  });
+  $('conflictAllTheirs').addEventListener('click', function () {
+    $('conflictList').querySelectorAll('input[value="theirs"]').forEach(function (r) { r.checked = true; });
+  });
+  $('conflictCancelBtn').addEventListener('click', function () { $('conflictDialog').close(); });
+  $('conflictGoBtn').addEventListener('click', function () {
+    var took = 0;
+    openConflicts.forEach(function (c, i) {
+      var picked = $('conflictList').querySelector('input[name="c' + i + '"]:checked');
+      if (picked && picked.value === 'theirs') {
+        S.resolveConflict(model, c, true);
+        took++;
+      }
+    });
+    openConflicts = [];
+    $('conflictDialog').close();
+    renderSyncNote();
+    markDirty();
+    toast(took ? took + ' of their version(s) taken' : 'Your versions kept');
+  });
+
+  /* ---- who else is in ----
+   * Each editor drops a small note in presence\ every few seconds and reads
+   * everyone else's. It is not a lock — it is so that two people who are about
+   * to work on the same thing can see each other first. */
+  var PRESENCE_BEAT = 20000;
+  var PRESENCE_STALE = 75000;
+  var meId = Math.random().toString(36).slice(2, 10);
+  var myName = '';
+  var lastBeat = 0;
+  var othersHere = [];
+
+  try { myName = localStorage.getItem('namelist.adminName@' + pageFolderUrl()) || ''; } catch (e) { /* private mode */ }
+
+  async function beatPresence() {
+    if (!dirHandle) return;
+    if (Date.now() - lastBeat < PRESENCE_BEAT) return;
+    lastBeat = Date.now();
+    try {
+      var dir = await dirHandle.getDirectoryHandle('presence', { create: true });
+      var h = await dir.getFileHandle(meId + '.txt', { create: true });
+      await writeFile(h, JSON.stringify({ name: myName, at: Date.now(), tab: currentTab }));
+      var seen = [];
+      var stale = [];
+      for await (var entry of dir.values()) {
+        if (entry.kind !== 'file' || entry.name === meId + '.txt') continue;
+        try {
+          var rec = JSON.parse(await (await entry.getFile()).text());
+          if (Date.now() - rec.at < PRESENCE_STALE) seen.push(rec);
+          else stale.push(entry.name);
+        } catch (e) { stale.push(entry.name); }
+      }
+      othersHere = seen;
+      renderPresence();
+      // tidy up after editors that were closed rather than signed off
+      for (var i = 0; i < stale.length && i < 5; i++) {
+        try { await dir.removeEntry(stale[i]); } catch (e) { /* someone else got there first */ }
+      }
+    } catch (err) { /* a read-only or missing folder simply means no presence */ }
+  }
+
+  function renderPresence() {
+    var chip = $('presenceChip');
+    chip.hidden = !othersHere.length;
+    if (!othersHere.length) return;
+    var names = othersHere.map(function (p) { return S.norm(p.name) || 'someone'; });
+    chip.textContent = names.length === 1
+      ? names[0] + ' is also editing'
+      : names.length + ' others editing';
+    chip.title = names.join(', ') + ' — changes are merged in as they save';
+  }
+
+  $('presenceChip').addEventListener('click', function () {
+    var typed = prompt('Your name, so other admins know who is editing:\n\n' +
+      (othersHere.length ? 'Also here: ' + othersHere.map(function (p) {
+        return S.norm(p.name) || 'someone'; }).join(', ') : ''), myName);
+    if (typed === null) return;
+    myName = S.norm(typed);
+    try { localStorage.setItem('namelist.adminName@' + pageFolderUrl(), myName); } catch (e) { /* private mode */ }
+    lastBeat = 0;
+    beatPresence();
+  });
+
+  window.addEventListener('pagehide', function () {
+    if (!dirHandle) return;
+    // best effort: sign off so nobody sees a ghost for the next minute
+    dirHandle.getDirectoryHandle('presence').then(function (dir) {
+      return dir.removeEntry(meId + '.txt');
+    }).catch(function () { /* nothing to clean up */ });
+  });
+
   $('saveBtn').addEventListener('click', function () { save(); });
   async function save(opts) {
     var silent = opts && opts.silent;
@@ -3589,19 +4127,35 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       if (fileHandle) {
         var current = await fileHandle.getFile();
         if (loadedLastModified !== null && current.lastModified !== loadedLastModified) {
-          var ok = !silent && confirm(
-            'Warning: namelist.xlsx was changed by someone else after you loaded it.\n\n' +
-            'OK — save your version anyway (their version is kept as a backup)\n' +
-            'Cancel — do not save (you can Reload to see their changes)');
-          // An automatic save never overwrites someone else's work silently: it
-          // stops, says so, and leaves the decision to the admin.
-          if (!ok) {
-            if (auto) {
-              saveBlocked = 'Not saved — someone else saved namelist.xlsx. Reload, or press Save to overwrite.';
-              renderDirtyNote();
+          /* Somebody saved while we were typing. Their work is merged into
+           * ours before anything is written, so neither version is lost — the
+           * old behaviour, where the second save won outright, is gone. */
+          var merged = null;
+          try {
+            merged = await mergeFromFile(current);
+          } catch (mergeErr) {
+            var ok = !silent && confirm(
+              'namelist.xlsx was changed by someone else, and this copy cannot be read to ' +
+              'merge with it (' + mergeErr.message + ').\n\n' +
+              'OK — save your version anyway (theirs is kept as a backup)\n' +
+              'Cancel — do not save');
+            if (!ok) {
+              if (auto) {
+                saveBlocked = 'Not saved — namelist.xlsx changed and could not be merged. Press Save to overwrite.';
+                renderDirtyNote();
+              }
+              $('saveBtn').disabled = !dirty;
+              return;
             }
-            $('saveBtn').disabled = !dirty;
-            return;
+          }
+          if (merged) {
+            var n = merged.changes.length + merged.renamed.length;
+            if (merged.conflicts.length && !silent) {
+              toast('Merged with ' + n + ' change(s) from another admin; ' +
+                merged.conflicts.length + ' need your decision');
+            } else if (n && !silent) {
+              toast('Merged ' + n + ' change(s) from another admin');
+            }
           }
         }
         if (!auto || Date.now() - lastBackupAt > AUTOSAVE_BACKUP_GAP) {
@@ -3617,6 +4171,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       var dj = await dirHandle.getFileHandle('data.js', { create: true });
       await writeFile(dj, S.modelToDataJs(model, new Date().toISOString()));
       loadedLastModified = (await fileHandle.getFile()).lastModified;
+      noteBase();          // what we just wrote is the new common ancestor
       saveBlocked = '';
       savedAt = new Date();
       setDirty(false);
@@ -6754,11 +7309,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   /* Test hooks: let automated tests drive the editor without folder access. */
   window.__testModel = function () { return model; };
   window.__handleKeyForTest = handleKey;   // proves each copy remembers its own folder
+  window.__syncNowForTest = syncWithFile;  // the poll, without waiting for the timer
+  window.__beatNowForTest = function () { lastBeat = 0; return beatPresence(); };
   window.__loadModelForTest = function (m) {
     model = m;
     model.subjectKeys = model.subjectKeys || [];
     model.sources = model.sources || [];
     model.requests = model.requests || [];
+    baseModel = null;
     loadWarnings = [];
     $('folderName').textContent = '(test)';
     setDirty(false);

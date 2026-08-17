@@ -157,8 +157,13 @@ for a namelist.
   from a drive, not a setting. The button is already focused, so **Enter** (or a
   click anywhere) is enough.
 - **Autosave is on**, four seconds after you stop typing. The topbar says
-  *Saved 09:51 AM*. If it turns red — *someone else saved namelist.xlsx* —
-  another admin has the folder open; reload, or press **Save** to overwrite them.
+  *Saved 09:51 AM*.
+- **Two of you can work at once.** The other admin's changes appear in your page
+  within a few seconds of them saving, and yours in theirs — different students,
+  different classes, even different fields of one student all merge with nothing
+  to decide. The topbar names anyone else who has the folder open. Only the same
+  field changed by both of you raises a bar: *Review them…* shows both versions,
+  yours staying in effect until you choose. Nothing is blocked while it waits.
 - **Save.** Teachers see the update the next time they open the page. Pressing
   Save yourself also takes a backup, which an autosave only does once an hour.
 - **Added students** are for genuine late arrivals. They are kept when a level

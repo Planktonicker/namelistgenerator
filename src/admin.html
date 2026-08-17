@@ -125,6 +125,15 @@
     padding: 2px 8px; border-radius: 999px; }
   .req .tag.add { background: var(--accent-soft); color: var(--accent); }
   .req .tag.remove { background: #fdeaea; color: #a12; }
+  /* two admins at once */
+  .clash-bar { display: flex; align-items: center; gap: 12px; }
+  .clash-bar button { margin-left: auto; }
+  .clash { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+  .clash-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .clash-opt { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 14px; }
+  #presenceChip { color: var(--accent); font-weight: 600; }
+  #conflictList { max-height: 52vh; overflow-y: auto; }
+
   .req-match { margin: 10px 0 0; font-size: 13px; }
   .req-cand { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
   .req-cand > span:first-child { min-width: 190px; font-weight: 600; }
@@ -196,6 +205,8 @@
     <div class="topbar">
       <span class="badge" id="folderName"></span>
       <span class="muted small" id="dirtyNote"></span>
+      <button class="linklike" id="presenceChip" hidden></button>
+      <button class="linklike" id="mergedNote" hidden title="What has come in from other admins"></button>
       <span class="spacer"></span>
       <button id="importBtn">Import…</button>
       <button id="reloadBtn">Reload from file</button>
@@ -208,6 +219,11 @@
     <div class="notice" id="updateCheckBar" hidden>
       <span id="updateCheckText"></span>
       <button id="updateCheckBtn" hidden></button>
+    </div>
+
+    <div class="notice clash-bar" id="syncBar" hidden>
+      <span id="syncText"></span>
+      <button class="primary" id="syncReviewBtn">Review them…</button>
     </div>
 
     <div class="warnings" id="warningsBox" hidden>
@@ -575,6 +591,20 @@
         <button type="submit" class="primary">Add them</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="conflictDialog">
+    <h2>Both of you changed the same thing</h2>
+    <p class="hint" id="conflictCount"></p>
+    <div class="send-ways" style="margin:10px 0">
+      <button type="button" id="conflictAllMine">Keep all mine</button>
+      <button type="button" id="conflictAllTheirs">Take all theirs</button>
+    </div>
+    <div id="conflictList"></div>
+    <div class="actions">
+      <button type="button" id="conflictCancelBtn">Decide later</button>
+      <button type="button" class="primary" id="conflictGoBtn">Apply</button>
+    </div>
   </dialog>
 
   <dialog id="pasteRequestDialog">
@@ -951,6 +981,7 @@
       model = res.model;
       loadWarnings = res.warnings;
       loadedLastModified = f.lastModified;
+      noteBase();
       setDirty(false);
       enterMain();
       toast('Loaded ' + model.students.length + ' students, ' + model.groups.length + ' groups');
@@ -962,6 +993,9 @@
   function enterMain() {
     show('mainScreen');
     refresh();
+    if (!baseModel) noteBase();
+    startSync();
+    beatPresence();
     if (!autoUpdateRan) {
       autoUpdateRan = true;
       autoUpdateFromSchoolFiles().catch(function () { /* never block the editor */ });
@@ -1149,6 +1183,7 @@
        * version to compare against: the first Save writes a fresh copy here. */
       fileHandle = null;
       loadedLastModified = null;
+      baseModel = null;      // a different folder's file is not our ancestor
       setDirty(true);
       enterMain();
       toast('Carried over ' + model.students.length + ' students and ' + model.groups.length +
@@ -1189,6 +1224,7 @@
         'at its file again before relying on the automatic updates.'];
       fileHandle = null;
       loadedLastModified = null;
+      baseModel = null;      // a different folder's file is not our ancestor
       setDirty(true);
       enterMain();
       toast('Rebuilt ' + model.students.length + ' students from data.js — press Save');
@@ -1261,6 +1297,221 @@
     await writeFile(h, bytes);
   }
 
+  /* ---- keeping two admins in step ----------------------------------
+   * There is no server here, so nothing can relay one admin's keystrokes to
+   * another. What there is is a file both of them can see, which is enough for
+   * the part that matters: while the editor is open it watches namelist.xlsx,
+   * and the moment the other admin saves, their work is merged into this page
+   * — field by field, against the version both started from. Two people on
+   * different students, or even on different fields of one student, never
+   * notice each other beyond a line saying what arrived. Only the same field
+   * changed by both is held back for a decision.
+   */
+  var SYNC_POLL = 8000;
+  var baseModel = null;        // the file as we last read or wrote it
+  var openConflicts = [];      // clashes waiting to be settled
+  var mergedIn = [];           // what has arrived from other people this session
+  var syncTimer = null;
+  var syncing = false;
+
+  function noteBase() { baseModel = S.cloneModel(model); }
+
+  async function readModelFromFile(file) {
+    var wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    return S.workbookToModel(wb).model;
+  }
+
+  /* Fold whatever is in the file into what is on screen. Returns the merge
+   * result, or null when the file has not moved. */
+  async function mergeFromFile(file) {
+    if (!baseModel) return null;
+    var theirs = await readModelFromFile(file);
+    var out = S.mergeModels(baseModel, model, theirs);
+    var settled = JSON.stringify(out.model) === JSON.stringify(theirs);
+    model = out.model;
+    baseModel = S.cloneModel(theirs);
+    loadedLastModified = file.lastModified;
+    if (out.conflicts.length) openConflicts = openConflicts.concat(out.conflicts);
+    mergedIn = mergedIn.concat(out.changes).concat(out.renamed);
+    /* If the merge produced exactly what is on disk we have nothing of our own
+     * left to publish — which is what stops two editors saving at each other
+     * in circles. */
+    setDirty(!settled);
+    renderSyncNote();
+    refresh();
+    return out;
+  }
+
+  /* Called on a timer while the editor sits open. Skipped mid-dialog: nobody
+   * wants the form under their hands rebuilt while they are typing into it. */
+  async function syncWithFile() {
+    if (syncing || !fileHandle || !baseModel) return null;
+    if (document.querySelector('dialog[open]')) return null;
+    syncing = true;
+    try {
+      var f = await fileHandle.getFile();
+      if (loadedLastModified === null || f.lastModified === loadedLastModified) return null;
+      var out = await mergeFromFile(f);
+      if (!out) return null;
+      var n = out.changes.length + out.renamed.length;
+      if (out.conflicts.length) {
+        toast(out.conflicts.length + ' change(s) need your decision — see the bar above');
+      } else if (n) {
+        toast(n + ' change' + (n === 1 ? '' : 's') + ' from another admin merged in');
+      }
+      return out;
+    } catch (err) {
+      // A half-written file on a network share reads as garbage; try again next tick.
+      return null;
+    } finally {
+      syncing = false;
+    }
+  }
+
+  function startSync() {
+    clearInterval(syncTimer);
+    syncTimer = setInterval(function () {
+      syncWithFile();
+      beatPresence();
+    }, SYNC_POLL);
+  }
+
+  function renderSyncNote() {
+    var bar = $('syncBar');
+    bar.hidden = !openConflicts.length;
+    if (openConflicts.length) {
+      $('syncText').textContent = openConflicts.length === 1
+        ? 'Another admin changed something you also changed. Yours is in effect until you decide.'
+        : openConflicts.length + ' changes by another admin clash with yours. ' +
+          'Yours are in effect until you decide.';
+    }
+    var log = $('mergedNote');
+    log.hidden = !mergedIn.length;
+    log.textContent = mergedIn.length
+      ? mergedIn.length + ' change' + (mergedIn.length === 1 ? '' : 's') + ' from others'
+      : '';
+  }
+
+  $('syncReviewBtn').addEventListener('click', function () { openConflictDialog(); });
+  $('mergedNote').addEventListener('click', function () {
+    if (!mergedIn.length) return;
+    alert('Merged in from other admins this session:\n\n' + mergedIn.slice(-40).join('\n'));
+  });
+
+  function openConflictDialog() {
+    var box = $('conflictList');
+    box.innerHTML = openConflicts.map(function (c, i) {
+      return '<div class="clash" data-i="' + i + '">' +
+        '<div class="clash-head"><strong>' + esc(c.label) + '</strong>' +
+        '<span class="muted small">' + esc(c.noun) + ' · ' + esc(c.fieldLabel) + '</span></div>' +
+        '<label class="clash-opt"><input type="radio" name="c' + i + '" value="mine" checked> ' +
+        '<span>Yours: <strong>' + esc(c.mine || '—') + '</strong></span></label>' +
+        '<label class="clash-opt"><input type="radio" name="c' + i + '" value="theirs"> ' +
+        '<span>Theirs: <strong>' + esc(c.theirs || '—') + '</strong></span></label>' +
+        '</div>';
+    }).join('');
+    $('conflictCount').textContent = 'Everything else from the other admin has already been ' +
+      'merged in. ' + (openConflicts.length === 1
+        ? 'This one could not be, because you both changed it — pick which version stands.'
+        : 'These ' + openConflicts.length + ' could not be, because you both changed them — ' +
+          'pick which version stands.') +
+      ' Yours is kept unless you say otherwise.';
+    $('conflictDialog').showModal();
+  }
+
+  $('conflictAllMine').addEventListener('click', function () {
+    $('conflictList').querySelectorAll('input[value="mine"]').forEach(function (r) { r.checked = true; });
+  });
+  $('conflictAllTheirs').addEventListener('click', function () {
+    $('conflictList').querySelectorAll('input[value="theirs"]').forEach(function (r) { r.checked = true; });
+  });
+  $('conflictCancelBtn').addEventListener('click', function () { $('conflictDialog').close(); });
+  $('conflictGoBtn').addEventListener('click', function () {
+    var took = 0;
+    openConflicts.forEach(function (c, i) {
+      var picked = $('conflictList').querySelector('input[name="c' + i + '"]:checked');
+      if (picked && picked.value === 'theirs') {
+        S.resolveConflict(model, c, true);
+        took++;
+      }
+    });
+    openConflicts = [];
+    $('conflictDialog').close();
+    renderSyncNote();
+    markDirty();
+    toast(took ? took + ' of their version(s) taken' : 'Your versions kept');
+  });
+
+  /* ---- who else is in ----
+   * Each editor drops a small note in presence\ every few seconds and reads
+   * everyone else's. It is not a lock — it is so that two people who are about
+   * to work on the same thing can see each other first. */
+  var PRESENCE_BEAT = 20000;
+  var PRESENCE_STALE = 75000;
+  var meId = Math.random().toString(36).slice(2, 10);
+  var myName = '';
+  var lastBeat = 0;
+  var othersHere = [];
+
+  try { myName = localStorage.getItem('namelist.adminName@' + pageFolderUrl()) || ''; } catch (e) { /* private mode */ }
+
+  async function beatPresence() {
+    if (!dirHandle) return;
+    if (Date.now() - lastBeat < PRESENCE_BEAT) return;
+    lastBeat = Date.now();
+    try {
+      var dir = await dirHandle.getDirectoryHandle('presence', { create: true });
+      var h = await dir.getFileHandle(meId + '.txt', { create: true });
+      await writeFile(h, JSON.stringify({ name: myName, at: Date.now(), tab: currentTab }));
+      var seen = [];
+      var stale = [];
+      for await (var entry of dir.values()) {
+        if (entry.kind !== 'file' || entry.name === meId + '.txt') continue;
+        try {
+          var rec = JSON.parse(await (await entry.getFile()).text());
+          if (Date.now() - rec.at < PRESENCE_STALE) seen.push(rec);
+          else stale.push(entry.name);
+        } catch (e) { stale.push(entry.name); }
+      }
+      othersHere = seen;
+      renderPresence();
+      // tidy up after editors that were closed rather than signed off
+      for (var i = 0; i < stale.length && i < 5; i++) {
+        try { await dir.removeEntry(stale[i]); } catch (e) { /* someone else got there first */ }
+      }
+    } catch (err) { /* a read-only or missing folder simply means no presence */ }
+  }
+
+  function renderPresence() {
+    var chip = $('presenceChip');
+    chip.hidden = !othersHere.length;
+    if (!othersHere.length) return;
+    var names = othersHere.map(function (p) { return S.norm(p.name) || 'someone'; });
+    chip.textContent = names.length === 1
+      ? names[0] + ' is also editing'
+      : names.length + ' others editing';
+    chip.title = names.join(', ') + ' — changes are merged in as they save';
+  }
+
+  $('presenceChip').addEventListener('click', function () {
+    var typed = prompt('Your name, so other admins know who is editing:\n\n' +
+      (othersHere.length ? 'Also here: ' + othersHere.map(function (p) {
+        return S.norm(p.name) || 'someone'; }).join(', ') : ''), myName);
+    if (typed === null) return;
+    myName = S.norm(typed);
+    try { localStorage.setItem('namelist.adminName@' + pageFolderUrl(), myName); } catch (e) { /* private mode */ }
+    lastBeat = 0;
+    beatPresence();
+  });
+
+  window.addEventListener('pagehide', function () {
+    if (!dirHandle) return;
+    // best effort: sign off so nobody sees a ghost for the next minute
+    dirHandle.getDirectoryHandle('presence').then(function (dir) {
+      return dir.removeEntry(meId + '.txt');
+    }).catch(function () { /* nothing to clean up */ });
+  });
+
   $('saveBtn').addEventListener('click', function () { save(); });
   async function save(opts) {
     var silent = opts && opts.silent;
@@ -1272,19 +1523,35 @@
       if (fileHandle) {
         var current = await fileHandle.getFile();
         if (loadedLastModified !== null && current.lastModified !== loadedLastModified) {
-          var ok = !silent && confirm(
-            'Warning: namelist.xlsx was changed by someone else after you loaded it.\n\n' +
-            'OK — save your version anyway (their version is kept as a backup)\n' +
-            'Cancel — do not save (you can Reload to see their changes)');
-          // An automatic save never overwrites someone else's work silently: it
-          // stops, says so, and leaves the decision to the admin.
-          if (!ok) {
-            if (auto) {
-              saveBlocked = 'Not saved — someone else saved namelist.xlsx. Reload, or press Save to overwrite.';
-              renderDirtyNote();
+          /* Somebody saved while we were typing. Their work is merged into
+           * ours before anything is written, so neither version is lost — the
+           * old behaviour, where the second save won outright, is gone. */
+          var merged = null;
+          try {
+            merged = await mergeFromFile(current);
+          } catch (mergeErr) {
+            var ok = !silent && confirm(
+              'namelist.xlsx was changed by someone else, and this copy cannot be read to ' +
+              'merge with it (' + mergeErr.message + ').\n\n' +
+              'OK — save your version anyway (theirs is kept as a backup)\n' +
+              'Cancel — do not save');
+            if (!ok) {
+              if (auto) {
+                saveBlocked = 'Not saved — namelist.xlsx changed and could not be merged. Press Save to overwrite.';
+                renderDirtyNote();
+              }
+              $('saveBtn').disabled = !dirty;
+              return;
             }
-            $('saveBtn').disabled = !dirty;
-            return;
+          }
+          if (merged) {
+            var n = merged.changes.length + merged.renamed.length;
+            if (merged.conflicts.length && !silent) {
+              toast('Merged with ' + n + ' change(s) from another admin; ' +
+                merged.conflicts.length + ' need your decision');
+            } else if (n && !silent) {
+              toast('Merged ' + n + ' change(s) from another admin');
+            }
           }
         }
         if (!auto || Date.now() - lastBackupAt > AUTOSAVE_BACKUP_GAP) {
@@ -1300,6 +1567,7 @@
       var dj = await dirHandle.getFileHandle('data.js', { create: true });
       await writeFile(dj, S.modelToDataJs(model, new Date().toISOString()));
       loadedLastModified = (await fileHandle.getFile()).lastModified;
+      noteBase();          // what we just wrote is the new common ancestor
       saveBlocked = '';
       savedAt = new Date();
       setDirty(false);
@@ -4437,11 +4705,14 @@
   /* Test hooks: let automated tests drive the editor without folder access. */
   window.__testModel = function () { return model; };
   window.__handleKeyForTest = handleKey;   // proves each copy remembers its own folder
+  window.__syncNowForTest = syncWithFile;  // the poll, without waiting for the timer
+  window.__beatNowForTest = function () { lastBeat = 0; return beatPresence(); };
   window.__loadModelForTest = function (m) {
     model = m;
     model.subjectKeys = model.subjectKeys || [];
     model.sources = model.sources || [];
     model.requests = model.requests || [];
+    baseModel = null;
     loadWarnings = [];
     $('folderName').textContent = '(test)';
     setDirty(false);

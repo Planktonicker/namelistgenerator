@@ -281,9 +281,9 @@ wall — the app works fine with read-only access to that folder.
   "C:\Program Files\Google\Chrome\Application\chrome.exe" "\\server\share\Namelist\namelist.html"
   "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" "\\server\share\Namelist\namelist.html"
   ```
-- If two admins edit at the same time, the second save warns that the file changed and
-  the earlier version is kept in `backups/` — nothing is silently lost. Clear out old
-  backups occasionally if the folder gets large.
+- Two admins can edit at the same time: each one's work is merged into the other's page
+  within a few seconds, and only a field both of them changed needs a decision. See
+  *Two people editing at once*. Clear out old backups occasionally if the folder gets large.
 
 ### One-minute pilot test (before rolling out)
 
@@ -694,17 +694,60 @@ copies the list so it can be pasted into an email to the teachers concerned.
 
 ### Two people editing at once
 
-`namelist.xlsx` is the app's own file and is meant to be written **only** by
-`admin.html`. If it changes on disk between an admin loading it and pressing
-Save, the app says so and offers to overwrite or to cancel; either way the
-version currently on disk is copied into `backups/` first, so nothing is lost.
-Whoever saves last wins the live file — there is no merge.
+Two admins can have the folder open and work at the same time. There is no
+server here, so nothing relays one person's keystrokes to the other — what there
+is is a file both of them can see, and that turns out to be enough.
 
-Editing `namelist.xlsx` by hand in Excel is therefore discouraged: besides the
-conflict risk, the app regenerates `data.js` only when *it* saves, so a manual
-Excel edit leaves the teacher page showing the older data until an admin opens
-`admin.html` and presses Save. View or print the workbook freely; make changes
-through the app.
+**Everything merges; only the same field clashes.** Every save, and every eight
+seconds while the editor is open, the app compares three versions of the data:
+what the file said when this page last read or wrote it (the common ancestor),
+what is on screen now, and what the file says at this moment. A field only one
+of you touched is taken from whoever touched it. So two admins on different
+students, different classes, or even different fields of the *same* student all
+land together with nothing to decide — the other person's work appears in your
+page a few seconds after they save, with a line saying what arrived.
+
+What genuinely cannot be decided by a machine is the same field changed by both
+of you to different values. Those raise a bar at the top: *Another admin changed
+something you also changed.* **Your version stays in effect and the editor is
+never blocked** — click *Review them…* when you are ready, and each clash shows
+the student or class, the field, and both values to choose between (with *Keep
+all mine* / *Take all theirs* for a long list).
+
+The rules underneath, for the cases that are not simple field edits:
+
+| Situation | What happens |
+|---|---|
+| You each add a different student | Both are kept |
+| You each add a student and the app gave both the same register id | Both are kept; yours is moved to the next free id, and its class memberships follow |
+| One of you adds a student to a class | The addition applies for both |
+| One of you removes a student from a class | The removal applies for both |
+| One deletes a student the other only edited | **Nothing vanishes on a guess** — the student is kept and the deletion is offered in the review |
+| One deletes a student nobody else touched | Deleted |
+| You each add a teacher to the same class | The class ends up with both |
+| One settles a teacher's request | It stays settled for both |
+
+A backup of the version being replaced still goes into `backups/` on every save,
+so the pre-merge state is always recoverable.
+
+**Who else is in.** Each open editor drops a small note in `presence/` every
+twenty seconds and reads everyone else's, so the topbar can say *Mrs Wong is
+also editing*. It is not a lock — it is so two people about to work on the same
+class can see each other first. Click it to set the name others see. Notes from
+an editor that has been closed are ignored after 75 seconds and tidied away.
+
+**Editing `namelist.xlsx` by hand in Excel** is still discouraged, but no longer
+destructive: a change made outside the app is merged in like any other, rather
+than being overwritten. The remaining reason to avoid it is that the app
+regenerates `data.js` only when *it* saves, so a manual Excel edit leaves the
+teacher page showing older data until an admin opens `admin.html` and saves.
+View or print the workbook freely; make changes through the app.
+
+**What this is not.** It is not Google Docs. You will not see the other person's
+cursor, and their work reaches you when they save (or autosave, which is within
+a few seconds of them stopping typing) rather than as they type. Getting closer
+than that would mean putting the data behind a real server, which is a different
+piece of software from a folder on a shared drive.
 
 To try the teacher page locally: copy `sample/data.js` next to `dist/namelist.html`
 and open it in a browser. The admin page can be exercised against a local folder

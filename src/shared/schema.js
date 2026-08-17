@@ -1668,6 +1668,289 @@
       '<th>Gender</th><th>Note</th>' + extraHead + '</tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
+  /* ---- merging two admins' work -------------------------------------
+   * Two people with the folder open are editing two copies of the same
+   * workbook. Whoever saves second used to win outright, which meant the other
+   * one's afternoon survived only as a file in backups/. Instead every save
+   * (and, while the editor is open, every few seconds) is a three-way merge:
+   *
+   *   base   what the file said when we last read or wrote it
+   *   mine   what is in this browser now
+   *   theirs what the file says at this moment
+   *
+   * A field only one of us touched is taken from whoever touched it, so two
+   * admins working on different students, different classes, or even different
+   * fields of the same student all land together with nothing to decide. Only
+   * the same field, changed by both to different values, is a genuine clash —
+   * and those come back as a list for the admin to settle rather than being
+   * resolved behind their back.
+   */
+
+  var MERGE_SPECS = [
+    { name: 'students', key: 'id', noun: 'student',
+      label: function (r) { return r.name || r.id; },
+      fields: ['name', 'class', 'level', 'gender', 'pg', 'tg', 'sn', 'origin', 'sourceName', 'status'],
+      maps: ['subjects'] },
+    { name: 'groups', key: 'code', noun: 'class',
+      label: function (r) { return r.name || r.code; },
+      fields: ['name', 'subject', 'level', 'autoMatch', 'autoPg', 'autoTg', 'autoClasses'],
+      sets: ['teachers'] },
+    { name: 'sources', key: 'level', noun: 'level file',
+      label: function (r) { return levelLabel(r.level); },
+      fields: ['file', 'pattern', 'lastFile', 'lastImported', 'mapping'] },
+    { name: 'requests', key: 'id', noun: 'request',
+      label: function (r) { return r.name || r.id; },
+      fields: ['made', 'teacher', 'group', 'action', 'name', 'studentId', 'reason',
+        'status', 'decided', 'note'] },
+  ];
+
+  var FIELD_LABELS = {
+    name: 'Name', class: 'Class', level: 'Level', gender: 'Gender', pg: 'PG', tg: 'TG/SG',
+    sn: 'S/N', origin: 'Origin', sourceName: 'Spelling in the file', status: 'On the roll',
+    subject: 'Subject', autoMatch: 'Rule', autoPg: 'Rule: PG', autoTg: 'Rule: TG/SG',
+    autoClasses: 'Rule: classes', teachers: 'Teachers', file: 'File', pattern: 'File pattern',
+    lastFile: 'Last file used', lastImported: 'Last imported', mapping: 'Column mapping',
+    made: 'Sent', teacher: 'Teacher', group: 'Class', action: 'Action', studentId: 'Student',
+    reason: 'Reason', decided: 'Decided', note: 'Note',
+  };
+
+  function cloneModel(m) { return JSON.parse(JSON.stringify(m)); }
+
+  function fieldLabel(f) { return FIELD_LABELS[f] || f; }
+
+  function indexBy(list, key) {
+    var out = {};
+    (list || []).forEach(function (r) { out[r[key]] = r; });
+    return out;
+  }
+
+  /* The one decision this whole thing rests on: given what the field was and
+   * what each side made of it, what should it be now? */
+  function pick3(b, m, t) {
+    if (normKey(m) === normKey(t)) return { value: m };
+    if (normKey(m) === normKey(b)) return { value: t, from: 'theirs' };
+    if (normKey(t) === normKey(b)) return { value: m, from: 'mine' };
+    return { value: m, clash: true, mine: m, theirs: t };
+  }
+
+  /* Adds and removals against the shared ancestor, so two people adding
+   * different teachers to one class end up with both. */
+  function mergeSet(base, mine, theirs) {
+    var has = function (list, v) {
+      return (list || []).some(function (e) { return normKey(e) === normKey(v); });
+    };
+    var out = [];
+    (mine || []).concat(theirs || []).forEach(function (v) {
+      if (has(out, v)) return;
+      var inM = has(mine, v), inT = has(theirs, v), inB = has(base, v);
+      // in both: keep. in one only: an addition if the ancestor lacked it,
+      // otherwise the other side deleted it and the deletion stands.
+      if ((inM && inT) || !inB) out.push(v);
+    });
+    return out;
+  }
+
+  function mergeMap(spec, key, label, bm, mm, tm, out) {
+    bm = bm || {}; mm = mm || {}; tm = tm || {};
+    var keys = [];
+    [mm, tm, bm].forEach(function (o) {
+      Object.keys(o).forEach(function (k) { if (keys.indexOf(k) === -1) keys.push(k); });
+    });
+    var res = {};
+    keys.forEach(function (k) {
+      var got = pick3(norm(bm[k]), norm(mm[k]), norm(tm[k]));
+      if (got.clash) {
+        out.conflicts.push({ collection: spec.name, noun: spec.noun, key: key, label: label,
+          map: 'subjects', field: k, fieldLabel: k, mine: got.mine, theirs: got.theirs });
+      }
+      if (got.value) res[k] = got.value;
+    });
+    return res;
+  }
+
+  function mergeRecord(spec, b, m, t, out) {
+    var rec = {};
+    var label = spec.label(m) || spec.label(t);
+    Object.keys(m).forEach(function (k) { rec[k] = m[k]; });
+    Object.keys(t).forEach(function (k) { if (!(k in rec)) rec[k] = t[k]; });
+    spec.fields.forEach(function (f) {
+      var got = pick3(b ? b[f] : undefined, m[f], t[f]);
+      rec[f] = got.value === undefined ? '' : got.value;
+      if (got.clash) {
+        out.conflicts.push({ collection: spec.name, noun: spec.noun, key: m[spec.key],
+          label: label, field: f, fieldLabel: fieldLabel(f), mine: got.mine, theirs: got.theirs });
+      } else if (got.from === 'theirs') {
+        out.changes.push(spec.noun + ' ' + label + ': ' + fieldLabel(f) + ' ' +
+          (norm(b && b[f]) || '—') + ' → ' + (norm(t[f]) || '—'));
+      }
+    });
+    (spec.sets || []).forEach(function (f) {
+      rec[f] = mergeSet(b && b[f], m[f], t[f]);
+    });
+    (spec.maps || []).forEach(function (f) {
+      rec[f] = mergeMap(spec, m[spec.key], label, b && b[f], m[f], t[f], out);
+    });
+    return rec;
+  }
+
+  /* Everything about a record the merge looks at, as one string — used only to
+   * tell "they deleted something nobody had touched" from "they deleted
+   * something I had just edited". */
+  function recordSig(spec, r) {
+    if (!r) return '';
+    return spec.fields.map(function (f) { return normKey(r[f]); }).join('') +
+      (spec.sets || []).map(function (f) { return (r[f] || []).map(normKey).sort().join(','); }).join('') +
+      (spec.maps || []).map(function (f) {
+        var o = r[f] || {};
+        return Object.keys(o).sort().map(function (k) { return k + '=' + normKey(o[k]); }).join(',');
+      }).join('');
+  }
+
+  function mergeCollection(spec, base, mine, theirs, out) {
+    var b = indexBy(base[spec.name], spec.key);
+    var m = indexBy(mine[spec.name], spec.key);
+    var t = indexBy(theirs[spec.name], spec.key);
+    var order = [];
+    (mine[spec.name] || []).forEach(function (r) { order.push(r[spec.key]); });
+    (theirs[spec.name] || []).forEach(function (r) {
+      if (order.indexOf(r[spec.key]) === -1) order.push(r[spec.key]);
+    });
+    var res = [];
+    order.forEach(function (k) {
+      var bb = b[k], mm = m[k], tt = t[k];
+      if (mm && tt) { res.push(mergeRecord(spec, bb, mm, tt, out)); return; }
+      if (mm && !tt) {
+        if (!bb) { res.push(mm); return; }                       // I added it
+        if (recordSig(spec, bb) === recordSig(spec, mm)) return;  // they deleted, I hadn't touched it
+        /* They deleted something I had just edited. Nothing disappears on a
+         * guess: it is kept, and offered for deletion in the review. */
+        out.conflicts.push({ collection: spec.name, noun: spec.noun, key: k,
+          label: spec.label(mm), field: '', fieldLabel: 'Deleted by them',
+          mine: 'keep (you edited it)', theirs: 'delete', kind: 'delete-theirs' });
+        res.push(mm);
+        return;
+      }
+      if (!mm && tt) {
+        if (!bb) {                                               // they added it
+          res.push(tt);
+          out.changes.push(spec.noun + ' ' + spec.label(tt) + ': added');
+          return;
+        }
+        if (recordSig(spec, bb) === recordSig(spec, tt)) return;  // I deleted, they hadn't touched it
+        out.conflicts.push({ collection: spec.name, noun: spec.noun, key: k,
+          label: spec.label(tt), field: '', fieldLabel: 'Deleted by you',
+          mine: 'delete', theirs: 'keep (they edited it)', kind: 'delete-mine', record: tt });
+        return;
+      }
+    });
+    return res;
+  }
+
+  /* Both of us added a student and the app handed us the same register id.
+   * If the names differ they are two different children, so mine is moved to a
+   * free id before anything is matched up by id. */
+  function reconcileNewIds(base, mine, theirs, out) {
+    var b = indexBy(base.students, 'id');
+    var t = indexBy(theirs.students, 'id');
+    var used = {};
+    [base, mine, theirs].forEach(function (mm) {
+      (mm.students || []).forEach(function (s) { used[s.id] = true; });
+    });
+    (mine.students || []).forEach(function (s) {
+      var other = t[s.id];
+      if (b[s.id] || !other || normKey(other.name) === normKey(s.name)) return;
+      var i = 1, id;
+      do { id = (s.class || 'S') + '-' + (i < 10 ? '0' : '') + i; i++; } while (used[id]);
+      used[id] = true;
+      var was = s.id;
+      s.id = id;
+      (mine.memberships || []).forEach(function (x) { if (x.studentId === was) x.studentId = id; });
+      (mine.requests || []).forEach(function (r) { if (r.studentId === was) r.studentId = id; });
+      out.renamed.push(s.name + ': ' + was + ' → ' + id +
+        ' (that id went to ' + other.name + ')');
+    });
+  }
+
+  function mergeModels(base, mine, theirs) {
+    var out = { changes: [], conflicts: [], renamed: [] };
+    mine = cloneModel(mine);
+    theirs = cloneModel(theirs);
+    base = cloneModel(base);
+    reconcileNewIds(base, mine, theirs, out);
+
+    var model = emptyModel();
+    MERGE_SPECS.forEach(function (spec) {
+      model[spec.name] = mergeCollection(spec, base, mine, theirs, out);
+    });
+
+    model.subjectKeys = mergeSet(base.subjectKeys, mine.subjectKeys, theirs.subjectKeys);
+    model.teachers = mergeSet(base.teachers, mine.teachers, theirs.teachers).sort(cmp);
+    model.subjectLabels = mergeSet(base.subjectLabels, mine.subjectLabels, theirs.subjectLabels).sort(cmp);
+
+    /* A membership is in or out, so adds and removals both apply and there is
+     * nothing to disagree about — beyond one of us removing what the other
+     * kept, where the removal stands. */
+    var pairKey = function (x) { return x.studentId + ' ' + x.groupCode; };
+    var bp = {}, mp = {}, tp = {};
+    (base.memberships || []).forEach(function (x) { bp[pairKey(x)] = true; });
+    (mine.memberships || []).forEach(function (x) { mp[pairKey(x)] = true; });
+    (theirs.memberships || []).forEach(function (x) { tp[pairKey(x)] = true; });
+    var seen = {};
+    model.memberships = (mine.memberships || []).concat(theirs.memberships || [])
+      .filter(function (x) {
+        var k = pairKey(x);
+        if (seen[k]) return false;
+        seen[k] = true;
+        return (mp[k] && tp[k]) || !bp[k];
+      });
+    var addedByThem = model.memberships.filter(function (x) {
+      var k = pairKey(x);
+      return tp[k] && !mp[k] && !bp[k];
+    }).length;
+    if (addedByThem) out.changes.push(addedByThem + ' student place(s) added to classes');
+
+    // whatever the merge decided, no membership may point at nothing
+    var haveStudent = indexBy(model.students, 'id');
+    var haveGroup = indexBy(model.groups, 'code');
+    model.memberships = model.memberships.filter(function (x) {
+      return haveStudent[x.studentId] && haveGroup[x.groupCode];
+    });
+
+    out.model = model;
+    return out;
+  }
+
+  /* Apply one reviewed decision to an already-merged model. */
+  function resolveConflict(model, conflict, takeTheirs) {
+    var spec = MERGE_SPECS.filter(function (s) { return s.name === conflict.collection; })[0];
+    if (!spec) return false;
+    var list = model[conflict.collection] || [];
+    var at = -1;
+    list.forEach(function (r, i) { if (r[spec.key] === conflict.key) at = i; });
+    if (conflict.kind === 'delete-theirs') {
+      if (takeTheirs && at !== -1) list.splice(at, 1);
+    } else if (conflict.kind === 'delete-mine') {
+      if (takeTheirs && at === -1) list.push(cloneModel(conflict.record));
+      if (!takeTheirs && at !== -1) list.splice(at, 1);
+    } else {
+      if (at === -1) return false;
+      var value = takeTheirs ? conflict.theirs : conflict.mine;
+      if (conflict.map) {
+        list[at][conflict.map] = list[at][conflict.map] || {};
+        if (norm(value)) list[at][conflict.map][conflict.field] = value;
+        else delete list[at][conflict.map][conflict.field];
+      } else {
+        list[at][conflict.field] = value;
+      }
+    }
+    var haveStudent = indexBy(model.students, 'id');
+    var haveGroup = indexBy(model.groups, 'code');
+    model.memberships = (model.memberships || []).filter(function (x) {
+      return haveStudent[x.studentId] && haveGroup[x.groupCode];
+    });
+    return true;
+  }
+
   /* ---- teacher suggestions ------------------------------------------
    * A teacher's page is read-only and usually has no write permission on the
    * shared folder, so a suggestion travels as text: a readable summary for the
@@ -1853,6 +2136,10 @@
     STATUS_LEFT: STATUS_LEFT,
     hasLeft: hasLeft,
     REQUEST_HEADERS: REQUEST_HEADERS,
+    cloneModel: cloneModel,
+    mergeModels: mergeModels,
+    resolveConflict: resolveConflict,
+    fieldLabel: fieldLabel,
     requestId: requestId,
     requestLine: requestLine,
     requestsToText: requestsToText,

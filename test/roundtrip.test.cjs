@@ -816,4 +816,170 @@ test('a student who has left is held out of every class, refresh included', () =
   assert.strictEqual(back.students.filter((s) => s.id === 'HERE')[0].status, '');
 });
 
+/* --- two admins editing at once --- */
+
+function twoAdminFixture() {
+  const base = S.emptyModel();
+  const mk = (id, name, cls, extra) => Object.assign({ id, name, class: cls, level: 'Sec 1',
+    gender: 'M', pg: '3', tg: 'SG1', sn: '', origin: 'file', sourceName: name, status: '',
+    subjects: { HIST: 'HIST G3', EL: 'EL G2' } }, extra || {});
+  base.students = [mk('s1', 'ALICE TAN', '1R1'), mk('s2', 'BOB LIM', '1R2'),
+    mk('s3', 'CARA NG', '1R3')];
+  base.subjectKeys = ['HIST', 'EL'];
+  base.groups = [{ code: 'H1', name: 'Sec 1 HIST G3', subject: 'History', teachers: ['Mrs Wong'],
+    level: 'Sec 1', autoMatch: 'HIST=HIST G3', autoPg: '', autoTg: '', autoClasses: '' }];
+  base.teachers = ['Mrs Wong'];
+  base.memberships = [{ studentId: 's1', groupCode: 'H1' }, { studentId: 's2', groupCode: 'H1' }];
+  return base;
+}
+
+test('two admins editing different things both keep their work', () => {
+  const base = twoAdminFixture();
+  const mine = S.cloneModel(base);
+  const theirs = S.cloneModel(base);
+
+  mine.students[0].class = '1R9';                       // I move Alice
+  mine.students[0].subjects.HIST = 'HIST G2';           // …and drop her a band
+  mine.groups[0].teachers.push('Mr Tan');               // …and add a co-teacher
+  mine.teachers.push('Mr Tan');
+  mine.memberships.push({ studentId: 's3', groupCode: 'H1' });   // …and add Cara to the class
+
+  theirs.students[1].gender = 'F';                      // they fix Bob's gender
+  theirs.students[0].sn = '17';                         // …and give Alice an S/N
+  theirs.groups[0].autoPg = '3';                        // …and tighten the rule
+  theirs.students.push(Object.assign({}, base.students[0],
+    { id: 's4', name: 'DEV RAJ', class: '1R4', sourceName: 'DEV RAJ' }));
+
+  const out = S.mergeModels(base, mine, theirs);
+  assert.deepStrictEqual(out.conflicts, [], 'different fields must not clash');
+  const byId = Object.fromEntries(out.model.students.map((s) => [s.id, s]));
+  assert.strictEqual(byId.s1.class, '1R9');             // mine
+  assert.strictEqual(byId.s1.sn, '17');                 // theirs
+  assert.strictEqual(byId.s1.subjects.HIST, 'HIST G2'); // mine, inside the subject map
+  assert.strictEqual(byId.s2.gender, 'F');              // theirs
+  assert.ok(byId.s4, 'a student they added arrives');
+  assert.deepStrictEqual(out.model.groups[0].teachers, ['Mrs Wong', 'Mr Tan']);
+  assert.strictEqual(out.model.groups[0].autoPg, '3');
+  assert.ok(out.model.memberships.some((m) => m.studentId === 's3' && m.groupCode === 'H1'));
+  assert.ok(out.changes.length, 'it can say what came in from them');
+});
+
+test('the same field, changed by both, is a clash to settle — not a silent overwrite', () => {
+  const base = twoAdminFixture();
+  const mine = S.cloneModel(base);
+  const theirs = S.cloneModel(base);
+  mine.students[0].class = '1R9';
+  theirs.students[0].class = '1R7';
+  mine.students[2].subjects.EL = 'EL G3';
+  theirs.students[2].subjects.EL = 'EL G1';
+
+  const out = S.mergeModels(base, mine, theirs);
+  assert.strictEqual(out.conflicts.length, 2);
+  const c = out.conflicts[0];
+  assert.strictEqual(c.label, 'ALICE TAN');
+  assert.strictEqual(c.fieldLabel, 'Class');
+  assert.strictEqual(c.mine, '1R9');
+  assert.strictEqual(c.theirs, '1R7');
+  // until it is settled, the person at the keyboard keeps what they typed
+  assert.strictEqual(out.model.students[0].class, '1R9');
+  assert.strictEqual(out.model.students[2].subjects.EL, 'EL G3');
+
+  S.resolveConflict(out.model, out.conflicts[0], true);
+  assert.strictEqual(out.model.students[0].class, '1R7');
+  S.resolveConflict(out.model, out.conflicts[1], true);
+  assert.strictEqual(out.model.students[2].subjects.EL, 'EL G1');
+  S.resolveConflict(out.model, out.conflicts[1], false);
+  assert.strictEqual(out.model.students[2].subjects.EL, 'EL G3');
+});
+
+test('deletions: an untouched one goes through, a contested one is kept and flagged', () => {
+  const base = twoAdminFixture();
+  let mine = S.cloneModel(base);
+  let theirs = S.cloneModel(base);
+  theirs.students = theirs.students.filter((s) => s.id !== 's3');   // they delete Cara
+  let out = S.mergeModels(base, mine, theirs);
+  assert.strictEqual(out.conflicts.length, 0);
+  assert.ok(!out.model.students.some((s) => s.id === 's3'), 'a plain deletion is honoured');
+
+  mine = S.cloneModel(base);
+  theirs = S.cloneModel(base);
+  mine.students[2].class = '1R8';                                   // I edit Cara…
+  theirs.students = theirs.students.filter((s) => s.id !== 's3');    // …they delete her
+  out = S.mergeModels(base, mine, theirs);
+  assert.strictEqual(out.conflicts.length, 1);
+  assert.strictEqual(out.conflicts[0].kind, 'delete-theirs');
+  assert.ok(out.model.students.some((s) => s.id === 's3'), 'nothing vanishes on a guess');
+  S.resolveConflict(out.model, out.conflicts[0], true);
+  assert.ok(!out.model.students.some((s) => s.id === 's3'));
+
+  // and the other way round: I delete someone they were editing
+  mine = S.cloneModel(base);
+  theirs = S.cloneModel(base);
+  mine.students = mine.students.filter((s) => s.id !== 's2');
+  theirs.students[1].gender = 'F';
+  out = S.mergeModels(base, mine, theirs);
+  assert.strictEqual(out.conflicts[0].kind, 'delete-mine');
+  assert.ok(!out.model.students.some((s) => s.id === 's2'), 'my deletion holds until reviewed');
+  assert.strictEqual(out.model.memberships.filter((m) => m.studentId === 's2').length, 0);
+  S.resolveConflict(out.model, out.conflicts[0], true);
+  assert.strictEqual(out.model.students.filter((s) => s.id === 's2')[0].gender, 'F');
+});
+
+test('two admins adding a student at the same moment do not become one student', () => {
+  const base = twoAdminFixture();
+  const mine = S.cloneModel(base);
+  const theirs = S.cloneModel(base);
+  const newer = (name) => ({ id: '1R5-01', name, class: '1R5', level: 'Sec 1', gender: 'M',
+    pg: '3', tg: '', sn: '', origin: 'added', sourceName: name, status: '',
+    subjects: { HIST: 'HIST G3' } });
+  mine.students.push(newer('JASON LIM'));
+  mine.memberships.push({ studentId: '1R5-01', groupCode: 'H1' });
+  theirs.students.push(newer('PRIYA RAJ'));
+  theirs.memberships.push({ studentId: '1R5-01', groupCode: 'H1' });
+
+  const out = S.mergeModels(base, mine, theirs);
+  const names = out.model.students.map((s) => s.name);
+  assert.ok(names.includes('JASON LIM') && names.includes('PRIYA RAJ'), 'both children survive');
+  const ids = out.model.students.map((s) => s.id);
+  assert.strictEqual(new Set(ids).size, ids.length, 'and they end up with different ids');
+  assert.strictEqual(out.renamed.length, 1);
+  // the one that was re-keyed keeps its place in the class
+  const jason = out.model.students.filter((s) => s.name === 'JASON LIM')[0];
+  assert.ok(out.model.memberships.some((m) => m.studentId === jason.id && m.groupCode === 'H1'));
+});
+
+test('merging is stable: nothing new means nothing changes', () => {
+  const base = twoAdminFixture();
+  const out = S.mergeModels(base, S.cloneModel(base), S.cloneModel(base));
+  assert.deepStrictEqual(out.conflicts, []);
+  assert.deepStrictEqual(out.changes, []);
+  assert.strictEqual(JSON.stringify(out.model.students), JSON.stringify(base.students));
+  assert.strictEqual(JSON.stringify(out.model.memberships), JSON.stringify(base.memberships));
+
+  // and a merge of an already-merged result settles, rather than ping-ponging
+  const mine = S.cloneModel(base);
+  mine.students[0].class = '1R9';
+  const first = S.mergeModels(base, mine, S.cloneModel(base)).model;
+  const second = S.mergeModels(base, first, S.cloneModel(first)).model;
+  assert.strictEqual(JSON.stringify(second.students), JSON.stringify(first.students));
+});
+
+test('a teacher request settled by one admin is not reopened by the other', () => {
+  const base = twoAdminFixture();
+  base.requests = [{ id: 'r1', made: '2026-08-17T02:00:00Z', teacher: 'Mrs Wong', group: 'H1',
+    action: 'remove', name: 'BOB LIM', studentId: 's2', reason: 'not mine', status: 'open',
+    decided: '', note: '' }];
+  const mine = S.cloneModel(base);
+  const theirs = S.cloneModel(base);
+  theirs.requests[0].status = 'done';
+  theirs.requests[0].note = 'off H1';
+  theirs.memberships = theirs.memberships.filter((m) => m.studentId !== 's2');
+
+  const out = S.mergeModels(base, mine, theirs);
+  assert.deepStrictEqual(out.conflicts, []);
+  assert.strictEqual(out.model.requests[0].status, 'done');
+  assert.strictEqual(out.model.memberships.filter((m) => m.studentId === 's2').length, 0,
+    'their removal applies here too');
+});
+
 console.log(passed + ' tests passed');

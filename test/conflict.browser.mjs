@@ -150,25 +150,11 @@ await page.fill('#sfName', 'Beta Admin');
 await page.selectOption('#sfClass', '1R2');
 await page.click('#studentForm button[type="submit"]');
 
-// ---- conflict: Cancel path ----
-sawDialog = null;
-page.removeAllListeners('dialog');
-page.on('dialog', async (d) => { sawDialog = d.message(); await d.dismiss(); });
-const beforeCancel = await page.evaluate(() => window.__fs.get('data/namelist.xlsx').lastModified);
-await page.click('#saveBtn');
-await page.waitForTimeout(400);
-check('conflict is detected on save', !!sawDialog && sawDialog.includes('changed by someone else'), String(sawDialog).slice(0, 60));
-check('Cancel leaves the file on disk untouched', await page.evaluate(
-  (lm) => window.__fs.get('data/namelist.xlsx').lastModified === lm, beforeCancel));
-check('Cancel keeps the admin\'s unsaved changes in the page',
-  (await page.locator('#dirtyNote').innerText()).includes('Unsaved') &&
-  (await page.locator('#countStudents').innerText()) === '158');
-
-// ---- conflict: OK (overwrite) path ----
-const backupsBefore = await page.evaluate(() => window.__fs.list().filter((p) => p.startsWith('data/backups/')).length);
+// ---- a change made outside the app is merged in, not lost ----
 sawDialog = null;
 page.removeAllListeners('dialog');
 page.on('dialog', async (d) => { sawDialog = d.message(); await d.accept(); });
+const backupsBefore = await page.evaluate(() => window.__fs.list().filter((p) => p.startsWith('data/backups/')).length);
 await page.click('#saveBtn');
 await page.waitForFunction(() => !/Unsaved/.test(document.getElementById('dirtyNote').textContent));
 const after = await page.evaluate(() => {
@@ -186,10 +172,11 @@ const after = await page.evaluate(() => {
     backupHasExcelEdit: bkModel.students.some((s) => s.name === 'EDITED IN EXCEL'),
   };
 });
-check('overwrite backs up the other person\'s version first', after.backups === backupsBefore + 1);
-check('that backup CONTAINS the Excel edit (nothing is lost)', after.backupHasExcelEdit);
-check('live file now has the HTML edits', after.liveHasHtmlEdits);
-check('live file LOST the Excel edit (last writer wins)', after.liveHasExcelEdit === false);
+check('a save over someone else\'s version needs no question', sawDialog === null, String(sawDialog));
+check('their version is backed up first all the same', after.backups === backupsBefore + 1);
+check('that backup CONTAINS their edit', after.backupHasExcelEdit);
+check('the saved file keeps this admin\'s edits', after.liveHasHtmlEdits);
+check('AND keeps the edit made outside the app — nothing is lost', after.liveHasExcelEdit);
 
 // ---- editing the Excel directly does NOT refresh data.js ----
 const drift = await page.evaluate(() => {
@@ -239,30 +226,39 @@ check('and the file on disk has the new student', await page.evaluate(async () =
 check('an autosave does not take another backup so soon', await page.evaluate((n) =>
   window.__fs.list().filter((p) => p.startsWith('data/backups/')).length === n, backupsAtAutosave));
 
-// someone else saves; autosave must back off rather than overwrite them
+// someone else saves while autosave is armed: it merges rather than backing off
 await page.evaluate(() => {
-  const cur = window.__fs.get('data/namelist.xlsx');
-  window.__fs.put('data/namelist.xlsx', cur.bytes, Date.now() + 60000);
+  const wb = XLSX.read(window.__fs.get('data/namelist.xlsx').bytes, { type: 'array' });
+  const m = window.NamelistSchema.workbookToModel(wb).model;
+  m.students.push({ id: 'OTHER-01', name: 'OTHER ADMIN', class: '1R3', level: '1', gender: 'F',
+    pg: '3', tg: '', sn: '', origin: 'added', sourceName: 'OTHER ADMIN', status: '', subjects: {} });
+  const bytes = XLSX.write(window.NamelistSchema.modelToWorkbook(m), { bookType: 'xlsx', type: 'array' });
+  window.__fs.put('data/namelist.xlsx', new Uint8Array(bytes), Date.now() + 60000);
 });
 await page.click('#addStudentBtn');
 await page.fill('#sfName', 'Delta Admin');
 await page.selectOption('#sfClass', '1R1');
 await page.click('#studentForm button[type="submit"]');
-await page.waitForFunction(() => /Not saved/.test(document.getElementById('dirtyNote').textContent),
+await page.waitForFunction(() => /^Saved /.test(document.getElementById('dirtyNote').textContent),
   null, { timeout: 15000 });
-check('autosave stops when someone else has saved, and says so',
-  (await page.locator('#dirtyNote').innerText()).includes('someone else saved'),
-  await page.locator('#dirtyNote').innerText());
-check('the other admin\'s file is left alone', await page.evaluate(async () => {
+check('autosave over another admin\'s save keeps both', await page.evaluate(() => {
   const wb = XLSX.read(window.__fs.get('data/namelist.xlsx').bytes, { type: 'array' });
-  return !window.NamelistSchema.workbookToModel(wb).model.students.some((s) => s.name === 'DELTA ADMIN');
+  const m = window.NamelistSchema.workbookToModel(wb).model;
+  return m.students.some((s) => s.name === 'DELTA ADMIN') &&
+    m.students.some((s) => s.name === 'OTHER ADMIN');
 }));
+check('and neither admin is asked anything',
+  !/Not saved/.test(await page.locator('#dirtyNote').innerText()),
+  await page.locator('#dirtyNote').innerText());
 // switching autosave off leaves the Save button in charge
 await page.evaluate(() => { document.getElementById('autosaveBox').checked = false;
   document.getElementById('autosaveBox').dispatchEvent(new Event('change')); });
+await page.click('#addStudentBtn');
+await page.fill('#sfName', 'Epsilon Admin');
+await page.selectOption('#sfClass', '1R1');
+await page.click('#studentForm button[type="submit"]');
 check('with autosave off the note goes back to a plain warning',
-  (await page.locator('#dirtyNote').innerText()).includes('Unsaved') ||
-  (await page.locator('#dirtyNote').innerText()).includes('Not saved'),
+  (await page.locator('#dirtyNote').innerText()) === 'Unsaved changes',
   await page.locator('#dirtyNote').innerText());
 
 /* ---- a second copy of the app, in another folder ----

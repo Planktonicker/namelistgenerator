@@ -297,10 +297,17 @@
     })[0];
   }
 
-  /* What the admin did with it, if a newer data.js has come back. */
+  /* What the admin did with it, if a newer data.js has come back.
+   *
+   * A suggestion keeps the same id every time it is raised, so an answer to
+   * last term's version must not be pinned onto one made since: that would
+   * show "not taken up" for something never sent, and hold it out of the list
+   * of things to send. Only a verdict reached AFTER this was written counts. */
   function verdictOf(item) {
     var known = (data.requests || []).filter(function (r) { return r.id === item.id; })[0];
-    return known && known.status !== 'open' ? known : null;
+    if (!known || known.status === 'open') return null;
+    if (item.made && known.decided && item.made > known.decided) return null;
+    return known;
   }
 
   function addPending(item) {

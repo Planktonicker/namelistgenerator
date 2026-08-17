@@ -768,15 +768,17 @@ test('a teacher\'s request survives being emailed, and is only read once', () =>
 
   // the same suggestion always has the same id, so re-sending adds nothing
   const model = S.emptyModel();
-  assert.deepStrictEqual(S.mergeRequests(model, read.items), { added: 2, repeat: 0, decided: 0 });
+  assert.deepStrictEqual(S.mergeRequests(model, read.items),
+    { added: 2, repeat: 0, decided: 0, reopened: 0 });
   assert.deepStrictEqual(S.mergeRequests(model, S.parseRequestText(text).items),
-    { added: 0, repeat: 2, decided: 0 });
+    { added: 0, repeat: 2, decided: 0, reopened: 0 });
   assert.strictEqual(model.requests.length, 2);
 
   // and one already settled does not come back as waiting
   model.requests[0].status = 'done';
   assert.strictEqual(S.openRequests(model).length, 1);
-  assert.deepStrictEqual(S.mergeRequests(model, read.items), { added: 0, repeat: 1, decided: 1 });
+  assert.deepStrictEqual(S.mergeRequests(model, read.items),
+    { added: 0, repeat: 1, decided: 1, reopened: 0 });
 
   assert.ok(S.parseRequestText('just some words').error.includes('NLREQ1'));
   assert.ok(S.parseRequestText('NLREQ1\nnot-base64-at-all!!\nNLEND').error.includes('damaged'));
@@ -962,6 +964,123 @@ test('merging is stable: nothing new means nothing changes', () => {
   const first = S.mergeModels(base, mine, S.cloneModel(base)).model;
   const second = S.mergeModels(base, first, S.cloneModel(first)).model;
   assert.strictEqual(JSON.stringify(second.students), JSON.stringify(first.students));
+});
+
+test('two records sharing an id do not multiply through a merge', () => {
+  const base = twoAdminFixture();
+  const mine = S.cloneModel(base);
+  const theirs = S.cloneModel(base);
+  // the kind of workbook a bad import or a hand-edit leaves behind
+  mine.students.push(Object.assign(S.cloneModel(mine.students[0]),
+    { name: 'SOMEBODY ELSE', class: '1R4' }));
+
+  const out = S.mergeModels(base, mine, theirs);
+  const ids = out.model.students.map((s) => s.id);
+  assert.strictEqual(new Set(ids).size, ids.length, 'no id appears twice');
+  assert.strictEqual(out.model.students.filter((s) => s.id === 's1').length, 1);
+  assert.strictEqual(out.model.students.filter((s) => s.name === 'ALICE TAN').length, 1,
+    'the first record under the id is the one kept');
+  assert.ok(out.renamed.some((r) => /share/.test(r)), 'and it says what it dropped');
+});
+
+test('a capitalisation cleanup is not silently reverted by the other admin', () => {
+  const base = twoAdminFixture();
+  const mine = S.cloneModel(base);
+  const theirs = S.cloneModel(base);
+  theirs.students[0].name = 'Alice Tan';        // they tidy the case; I touch nothing
+
+  const out = S.mergeModels(base, mine, theirs);
+  assert.deepStrictEqual(out.conflicts, [], 'only one side changed it');
+  assert.strictEqual(out.model.students[0].name, 'Alice Tan', 'their correction survives');
+
+  // but if we both retype it differently, that is a real clash
+  const mine2 = S.cloneModel(base);
+  const theirs2 = S.cloneModel(base);
+  mine2.students[0].name = 'ALICE TAN JIA HUI';
+  theirs2.students[0].name = 'Alice Tan';
+  assert.strictEqual(S.mergeModels(base, mine2, theirs2).conflicts.length, 1);
+});
+
+test('two spellings of one subject column merge into one, losing no values', () => {
+  const base = twoAdminFixture();
+  const mine = S.cloneModel(base);
+  const theirs = S.cloneModel(base);
+  // the office file comes back with a differently-cased header
+  theirs.subjectKeys = ['hist', 'EL'];
+  theirs.students.forEach((s) => {
+    s.subjects = { hist: s.subjects.HIST, EL: s.subjects.EL };
+  });
+  theirs.students[1].subjects.hist = 'HIST G2';   // and a real change inside it
+
+  const out = S.mergeModels(base, mine, theirs);
+  const keys = out.model.subjectKeys.filter((k) => S.normKey(k) === 'hist');
+  assert.strictEqual(keys.length, 1, 'one column, not two spellings');
+  const bob = out.model.students.filter((s) => s.id === 's2')[0];
+  assert.strictEqual(bob.subjects[keys[0]], 'HIST G2', 'their edit landed on the kept spelling');
+  assert.strictEqual(Object.keys(bob.subjects).filter((k) => S.normKey(k) === 'hist').length, 1);
+
+  // and it survives the workbook, which only writes listed columns
+  const back = S.workbookToModel(S.modelToWorkbook(out.model)).model;
+  assert.strictEqual(back.students.filter((s) => s.id === 's2')[0].subjects[keys[0]], 'HIST G2');
+});
+
+test('modelSignature compares content, not key order', () => {
+  const base = twoAdminFixture();
+  const shuffled = S.cloneModel(base);
+  shuffled.students = shuffled.students.map((s) => {
+    const out = {};
+    Object.keys(s).sort().reverse().forEach((k) => { out[k] = s[k]; });
+    return out;
+  });
+  assert.notStrictEqual(JSON.stringify(shuffled), JSON.stringify(base),
+    'the two really are ordered differently');
+  assert.strictEqual(S.modelSignature(shuffled), S.modelSignature(base));
+
+  shuffled.students[0].class = '1R9';
+  assert.notStrictEqual(S.modelSignature(shuffled), S.modelSignature(base));
+
+  // the case that caused two editors to save at each other: a merged model
+  // must read as identical to the file it was merged from
+  const merged = S.mergeModels(base, S.cloneModel(base), S.cloneModel(base)).model;
+  assert.strictEqual(S.modelSignature(merged), S.modelSignature(base));
+});
+
+test('a suggestion re-made after being turned down is asked again', () => {
+  const model = S.emptyModel();
+  const ask = (made, reason) => {
+    const rec = { teacher: 'Mrs Wong', group: 'H1', action: 'remove', name: 'BOB LIM',
+      studentId: 's2', reason: reason, made: made, status: 'open', decided: '', note: '' };
+    rec.id = S.requestId(rec);
+    return rec;
+  };
+  const first = ask('2026-01-10T02:00:00Z', 'not in my half');
+  assert.deepStrictEqual(S.mergeRequests(model, [first]),
+    { added: 1, repeat: 0, decided: 0, reopened: 0 });
+
+  // the admin turns it down
+  model.requests[0].status = 'dismissed';
+  model.requests[0].decided = '2026-01-11T02:00:00Z';
+  model.requests[0].note = 'covered by the other teacher';
+
+  // the same email arriving twice must NOT reopen it
+  assert.deepStrictEqual(S.mergeRequests(model, [first]),
+    { added: 0, repeat: 0, decided: 1, reopened: 0 });
+  assert.strictEqual(S.openRequests(model).length, 0);
+
+  // but asking again in Term 2, when the student really has left, must
+  const again = ask('2026-05-02T02:00:00Z', 'he has actually left now');
+  assert.deepStrictEqual(S.mergeRequests(model, [again]),
+    { added: 0, repeat: 0, decided: 0, reopened: 1 });
+  assert.strictEqual(S.openRequests(model).length, 1);
+  assert.strictEqual(model.requests[0].reason, 'he has actually left now');
+  assert.strictEqual(model.requests.length, 1, 'reopened, not duplicated');
+
+  // something already DONE stays done — the work exists
+  model.requests[0].status = 'done';
+  model.requests[0].decided = '2026-05-03T02:00:00Z';
+  const third = ask('2026-09-01T02:00:00Z', 'again');
+  assert.strictEqual(S.mergeRequests(model, [third]).reopened, 0);
+  assert.strictEqual(S.openRequests(model).length, 0);
 });
 
 test('a teacher request settled by one admin is not reopened by the other', () => {

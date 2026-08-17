@@ -102,6 +102,11 @@
       <button class="primary" id="saveBtn" disabled>Save</button>
     </div>
 
+    <div class="notice" id="updateCheckBar" hidden>
+      <span id="updateCheckText"></span>
+      <button id="updateCheckBtn" hidden></button>
+    </div>
+
     <div class="warnings" id="warningsBox" hidden>
       <details>
         <summary>Check these (<span id="warningsCount"></span>)</summary>
@@ -242,6 +247,7 @@
     <span class="count" id="selCount"></span>
     <select id="selGroupSelect"></select>
     <button class="primary" id="selAddBtn">Add to group</button>
+    <button id="selMergeBtn" hidden>Merge</button>
     <button class="danger" id="selDeleteBtn">Delete</button>
     <button id="selClearBtn">Clear</button>
   </div>
@@ -600,6 +606,86 @@
   function enterMain() {
     show('mainScreen');
     refresh();
+    if (!autoUpdateRan) {
+      autoUpdateRan = true;
+      autoUpdateFromSchoolFiles().catch(function () { /* never block the editor */ });
+    }
+  }
+
+  /* Opening the editor refreshes the levels from the school's files by itself,
+   * so the teacher page is never left showing yesterday's data. Chrome only
+   * lets a page read a folder once permission exists, so this runs silently
+   * when the permission is still granted and asks for one click when it is
+   * not. Nothing destructive happens on its own: students who dropped off a
+   * file are kept and reported, never auto-deleted. */
+  var autoUpdateRan = false;
+
+  function updateBar(text, buttonLabel, onClick) {
+    $('updateCheckText').textContent = text;
+    var btn = $('updateCheckBtn');
+    btn.hidden = !buttonLabel;
+    if (buttonLabel) {
+      btn.textContent = buttonLabel;
+      btn.onclick = onClick;
+    }
+    $('updateCheckBar').hidden = !text;
+  }
+
+  async function autoUpdateFromSchoolFiles(opts) {
+    var manual = opts && opts.manual;
+    if (!model.sources.length) { updateBar(''); return; }
+
+    if (!srcDirHandle) {
+      var handle = srcDirPending;
+      // Silent path: the browser still remembers this folder's permission.
+      if (handle && !manual && (await handle.queryPermission({ mode: 'read' })) !== 'granted') {
+        updateBar('Levels have not been checked against the school files yet.',
+          'Check for updates now', function () { autoUpdateFromSchoolFiles({ manual: true }); });
+        return;
+      }
+      if (!(await connectSourceFolder())) {
+        updateBar('Connect the school files folder to keep the levels up to date.',
+          'Connect school folder', function () { autoUpdateFromSchoolFiles({ manual: true }); });
+        return;
+      }
+    } else {
+      await rescanSourceFolder();
+    }
+
+    var done = [];
+    var skipped = [];
+    for (var i = 0; i < model.sources.length; i++) {
+      var src = model.sources[i];
+      var state = S.resolveSource(srcFiles, src);
+      if (state.status !== 'stale') continue;
+      var saved = S.mappingFromJson(src.mapping);
+      var file = await state.file.handle.getFile();
+      var wb;
+      try { wb = XLSX.read(await file.arrayBuffer(), { type: 'array' }); }
+      catch (err) { skipped.push(src.level + ' (unreadable)'); continue; }
+      var proposal = S.proposeMapping(wb, saved);
+      // A column appearing or disappearing is a decision, not a refresh.
+      if (!saved || proposal.missingColumns.length || proposal.newColumns.length || !proposal.cols.name) {
+        skipped.push(src.level + ' (columns changed — needs a look)');
+        continue;
+      }
+      var rep = applyLevelImport(i, file, proposal, { silent: true });
+      if (rep) done.push(src.level + ': ' + rep.updated + ' updated, ' + rep.added + ' added' +
+        (rep.missingIds.length ? ', ' + rep.missingIds.length + ' no longer in the file' : ''));
+    }
+
+    if (done.length && dirHandle) await save({ silent: true });
+
+    if (!done.length && !skipped.length) {
+      updateBar('Checked the school files — every level is up to date.',
+        'Check again', function () { autoUpdateFromSchoolFiles({ manual: true }); });
+      return;
+    }
+    updateBar('Updated from the school files — ' + done.join(' · ') +
+      (skipped.length ? '. Needs your attention: ' + skipped.join(', ') : ''),
+      skipped.length ? 'Open School files' : 'Check again',
+      skipped.length ? function () { switchToTab('sources'); } :
+        function () { autoUpdateFromSchoolFiles({ manual: true }); });
   }
 
   $('setupBackBtn').addEventListener('click', function () { show('startScreen'); });
@@ -676,18 +762,20 @@
     await writeFile(h, bytes);
   }
 
-  $('saveBtn').addEventListener('click', save);
-  async function save() {
+  $('saveBtn').addEventListener('click', function () { save(); });
+  async function save(opts) {
+    var silent = opts && opts.silent;
     if (!dirHandle) return;
     $('saveBtn').disabled = true;
     try {
       if (fileHandle) {
         var current = await fileHandle.getFile();
         if (loadedLastModified !== null && current.lastModified !== loadedLastModified) {
-          var ok = confirm(
+          var ok = !silent && confirm(
             'Warning: namelist.xlsx was changed by someone else after you loaded it.\n\n' +
             'OK — save your version anyway (their version is kept as a backup)\n' +
             'Cancel — do not save (you can Reload to see their changes)');
+          // An automatic refresh never overwrites someone else's work silently.
           if (!ok) { $('saveBtn').disabled = !dirty; return; }
         }
         await writeBackup(current);
@@ -701,9 +789,10 @@
       await writeFile(dj, S.modelToDataJs(model, new Date().toISOString()));
       loadedLastModified = (await fileHandle.getFile()).lastModified;
       setDirty(false);
-      toast('Saved — Excel and teacher page are up to date');
+      if (!silent) toast('Saved — Excel and teacher page are up to date');
     } catch (err) {
-      alert('Save failed: ' + err.message);
+      if (silent) loadWarnings = loadWarnings.concat(['Automatic save failed: ' + err.message]);
+      else alert('Save failed: ' + err.message);
     }
     $('saveBtn').disabled = !dirty;
   }
@@ -1011,6 +1100,7 @@
     $('selBar').hidden = n === 0 || currentTab !== 'students' || $('mainScreen').hidden;
     if (!n) return;
     $('selCount').textContent = n + ' selected';
+    $('selMergeBtn').hidden = n !== 2;
     var sel = $('selGroupSelect');
     var cur = sel.value;
     var groups = sortedGroups();
@@ -1021,6 +1111,30 @@
   }
 
   $('selClearBtn').addEventListener('click', function () { selectedIds.clear(); renderStudents(); });
+
+  /* Two records for one person: keep the one the school's file knows about. */
+  $('selMergeBtn').addEventListener('click', function () {
+    if (selectedIds.size !== 2) return;
+    var pair = Array.from(selectedIds).map(function (id) { return ix.studentsById.get(id); });
+    if (!pair[0] || !pair[1]) return;
+    // Prefer keeping the file-sourced record, so later updates keep matching it.
+    pair.sort(function (a, b) {
+      if ((a.origin === S.ORIGIN_ADDED) !== (b.origin === S.ORIGIN_ADDED)) {
+        return a.origin === S.ORIGIN_ADDED ? 1 : -1;
+      }
+      return 0;
+    });
+    var keeper = pair[0], loser = pair[1];
+    if (!confirm('Merge these two records into one?\n\n' +
+      'KEEP:   ' + keeper.name + '  (' + (keeper.class || 'no class') + ', ' + keeper.id + ')\n' +
+      'REMOVE: ' + loser.name + '  (' + (loser.class || 'no class') + ', ' + loser.id + ')\n\n' +
+      'Classes and details from the removed record move across.')) return;
+    var res = S.mergeStudents(model, keeper.id, loser.id);
+    if (!res) return;
+    selectedIds.clear();
+    markDirty();
+    toast('Merged into ' + res.keeper.name + (res.moved ? ' — ' + res.moved + ' class(es) moved across' : ''));
+  });
 
   $('selDeleteBtn').addEventListener('click', function () {
     var n = selectedIds.size;
@@ -1624,8 +1738,7 @@
     pickingIndex = null;
     markDirty();
     var entry = S.findByName(srcFiles, name);
-    var done = entry ? runLevelUpdate(index, entry) : Promise.resolve();
-    Promise.resolve(done).then(promptForNextLevelFile);
+    if (entry) runLevelUpdate(index, entry);   // advances to the next level once it finishes
   });
 
   /* Always requested read-only: the browser itself then refuses any write
@@ -1895,6 +2008,7 @@
   });
   $('mapCancelBtn').addEventListener('click', function () {
     mapState = null;
+    guidedSetup = false;
     $('mapDialog').close();
   });
   $('mapGoBtn').addEventListener('click', function () {
@@ -1929,12 +2043,13 @@
     applyLevelImport(index, file, proposal);
   }
 
-  function applyLevelImport(index, file, proposal) {
+  function applyLevelImport(index, file, proposal, opts) {
+    var silent = opts && opts.silent;
     var src = model.sources[index];
     var res = S.importStudents(proposal.rows, S.mappingToImport(proposal));
     if (!res.students.length) {
-      alert('No usable student rows found in "' + file.name + '" — check the columns.');
-      return;
+      if (!silent) alert('No usable student rows found in "' + file.name + '" — check the columns.');
+      return null;
     }
     var importedKeys = {};
     res.students.forEach(function (st) {
@@ -1946,13 +2061,20 @@
     // The file rarely says which level it is, so stamp the level being updated.
     res.students.forEach(function (s) { if (!s.level) s.level = src.level; });
 
-    if (!confirm('Update "' + src.level + '" from:\n' + file.name + ' (sheet "' + proposal.sheet + '")\n\n' +
+    if (!silent &&
+      !confirm('Update "' + src.level + '" from:\n' + file.name + ' (sheet "' + proposal.sheet + '")\n\n' +
       res.students.length + ' students' + (classes.length ? ' in ' + classes.join(', ') : '') + '.\n' +
       'Students are matched by name, so their classes and teachers are kept.\n' +
-      'Students you added in this app are kept regardless. This file is only read, never changed.\n\nProceed?')) return;
+      'Students you added in this app are kept regardless. This file is only read, never changed.\n\nProceed?')) return null;
 
     var report = S.applyLevelUpdate(model, res.students, keys);
-    if (report.missingIds.length) {
+    if (report.missingIds.length && silent) {
+      // Removing people is the admin's call, never a side effect of opening the app.
+      loadWarnings = loadWarnings.concat([src.level + ': ' + report.missingIds.length +
+        ' student(s) are no longer in the school file (' +
+        report.missingLabels.slice(0, 6).join(', ') +
+        (report.missingLabels.length > 6 ? ', …' : '') + ') — remove them from the Students tab if that is right.']);
+    } else if (report.missingIds.length) {
       var names = report.missingLabels.slice(0, 12).join('\n') + (report.missingLabels.length > 12 ? '\n…' : '');
       if (confirm(report.missingIds.length + ' student(s) are no longer in the file:\n' + names +
         '\n\nOK — remove them (and their class memberships)\nCancel — keep them for now')) {
@@ -1969,11 +2091,14 @@
     src.lastFile = file.name;
     src.lastImported = new Date().toISOString();
     markDirty();
+    if (silent) return report;
     toast(src.level + ': ' + report.updated + ' updated, ' + report.added + ' added' +
       (autoPlacements ? ' (' + autoPlacements + ' auto-allocation' + (autoPlacements === 1 ? '' : 's') + ')' : '') +
       (report.keptAddedIds.length ? ', ' + report.keptAddedIds.length + ' added-here kept' : '') +
       (report.missingIds.length ? ', ' + report.missingIds.length + ' no longer in file' : '') +
       ' — press Save when done');
+    promptForNextLevelFile();
+    return report;
   }
 
   /* ================= import ================= */

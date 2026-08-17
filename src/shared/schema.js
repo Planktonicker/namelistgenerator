@@ -331,6 +331,23 @@
       placed[m.studentId] = true;
     });
 
+    /* Two records for one person: the office spelling a name differently from
+     * the admin, in a way the importer's matcher did not catch. Cheap to spot
+     * afterwards, and merging is one click. */
+    var byToken = {};
+    model.students.forEach(function (s) {
+      var key = nameTokens(s.name).join(' ');
+      if (!key) return;
+      (byToken[key] = byToken[key] || []).push(s);
+    });
+    Object.keys(byToken).forEach(function (key) {
+      var group = byToken[key];
+      if (group.length < 2) return;
+      warnings.push('Possible duplicate: ' + group.map(function (s) {
+        return s.name + ' (' + (s.class || 'no class') + ', ' + s.id + ')';
+      }).join(' and ') + ' — merge them from the Students tab if they are the same person.');
+    });
+
     /* A student in no class at all shows up on nobody's namelist — exactly
      * the silent gap a blank cell in the source file produces. Only worth
      * saying once there are classes to be in. */
@@ -726,12 +743,40 @@
    * duplicated, for when the office finally lists them.
    * Returns { classes, updated, added, addedIds, keptAddedIds,
    *           missingIds, missingLabels }. */
+  /* Names for comparison: lowercase word tokens, order-independent. Lets
+   * "Tan Wei Ming" recognise "Wei Ming Tan" and "Tan Wei Ming (Nathan)". */
+  function nameTokens(name) {
+    return norm(name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ')
+      .filter(function (t, i, a) { return t && a.indexOf(t) === i; })
+      .sort();
+  }
+
+  function tokensOverlap(a, b) {
+    if (a.length < 2 || b.length < 2) return false;
+    var small = a.length <= b.length ? a : b;
+    var big = a.length <= b.length ? b : a;
+    var shared = small.filter(function (t) { return big.indexOf(t) !== -1; }).length;
+    return shared === small.length;   // every token of the shorter name is present
+  }
+
   function applyLevelUpdate(model, imported, importedKeys) {
     importedKeys = importedKeys || [];
     var classSet = {};
-    imported.forEach(function (s) { if (s.class) classSet[s.class] = true; });
+    var levelSet = {};
+    imported.forEach(function (s) {
+      if (s.class) classSet[s.class] = true;
+      if (s.level) levelSet[normKey(s.level)] = true;
+    });
 
-    var pool = model.students.filter(function (s) { return classSet[s.class]; });
+    /* Students of the classes this file covers, PLUS anyone entered in the app
+     * for this level whatever class they were put in — otherwise a student the
+     * admin added under a different (or blank) class would be added a second
+     * time when the office finally lists them. */
+    var pool = model.students.filter(function (s) {
+      if (classSet[s.class]) return true;
+      return s.origin === ORIGIN_ADDED &&
+        (!Object.keys(levelSet).length || levelSet[normKey(s.level)] || !norm(s.level));
+    });
     var byNameClass = {};
     var byName = {};
     pool.forEach(function (s) {
@@ -739,6 +784,7 @@
       byNameClass[nk + '|' + s.class] = s;
       byName[nk] = nk in byName ? null : s;   // null marks an ambiguous name
     });
+    var addedPool = pool.filter(function (s) { return s.origin === ORIGIN_ADDED; });
 
     var usedIds = {};
     model.students.forEach(function (s) { usedIds[s.id] = true; });
@@ -754,12 +800,26 @@
     }
 
     var matched = {};
-    var updated = 0, added = 0;
+    var updated = 0, added = 0, adopted = 0;
     var addedIds = [];
+    var adoptedLabels = [];
     imported.forEach(function (imp) {
       var nk = normKey(imp.name);
       var m = byNameClass[nk + '|' + imp.class] || byName[nk] || null;
       if (m && matched[m.id]) m = null;
+      if (!m) {
+        // Last resort, and only against students entered in the app: the same
+        // person written slightly differently by the office.
+        var toks = nameTokens(imp.name);
+        var near = addedPool.filter(function (s) {
+          return !matched[s.id] && tokensOverlap(toks, nameTokens(s.name));
+        });
+        if (near.length === 1) {
+          m = near[0];
+          adopted++;
+          adoptedLabels.push(m.name + (normKey(m.name) === nk ? '' : ' → ' + imp.name));
+        }
+      }
       if (m) {
         matched[m.id] = true;
         m.name = imp.name;
@@ -800,11 +860,47 @@
       classes: Object.keys(classSet).sort(cmp),
       updated: updated,
       added: added,
+      adopted: adopted,
+      adoptedLabels: adoptedLabels,
       addedIds: addedIds,
       keptAddedIds: keptAdded.map(function (s) { return s.id; }),
       missingIds: missing.map(function (s) { return s.id; }),
       missingLabels: missing.map(function (s) { return s.name + ' (' + s.class + ')'; }),
     };
+  }
+
+  /* Fold `loserId` into `keeperId`: memberships move across, blank fields on
+   * the keeper are filled from the loser, and the loser is removed. Used when
+   * the same person was entered twice under slightly different names. */
+  function mergeStudents(model, keeperId, loserId) {
+    var keeper = null, loser = null;
+    model.students.forEach(function (s) {
+      if (s.id === keeperId) keeper = s;
+      if (s.id === loserId) loser = s;
+    });
+    if (!keeper || !loser || keeper === loser) return null;
+    ['class', 'level', 'gender', 'pg'].forEach(function (f) {
+      if (!norm(keeper[f]) && norm(loser[f])) keeper[f] = loser[f];
+    });
+    keeper.subjects = keeper.subjects || {};
+    Object.keys(loser.subjects || {}).forEach(function (k) {
+      if (!norm(keeper.subjects[k])) keeper.subjects[k] = loser.subjects[k];
+    });
+    var have = {};
+    model.memberships.forEach(function (m) {
+      if (m.studentId === keeperId) have[m.groupCode] = true;
+    });
+    var moved = 0;
+    model.memberships.forEach(function (m) {
+      if (m.studentId !== loserId) return;
+      if (have[m.groupCode]) { m.studentId = null; return; }
+      m.studentId = keeperId;
+      have[m.groupCode] = true;
+      moved++;
+    });
+    model.memberships = model.memberships.filter(function (m) { return m.studentId; });
+    model.students = model.students.filter(function (s) { return s.id !== loserId; });
+    return { keeper: keeper, moved: moved };
   }
 
   /* Next unused "<class>-NN" id, so a student added by hand slots into the
@@ -1043,6 +1139,7 @@
     ORIGIN_FILE: ORIGIN_FILE,
     ORIGIN_ADDED: ORIGIN_ADDED,
     nextFreeId: nextFreeId,
+    mergeStudents: mergeStudents,
     STUDENT_HEADERS: STUDENT_HEADERS,
     GROUP_HEADERS: GROUP_HEADERS,
     MEMBERSHIP_HEADERS: MEMBERSHIP_HEADERS,
@@ -1062,6 +1159,8 @@
     buildIndexes: buildIndexes,
     byClassThenName: byClassThenName,
     cmp: cmp,
+    nameTokens: nameTokens,
+    tokensOverlap: tokensOverlap,
     detectHeaderRow: detectHeaderRow,
     importStudents: importStudents,
     displayPair: displayPair,

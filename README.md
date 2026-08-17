@@ -95,6 +95,28 @@ In the **School files** tab:
 
 Running the same file twice is harmless — everyone matches, nothing changes.
 
+### Keeping itself up to date
+
+Opening `admin.html` refreshes the levels from the school's files by itself —
+no prompt, no confirmations. It rescans the school folder, re-imports every
+level whose file is newer than the last import, saves, and republishes
+`data.js`, then says what it did in a bar at the top ("Updated from the school
+files — Sec 3: 12 updated, 2 added").
+
+Two things it deliberately will *not* do on its own:
+
+- **Delete anybody.** Students who dropped off a file are listed in the
+  warnings panel for you to act on, never removed automatically.
+- **Import a level whose columns changed.** If a column appeared or vanished,
+  that level is skipped and flagged, because it is a decision rather than a
+  refresh.
+
+Chrome only lets a page read a folder while permission stands, so if the
+permission has lapsed the bar offers a single **Check for updates now** button
+instead — that click is the only manual step, and everything after it is
+automatic. The teacher page, for its part, says how old its data is if the last
+publish was more than a fortnight ago.
+
 **Reconnecting.** Chrome/Edge remember both folders between sessions, so after
 the first time the start screen offers **Reconnect to “…”** — a single
 permission click instead of navigating the shared drive again. The School files
@@ -115,6 +137,17 @@ students are:
 - **adopted automatically** if the office later lists them: the name match
   updates them in place, keeps their ID and group memberships, and flips them
   to file-sourced — no duplicate is created.
+
+That adoption is deliberately forgiving, because a student entered by hand and
+the same student typed by the office rarely match character for character. As
+well as an exact name match, a student added in the app is recognised when the
+file has moved them to another class, writes the name in a different order
+("Tan Wei Ming" / "Wei Ming Tan"), or adds something to it ("Tan Wei Ming
+(Nathan)") — while two genuinely different names are never merged. Anything
+that still slips through is reported as a **possible duplicate** in the
+warnings panel; select the two records in the Students tab and press **Merge**
+to fold them into one, keeping the school file's record and moving the classes
+across.
 
 **The official files can never be modified by this app.** Three independent
 safeguards make this true:
@@ -179,6 +212,7 @@ test/roundtrip.test.cjs  schema round-trip + validation tests
 test/conflict.browser.mjs  save/conflict/backup path against a fake filesystem
 test/allocation-format.browser.mjs  ministry-format import -> discover -> teach
 test/setup-flow.browser.mjs  first run asks which file is each level
+test/auto-update.browser.mjs  opening the editor refreshes levels by itself
 ```
 
 Requires only Node (no npm packages):
@@ -198,6 +232,8 @@ PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \
   node test/allocation-format.browser.mjs
 PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \
   node test/setup-flow.browser.mjs
+PLAYWRIGHT_CHROMIUM=... ALLOCATION_XLSX=/path/to/allocation.xlsx \
+  node test/auto-update.browser.mjs
 ```
 
 ### Coping with files that keep changing shape

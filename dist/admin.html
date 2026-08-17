@@ -379,18 +379,28 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   .ticks label .muted { font-weight: 400; font-size: 12px; }
   .ticks label.on .muted { color: rgba(255, 255, 255, .8); }
 
+  /* A mind map: branches grow to the right from the node you clicked. */
+  #groupDialog { max-width: 1040px; }        /* the map needs room to branch */
   #gfGraphLabel { align-self: start; padding-top: 14px; }
-  .graph { position: relative; display: flex; flex-direction: column; }
-  .graph-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-  .graph-row { position: relative; z-index: 1;
-    display: flex; align-items: flex-start; gap: 12px; padding: 13px 0; }
-  .graph-row.just-open { animation: branch .2s ease-out; }
-  @keyframes branch { from { opacity: 0; transform: translateY(-6px); } }
-  .graph-key {
-    flex: 0 0 74px; font-size: 11px; font-weight: 700; letter-spacing: .04em;
-    text-transform: uppercase; color: var(--muted); padding-top: 10px; text-align: right;
+  .graph {
+    position: relative; overflow: auto; max-height: 62vh;
+    border: 1px solid var(--line); border-radius: 12px;
+    background: #fbfcfe radial-gradient(var(--line) 1px, transparent 1px) 0 0 / 22px 22px;
+    padding: 4px;
   }
-  .graph-row .ticks { flex: 1; }
+  .graph-canvas { position: relative; min-width: 100%; min-height: 120px; }
+  .graph-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+  .graph-row {
+    position: absolute; z-index: 1; display: flex; flex-direction: column; gap: 7px;
+  }
+  .graph-row.just-open { animation: branch .22s cubic-bezier(.2, .8, .3, 1); }
+  @keyframes branch { from { opacity: 0; transform: translateX(-14px) scale(.96); } }
+  .graph-key {
+    font-size: 10px; font-weight: 700; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 1px;
+  }
+  .graph-row .ticks { flex-direction: column; align-items: stretch; gap: 7px; }
+  .graph-row .ticks label { width: 100%; justify-content: space-between; white-space: nowrap; }
   #gfMembers td:first-child { width: 28px; }
   #gfMembers tr.out td:not(:first-child) { text-decoration: line-through; color: var(--muted); }
   .warn-row { display: flex; align-items: baseline; gap: 8px; }
@@ -675,37 +685,41 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
         </div>
       </div>
       <label id="gfGraphLabel">Who is in it</label>
-      <div class="graph" id="gfGraph">
-        <svg class="graph-edges" id="gfEdges" aria-hidden="true"></svg>
-        <div class="graph-row" id="gfLevelRow">
-          <span class="graph-key">Level</span>
-          <div class="ticks" id="gfLevelTicks"></div>
+      <div>
+        <div class="graph" id="gfGraph">
+          <div class="graph-canvas" id="gfCanvas">
+            <svg class="graph-edges" id="gfEdges" aria-hidden="true"></svg>
+            <div class="graph-row" id="gfLevelRow">
+              <span class="graph-key">Level</span>
+              <div class="ticks" id="gfLevelTicks"></div>
+            </div>
+            <div class="graph-row" id="gfSubjectRow" hidden>
+              <span class="graph-key">Subject</span>
+              <div class="ticks" id="gfKeyTicks"></div>
+            </div>
+            <div class="graph-row" id="gfValueRow" hidden>
+              <span class="graph-key">Group</span>
+              <div class="ticks" id="gfValueTicks"></div>
+            </div>
+            <div class="graph-row" id="gfTgRow" hidden>
+              <span class="graph-key">TG / SG</span>
+              <div class="ticks" id="gfTgTicks"></div>
+            </div>
+            <div class="graph-row" id="gfClassRow" hidden>
+              <span class="graph-key">Form class</span>
+              <div class="ticks" id="gfClassTicks"></div>
+            </div>
+            <div class="graph-row" id="gfPgRow" hidden>
+              <span class="graph-key">PG</span>
+              <div class="ticks" id="gfPgTicks"></div>
+            </div>
+            <div class="graph-row" id="gfMoreRow" hidden>
+              <span class="graph-key">More</span>
+              <button type="button" class="linklike" id="gfMoreBtn">More filters…</button>
+            </div>
+          </div>
         </div>
-        <div class="graph-row" id="gfSubjectRow" hidden>
-          <span class="graph-key">Subject</span>
-          <div class="ticks" id="gfKeyTicks"></div>
-        </div>
-        <div class="graph-row" id="gfValueRow" hidden>
-          <span class="graph-key">Group</span>
-          <div class="ticks" id="gfValueTicks"></div>
-        </div>
-        <div class="graph-row" id="gfTgRow" hidden>
-          <span class="graph-key">TG / SG</span>
-          <div class="ticks" id="gfTgTicks"></div>
-        </div>
-        <div class="graph-row" id="gfClassRow" hidden>
-          <span class="graph-key">Form class</span>
-          <div class="ticks" id="gfClassTicks"></div>
-        </div>
-        <div class="graph-row" id="gfPgRow" hidden>
-          <span class="graph-key">PG</span>
-          <div class="ticks" id="gfPgTicks"></div>
-        </div>
-        <div class="graph-row" id="gfMoreRow" hidden>
-          <span class="graph-key"></span>
-          <button type="button" class="linklike" id="gfMoreBtn">More filters…</button>
-        </div>
-        <div id="gfCriteria"></div>
+        <div id="gfCriteria" style="margin-top:8px"></div>
         <p class="hint" style="margin:8px 0 0"><strong id="gfMatchCount"></strong>
           Matching students are allocated when you press OK, and new students join after each
           school-file update — you can always untick individuals below.</p>
@@ -3763,50 +3777,103 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       el.hidden = !rows[id];
       el.classList.toggle('just-open', opening);
     });
-    drawEdges();
+    layoutGraph();
   }
 
-  /* The lines of the diagram: from the node you chose on one row to every node
-   * it opened on the next, the chosen ones drawn solid in the accent colour.
-   * Measured from the laid-out nodes, so wrapping and long labels look right. */
-  var EDGE_ROWS = ['gfLevelRow', 'gfSubjectRow', 'gfValueRow', 'gfTgRow', 'gfClassRow', 'gfPgRow'];
+  /* ---- the mind map ----
+   * Each branch is a column placed to the RIGHT of the node that opened it and
+   * centred on it, with curved edges drawn from that node to every option it
+   * offers. Laid out in script because the position of a branch depends on
+   * which node above it is chosen. */
+  var MAP_COLS = ['gfLevelRow', 'gfSubjectRow', 'gfValueRow', 'gfTgRow',
+    'gfClassRow', 'gfPgRow', 'gfMoreRow'];
+  var COL_GAP = 58;         // horizontal space for the connecting curve
+  var PAD = 10;
 
-  function drawEdges() {
-    var svg = $('gfEdges');
-    var host = $('gfGraph');
-    if (!svg || !host.offsetParent && !$('groupDialog').open) { return; }
-    var hb = host.getBoundingClientRect();
-    if (!hb.width) return;
-    svg.setAttribute('viewBox', '0 0 ' + hb.width + ' ' + hb.height);
-    var visible = EDGE_ROWS.filter(function (id) { return !$(id).hidden; });
-    var parts = [];
-    function centre(el, atTop) {
-      var b = el.getBoundingClientRect();
-      return { x: b.left - hb.left + b.width / 2, y: (atTop ? b.top : b.bottom) - hb.top };
-    }
-    for (var i = 0; i < visible.length - 1; i++) {
-      var parentRow = $(visible[i]);
-      var childRow = $(visible[i + 1]);
-      var anchorEl = parentRow.querySelector('label.on') || parentRow.querySelector('label');
-      if (!anchorEl) continue;
-      var from = centre(anchorEl, false);
-      Array.prototype.forEach.call(childRow.querySelectorAll('label'), function (child) {
-        var to = centre(child, true);
-        var mid = (from.y + to.y) / 2;
-        var on = child.classList.contains('on');
-        parts.push('<path d="M' + from.x + ' ' + from.y +
-          ' C' + from.x + ' ' + mid + ' ' + to.x + ' ' + mid + ' ' + to.x + ' ' + to.y +
-          '" fill="none" stroke="' + (on ? 'var(--accent)' : 'var(--line)') +
-          '" stroke-width="' + (on ? 2 : 1) + '" opacity="' + (on ? 1 : 0.4) + '"/>');
+  function anchorOf(col) {
+    return col.querySelector('label.on') || col.querySelector('label') ||
+      col.querySelector('button');
+  }
+
+  /* Where a node sits inside the canvas: columns are the offset parents. */
+  function nodeBox(col, el) {
+    return {
+      left: col.offsetLeft + el.offsetLeft,
+      right: col.offsetLeft + el.offsetLeft + el.offsetWidth,
+      mid: col.offsetTop + el.offsetTop + el.offsetHeight / 2,
+    };
+  }
+
+  function layoutGraph() {
+    var canvas = $('gfCanvas');
+    if (!canvas || !$('groupDialog').open) return;
+    var visible = MAP_COLS.filter(function (id) { return !$(id).hidden; });
+    var x = PAD;
+    var bottom = 0;
+    var prev = null;
+    visible.forEach(function (id) {
+      var col = $(id);
+      col.style.left = x + 'px';
+      col.style.top = '0px';                 // measure at a known origin first
+      var h = col.offsetHeight;
+      var top = PAD;
+      if (prev) {
+        var a = anchorOf(prev.col);
+        if (a) top = Math.max(PAD, nodeBox(prev.col, a).mid - h / 2);
+      }
+      col.style.top = top + 'px';
+      bottom = Math.max(bottom, top + h);
+      prev = { col: col };
+      x += col.offsetWidth + COL_GAP;
+    });
+    canvas.style.width = Math.max(x, 320) + 'px';
+    canvas.style.height = (bottom + PAD) + 'px';
+    drawEdges(visible);
+    // Keep the branch that just opened in view.
+    var last = visible.length ? $(visible[visible.length - 1]) : null;
+    if (last && last.classList.contains('just-open')) {
+      var view = $('gfGraph');
+      view.scrollTo({
+        left: Math.max(0, last.offsetLeft + last.offsetWidth - view.clientWidth + 40),
+        top: Math.max(0, last.offsetTop + last.offsetHeight / 2 - view.clientHeight / 2),
+        behavior: 'smooth',
       });
-      parts.push('<circle cx="' + from.x + '" cy="' + from.y +
-        '" r="3.5" fill="var(--accent)"/>');
+    }
+  }
+
+  function drawEdges(visible) {
+    var svg = $('gfEdges');
+    var canvas = $('gfCanvas');
+    if (!svg) return;
+    visible = visible || MAP_COLS.filter(function (id) { return !$(id).hidden; });
+    svg.setAttribute('viewBox', '0 0 ' + canvas.offsetWidth + ' ' + canvas.offsetHeight);
+    svg.setAttribute('width', canvas.offsetWidth);
+    svg.setAttribute('height', canvas.offsetHeight);
+    var parts = [];
+    for (var i = 0; i < visible.length - 1; i++) {
+      var parentCol = $(visible[i]);
+      var childCol = $(visible[i + 1]);
+      var anchor = anchorOf(parentCol);
+      if (!anchor) continue;
+      var from = nodeBox(parentCol, anchor);
+      Array.prototype.forEach.call(childCol.querySelectorAll('label, button'), function (child) {
+        var to = nodeBox(childCol, child);
+        var on = child.classList.contains('on');
+        var dx = Math.max(24, (to.left - from.right) * 0.55);
+        parts.push('<path d="M' + from.right + ' ' + from.mid +
+          ' C' + (from.right + dx) + ' ' + from.mid +
+          ' ' + (to.left - dx) + ' ' + to.mid + ' ' + to.left + ' ' + to.mid +
+          '" fill="none" stroke="' + (on ? 'var(--accent)' : '#c8cfdd') +
+          '" stroke-width="' + (on ? 2.2 : 1) + '" opacity="' + (on ? 1 : 0.5) + '"/>');
+      });
+      parts.push('<circle cx="' + from.right + '" cy="' + from.mid +
+        '" r="4" fill="var(--accent)"/>');
     }
     svg.innerHTML = parts.join('');
   }
 
   window.addEventListener('resize', function () {
-    if ($('groupDialog').open) drawEdges();
+    if ($('groupDialog').open) layoutGraph();
   });
 
   var moreShown = false;
@@ -3821,7 +3888,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     renderCriteria();
     updateGraph();
     updateMatchCount();
-    requestAnimationFrame(drawEdges);
+    requestAnimationFrame(layoutGraph);
   }
 
   /* One tick list. `options` are [{ value, label, n }]; `chosen` is the list of
@@ -3853,7 +3920,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         l.classList.toggle('on', input.checked);
       });
       onChange();
-      requestAnimationFrame(drawEdges);
+      requestAnimationFrame(layoutGraph);
     };
   }
 
@@ -4157,7 +4224,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (prefilled) suggestGroupIdentity();
     updateMatchCount();
     $('groupDialog').showModal();
-    requestAnimationFrame(drawEdges);
+    requestAnimationFrame(layoutGraph);
     $('gfTeacher').focus();
   }
   $('groupCancelBtn').addEventListener('click', function () { pendingBulkAdd = false; $('groupDialog').close(); });

@@ -398,20 +398,26 @@ on down the branches, each one drawn only from what the answers above leave
 possible, with a count on every option and a running total underneath. Nothing
 you don't need is on screen:
 
-It is drawn as a diagram rather than asked as a form: each answer is a node you
-click, and lines run from it to the branch it opens — the path you have taken in
-navy, the branches not taken faint.
+It is a **mind map**, not a form. Every option is a node with its student count
+on it; clicking one grows the next branch to the right of that very node, joined
+by a curve. The path you have taken is navy, the branches not taken are faint,
+and the map pans to follow the branch you just opened.
 
 ```
-LEVEL     [ Every level ]  [ Sec 1 159 ]  [ Sec 4 203 ]
-                                              ╲
-SUBJECT   [ Any subject ] [ EL 203 ] [ MA 203 ] [ POA 83 ] [ DT 57 ] …
-                                                    │
-GROUP     [ POA 57 ]  [ POA G2 26 ]
-                            │
-TG / SG   [ SG1 37 ] [ SG2 28 ] [ SG3 28 ] [ SG4 34 ] …
-                            More filters…      (form class, PG)
+LEVEL          SUBJECT              GROUP            TG / SG
+[Every level]  [Any subject]
+[Sec 1  159]   [EL      203]
+[Sec 4  203]───[MA      203]
+       ╲       [Hum/CPA 203]
+        ╲      [DT       57]
+         ╲     [POA      83]───[POA     57]
+                              ╲[POA G2  26]───[SG1 37]
+                                             ╲[SG4 34]───[More filters…]
 ```
+
+Each branch is drawn only from what the answers to its left leave possible: pick
+Sec 4 and the subjects are Sec 4's, the groups are that subject's at that level,
+and the tutorial groups are the ones those students are actually in.
 
 
 | Field | What it does |

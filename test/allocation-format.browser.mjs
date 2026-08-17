@@ -35,7 +35,8 @@ const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } })
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
-page.on('dialog', (d) => d.accept());
+let promptAnswer = '';
+page.on('dialog', (d) => (d.type() === 'prompt' ? d.accept(promptAnswer) : d.accept()));
 await page.goto('file://' + demo + '/admin.html');
 
 // start from an empty folder-less model, then import the real file by hand
@@ -52,6 +53,9 @@ await (await fc).setFiles({
   mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   buffer: readFileSync(SRC),
 });
+// first import of a level opens the column review; accept what it proposed
+await page.waitForSelector('#mapDialog[open]');
+await page.click('#mapGoBtn');
 await page.waitForFunction(() => document.getElementById('dirtyNote').textContent.includes('Unsaved'));
 check('imports all 190 students from the ministry file',
   (await page.locator('#countStudents').innerText()) === '190');
@@ -89,13 +93,23 @@ check('a student with a blank Level cell is still in classes (' + orphanGroups +
   parseInt(orphanGroups, 10) > 0);
 await page.fill('#studentSearch', '');
 
+// teachers go on the roster once, then get picked from a list
+await page.locator('.tabs button[data-tab="teachers"]').click();
+for (const name of ['Mrs Wong', 'Mr Tan']) {
+  promptAnswer = name;
+  await page.click('#addTeacherBtn');
+  await page.waitForTimeout(150);
+}
+check('both teachers are on the roster',
+  (await page.locator('#teachersTable tbody tr').count()) === 2);
+
 // tag two teachers onto one class, and one of them onto a second class
 await page.locator('.tabs button[data-tab="groups"]').click();
 await page.fill('#groupSearch', 'K300');
 await page.locator('#groupsTable tbody tr').first().locator('button[data-act="edit"]').click();
-await page.fill('#gfTeacher', 'Mrs Wong');
+await page.selectOption('#gfTeacher', 'Mrs Wong');
 await page.click('#gfTeacherAdd');
-await page.fill('#gfTeacher', 'Mr Tan');
+await page.selectOption('#gfTeacher', 'Mr Tan');
 await page.click('#gfTeacherAdd');
 check('two teachers can be tagged to one class',
   (await page.locator('#gfTeacherChips .chip').count()) === 2);
@@ -104,7 +118,7 @@ check('the class rule is shown as a criterion chip',
 await page.click('#groupForm button[type="submit"]');
 await page.fill('#groupSearch', 'K341');
 await page.locator('#groupsTable tbody tr').first().locator('button[data-act="edit"]').click();
-await page.fill('#gfTeacher', 'Mrs Wong');
+await page.selectOption('#gfTeacher', 'Mrs Wong');
 await page.click('#gfTeacherAdd');
 await page.click('#groupForm button[type="submit"]');
 await page.fill('#groupSearch', '');

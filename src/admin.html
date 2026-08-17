@@ -339,6 +339,16 @@
         blanks mean “any”. Matching students are allocated automatically when the class is created, and new
         students join it after each school-file update. You can still add or remove members by hand
         afterwards — manual removals are only revisited if you press “Auto-fill” yourself.</p>
+      <label>Members</label>
+      <div>
+        <p class="hint" id="gfMemberNote" style="margin:0 0 6px"></p>
+        <div class="scrolly" id="gfMemberBox" style="max-height:160px" hidden>
+          <table class="list"><tbody id="gfMembers"></tbody></table>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:6px">
+          <button type="button" id="gfManageMembers">Add students…</button>
+        </div>
+      </div>
       <label for="gfCode">Group code *</label><input type="text" id="gfCode" required placeholder="e.g. EL-G3">
       <label for="gfName">Group name</label><input type="text" id="gfName" placeholder="e.g. English G3">
       <label for="gfSubject">Subject label</label><input type="text" id="gfSubject" list="subjectList" placeholder="shown on the teacher page">
@@ -1526,6 +1536,48 @@
   }
 
   var dialogClasses = [];
+  var dialogRemoved = null;   // members struck out in the dialog, applied on OK
+
+  function renderDialogMembers() {
+    var box = $('gfMemberBox');
+    if (editingGroupCode === null) {
+      box.hidden = true;
+      $('gfMembers').innerHTML = '';
+      $('gfMemberNote').textContent =
+        'Students matching the rule above are allocated as soon as you press OK.';
+      return;
+    }
+    var members = (ix.membersByGroup.get(editingGroupCode) || [])
+      .filter(function (s) { return !dialogRemoved.has(s.id); });
+    box.hidden = members.length === 0;
+    $('gfMembers').innerHTML = members.map(function (s) {
+      return '<tr><td>' + esc(s.name) + '</td><td>' + esc(s.class) + '</td>' +
+        '<td class="actions"><button type="button" class="linklike danger" data-id="' +
+        esc(s.id) + '">Remove</button></td></tr>';
+    }).join('');
+    $('gfMemberNote').textContent = members.length
+      ? members.length + ' student' + (members.length === 1 ? '' : 's') + ' in this class' +
+        (dialogRemoved.size ? ' (' + dialogRemoved.size + ' to be removed when you press OK)' : '')
+      : (dialogRemoved.size ? 'All ' + dialogRemoved.size + ' member(s) will be removed when you press OK.'
+        : 'No students yet — change the rule above, or use “Add students…”.');
+  }
+
+  $('gfMembers').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-id]');
+    if (!b) return;
+    dialogRemoved.add(b.dataset.id);
+    renderDialogMembers();
+  });
+
+  $('gfManageMembers').addEventListener('click', function () {
+    var code = editingGroupCode;
+    $('groupDialog').close();
+    pendingBulkAdd = false;
+    switchToTab('memberships').then(function () {
+      if (code) $('memGroupSelect').value = code;
+      renderMemberships();
+    });
+  });
 
   function renderClassChips() {
     $('gfClassChips').innerHTML = dialogClasses.map(function (c, i) {
@@ -1577,6 +1629,7 @@
     $('gfAutoKey').value = '';
     fillAutoValueSelect('', '');
     $('gfAutoPg').value = group ? (group.autoPg || '') : '';
+    dialogRemoved = new Set();
     dialogClasses = group && group.autoClasses
       ? group.autoClasses.split(/[,;]+/).map(function (c) { return S.norm(c); }).filter(Boolean)
       : [];
@@ -1586,6 +1639,7 @@
       if (group) $(id).dataset.userEdited = '1';       // never rewrite an existing group's identity
       else delete $(id).dataset.userEdited;
     });
+    renderDialogMembers();
     $('groupDialog').showModal();
     $('gfTeacher').focus();
   }
@@ -1607,6 +1661,12 @@
       return;
     }
     var isNew = editingGroupCode === null;
+    var previous = isNew ? null : model.groups.find(function (g) { return g.code === editingGroupCode; });
+    /* A changed rule is a new intention, so re-apply it — otherwise editing a
+     * class to fix its criteria appears to do nothing. */
+    var ruleChanged = !previous || [
+      'autoMatch', 'autoPg', 'autoClasses', 'level',
+    ].some(function (f) { return S.norm(previous[f]) !== S.norm(rec[f]); });
     if (isNew) {
       model.groups.push(rec);
     } else {
@@ -1618,15 +1678,45 @@
     }
     $('groupDialog').close();
     ix = S.buildIndexes(model);
-    var autoAdded = isNew ? S.autoFillGroup(model, rec) : 0;
+    var autoAdded = (isNew || ruleChanged) ? S.autoFillGroup(model, rec) : 0;
+    /* Narrowing a rule should be able to drop the members it no longer covers,
+     * but that is destructive, so it is asked rather than assumed. */
+    var dropped = 0;
+    if (!isNew && ruleChanged && S.groupHasRule(rec)) {
+      var stale = (ix.membersByGroup.get(code) || []).filter(function (st) {
+        return !dialogRemoved.has(st.id) && !S.matchesRule(st, rec);
+      });
+      if (stale.length && confirm(stale.length + ' student(s) in this class no longer match the rule:\n' +
+        stale.slice(0, 10).map(function (st) { return st.name + ' (' + st.class + ')'; }).join('\n') +
+        (stale.length > 10 ? '\n…' : '') +
+        '\n\nOK — remove them from the class\nCancel — leave them in')) {
+        stale.forEach(function (st) { dialogRemoved.add(st.id); });
+        dropped = stale.length;
+      }
+    }
+    // Explicit removals win over the rule, whichever way it was changed.
+    var removed = 0;
+    if (dialogRemoved && dialogRemoved.size) {
+      var before = model.memberships.length;
+      model.memberships = model.memberships.filter(function (m) {
+        return !(m.groupCode === code && dialogRemoved.has(m.studentId));
+      });
+      removed = before - model.memberships.length;
+    }
+    dialogRemoved = new Set();
     if (pendingBulkAdd && selectedIds.size) {
       pendingBulkAdd = false;
       addStudentsToGroup(Array.from(selectedIds), code);
     } else {
       markDirty();
     }
-    if (autoAdded) {
-      toast(autoAdded + ' student' + (autoAdded === 1 ? '' : 's') + ' auto-allocated to ' + (rec.name || rec.code));
+    if (autoAdded || removed) {
+      toast([
+        autoAdded ? autoAdded + ' student' + (autoAdded === 1 ? '' : 's') + ' allocated by the rule' : '',
+        removed ? removed + ' removed' + (dropped ? ' (' + dropped + ' no longer matching)' : '') : '',
+      ].filter(Boolean).join(', ') + ' — ' + (rec.name || rec.code));
+    } else if (!isNew && ruleChanged) {
+      toast('No students match this rule — check the Level, PG and class filters');
     }
   });
 
@@ -1949,14 +2039,18 @@
 
   async function scanSourceFolder(handle) {
     srcDirHandle = handle;
-    srcFiles = [];
+    // Collect into a local list first: two scans can overlap (opening the picker
+    // while the automatic check is still running), and appending to the shared
+    // list would then show every file twice.
+    var found = [];
     for await (var entry of srcDirHandle.values()) {
       if (entry.kind !== 'file') continue;
       if (!/\.(xlsx|xlsm|xlsb|xls|csv)$/i.test(entry.name)) continue;
       if (/^~\$/.test(entry.name)) continue;   // Office lock file, not a real list
       var f = await entry.getFile();
-      srcFiles.push({ name: entry.name, lastModified: f.lastModified, handle: entry });
+      found.push({ name: entry.name, lastModified: f.lastModified, handle: entry });
     }
+    srcFiles = found;
     $('srcFolderName').textContent = srcDirHandle.name + ' — ' + srcFiles.length +
       ' spreadsheet(s), read-only';
     $('srcFolderName').hidden = false;

@@ -109,8 +109,12 @@ check('the picker lists the school folder\'s files',
   (await page.locator('#pickTable tbody tr').innerText()).includes('S3 allocation'));
 check('Sec 1-5 were all created', (await page.locator('#sourcesTable tbody tr').count()) === 5);
 
-// pick a file for Sec 1 -> it imports and moves on to Sec 2
+// pick a file for Sec 1 -> review its columns -> it imports and moves on to Sec 2
 await page.locator('#pickTable tbody tr').first().locator('button[data-act="use"]').click();
+await page.waitForSelector('#mapDialog[open]');
+check('the first import of a level asks you to check the columns',
+  (await page.locator('#mapLevelName').innerText()) === 'Sec 1');
+await page.click('#mapGoBtn');
 await page.waitForFunction(() =>
   document.getElementById('pickLevelName').textContent === 'Sec 2' &&
   document.getElementById('pickFileDialog').open);

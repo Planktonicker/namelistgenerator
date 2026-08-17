@@ -425,7 +425,7 @@ and the tutorial groups are the ones those students are actually in.
 |---|---|
 | **Level** | groups the class under that heading on the teacher page, *and* keeps it to that level's students |
 | **Must be taking** | pick a column, tick its groups — several ticks in one column mean "either" (`HIST G3` or `HIST G2`), and a second column narrows further (`TG = TG2`). A column with nothing ticked means *anyone taking that subject*, and the count line says so |
-| **PG** | tick one or more posting groups (always 1, 2, 3 — a file that writes `PG2` is read as `2`) |
+| **PG** | tick one or more posting groups (always 1, 2, 3 — a file that writes `PG2` is read as `2`). Behind **More filters…** at every level, because the subject group already says which posting group a student is in |
 | **TG / SG** | tick tutorial / subject groups — the teaching group a student sits in, which need not follow the form class (SG3 can span 1R1–1R6). Hidden for levels whose files have no such column |
 | **Form class** | tick the form classes |
 | **Members** | everyone currently on the namelist, each with a tick — untick anyone who should not be there |
@@ -438,10 +438,17 @@ code…** in the dialog, where it can also be set by hand if your school files
 expect a particular code. Renaming a class carries its code (and its students)
 along, unless you gave it a code of its own.
 
-From **Sec 3 upwards** a class is defined by its subject group, not by the form
-class or the posting group, so those two branches stay closed behind **More
-filters…** — one click away when they are genuinely meant, and open already for
-a class that uses them. Sec 1–2 show them outright.
+**Answering higher up the map clears what hung below it.** A class built for
+Sec 4 POA cannot keep Sec 1's tutorial groups, so picking a different level
+clears the subject, group, TG/SG and the rest; picking a different subject
+clears its group and below; and so on down. What you see is always reachable
+from the answers above it.
+
+**PG is behind More filters… at every level** — the subject group already says
+which posting group a student is in, so it is a trap far more often than a
+filter. From **Sec 3** the form class joins it there, since upper secondary is
+grouped by subject group rather than by form class. Both are one click away when
+genuinely meant, and open already for a class that uses them.
 
 Ticking nothing means "any", and a student whose Level cell the office left
 blank is never excluded by the level — being unknown must not mean disappearing

@@ -1894,11 +1894,9 @@
     var chosen = dialogKeys.length ? dialogKeys : [''];
     renderTicks($('gfKeyTicks'), options, chosen, function () {
       dialogKeys = chosen.filter(Boolean);
-      renderValueTicks();
-      renderCriteria();
-      updateGraph();
+      clearBelow('subject');
+      renderRuleTicks(currentKey());
       suggestGroupIdentity();
-      updateMatchCount();
     }, { single: true });
   }
 
@@ -1908,18 +1906,22 @@
     var upper = isUpperSecondary(currentLevel());
     var picked = !levels.length || !!currentLevel();
     var hasTg = tickOptions(function (s) { return S.normTg(s.tg); }, dialogTgs).length > 0;
-    /* Upper secondary is grouped by subject group, not by form class, so the
-     * form-class and PG branches are only there if asked for. */
-    var extras = moreShown || dialogClasses.length > 0 || dialogPgs.length > 0;
+    /* The subject group already says which posting group a student is in, so PG
+     * is never a first-class branch — and upper secondary is grouped by subject
+     * group rather than by form class, so that goes behind the same door. */
+    var extras = moreShown || dialogPgs.length > 0 || (upper && dialogClasses.length > 0);
     var rows = {
       gfLevelRow: true,
       gfSubjectRow: picked,
       gfValueRow: picked && !!currentKey(),
       gfTgRow: picked && hasTg,
       gfClassRow: picked && (!upper || extras),
-      gfPgRow: picked && (!upper || extras),
-      gfMoreRow: picked && upper && !extras,
+      gfPgRow: picked && extras,
+      gfMoreRow: picked && !extras,
     };
+    $('gfMoreBtn').textContent = upper
+      ? 'More filters — form class, PG…'
+      : 'More filters — PG…';
     Object.keys(rows).forEach(function (id) {
       var el = $(id);
       var opening = rows[id] && el.hidden;      // only the new branch animates
@@ -2106,7 +2108,12 @@
     renderTicks(box, tickOptions(function (s) {
       return s.subjects && s.subjects[key];
     }, crit.values), crit.values, function () {
+      clearBelow('group');
+      renderTgTicks();
+      renderClassTicks();
+      renderPgTicks();
       renderCriteria();
+      updateGraph();
       suggestGroupIdentity();
       updateMatchCount();
     });
@@ -2131,12 +2138,40 @@
 
   function renderTgTicks() {
     renderTicks($('gfTgTicks'), tickOptions(function (s) { return S.normTg(s.tg); }, dialogTgs),
-      dialogTgs, function () { suggestGroupIdentity(); updateMatchCount(); });
+      dialogTgs, function () {
+        clearBelow('tg');
+        renderClassTicks();
+        renderPgTicks();
+        updateGraph();
+        suggestGroupIdentity();
+        updateMatchCount();
+      });
   }
 
   function renderClassTicks() {
     renderTicks($('gfClassTicks'), tickOptions(function (s) { return s.class; }, dialogClasses),
-      dialogClasses, function () { suggestGroupIdentity(); updateMatchCount(); });
+      dialogClasses, function () {
+        clearBelow('class');
+        renderPgTicks();
+        updateGraph();
+        suggestGroupIdentity();
+        updateMatchCount();
+      });
+  }
+
+  /* Answering higher up the map makes the answers below it stale, so they go:
+   * a class built for Sec 4 POA cannot keep Sec 1's tutorial groups. Arrays are
+   * emptied in place because the rendered rows hold references to them. */
+  var BELOW = ['level', 'subject', 'group', 'tg', 'class', 'pg'];
+
+  function clearBelow(step) {
+    var at = BELOW.indexOf(step);
+    if (at < BELOW.indexOf('subject')) { dialogKeys = []; dialogCriteria = []; }
+    else if (at < BELOW.indexOf('group')) { dialogCriteria = []; }
+    if (at < BELOW.indexOf('tg')) dialogTgs.length = 0;
+    if (at < BELOW.indexOf('class')) dialogClasses.length = 0;
+    if (at < BELOW.indexOf('pg')) dialogPgs.length = 0;
+    if (at < BELOW.indexOf('class')) moreShown = false;
   }
 
   function suggestGroupIdentity() {
@@ -2171,9 +2206,8 @@
     var chosen = dialogLevels.length ? dialogLevels : [''];
     renderTicks($('gfLevelTicks'), options, chosen, function () {
       dialogLevels = chosen.filter(Boolean);
-      /* A different level means different subjects, groups and classes, so the
-       * branches below are re-read rather than left showing the old level's. */
-      renderRuleTicks();
+      clearBelow('level');
+      renderRuleTicks('');
       suggestGroupIdentity();
     }, { single: true });
   }

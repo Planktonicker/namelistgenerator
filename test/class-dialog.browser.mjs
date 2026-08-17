@@ -65,6 +65,7 @@ check('the rule starts as a level branch and nothing else',
   (await page.locator('#gfValueRow').isHidden()),
   (await page.locator('#gfLevelTicks').innerText()).replace(/\s+/g, ' '));
 await page.locator('#gfLevelTicks label').filter({ hasText: /^1\b/ }).first().click();
+await page.click('#gfMoreBtn');
 check('PG is a tick list, with no PG2-style labels',
   (await page.locator('#gfPgTicks label').allInnerTexts()).every((t) => /^[123]\b/.test(t.trim())),
   (await page.locator('#gfPgTicks').innerText()).replace(/\s+/g, ' '));
@@ -202,10 +203,26 @@ await page.locator('#gfLevelTicks label').filter({ hasText: /^1\b/ }).first().cl
 check('switching back restores the other level',
   (await page.locator('#gfClassTicks').innerText()).includes('1R1') &&
   (await page.locator('#gfKeyTicks').innerText()).includes('HIST'));
-check('lower secondary shows PG and form class outright',
-  !(await page.locator('#gfPgRow').isHidden()) &&
+check('lower secondary shows the form class outright, PG still behind More',
   !(await page.locator('#gfClassRow').isHidden()) &&
-  (await page.locator('#gfMoreRow').isHidden()));
+  (await page.locator('#gfPgRow').isHidden()) &&
+  !(await page.locator('#gfMoreRow').isHidden()),
+  await page.locator('#gfMoreBtn').innerText());
+
+// answering higher up the map clears what hung below it
+await page.locator('#gfKeyTicks label').filter({ hasText: /^HIST\b/ }).first().click();
+await page.locator('#gfValueTicks label').filter({ hasText: 'HIST G3' }).first().click();
+await page.locator('#gfTgTicks label').first().click();
+check('a path can be built down the map',
+  (await page.locator('#gfValueTicks label.on').count()) === 1 &&
+  (await page.locator('#gfTgTicks label.on').count()) === 1);
+await page.locator('#gfKeyTicks label').filter({ hasText: /^GEOG\b/ }).first().click();
+check('picking a different subject clears the branches under it',
+  (await page.locator('#gfValueTicks label.on').count()) === 0 &&
+  (await page.locator('#gfTgTicks label.on').count()) === 0);
+await page.locator('#gfLevelTicks label').filter({ hasText: 'Every level' }).first().click();
+check('and picking a different level clears the subject too',
+  (await page.locator('#gfKeyTicks label.on').first().innerText()).startsWith('Any subject'));
 await page.click('#groupCancelBtn');
 
 check('renaming a teacher updates their classes',

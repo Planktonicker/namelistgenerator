@@ -966,6 +966,26 @@ test('merging is stable: nothing new means nothing changes', () => {
   assert.strictEqual(JSON.stringify(second.students), JSON.stringify(first.students));
 });
 
+test('an import folds onto what is already here rather than replacing it', () => {
+  const current = { id: 's1', name: 'TAN WEI MING', class: '1R1', level: 'Sec 1', gender: 'M',
+    pg: '3', tg: 'SG1', sn: '17', origin: 'added', sourceName: 'Tan Wei Ming', status: 'left',
+    subjects: { HIST: 'HIST G3', POA: 'POA G2' } };
+  // a file that knows nothing about POA, the S/N, or anything app-owned
+  const imported = { id: 's1', name: 'TAN WEI MING', class: '1R2', level: 'Sec 1', gender: 'M',
+    pg: '3', tg: '', sn: '', origin: 'file', sourceName: 'TAN WEI MING',
+    subjects: { HIST: 'HIST G2' } };
+
+  const out = S.mergeImportedStudent(current, imported);
+  assert.strictEqual(out.class, '1R2', 'what the file does say is applied');
+  assert.strictEqual(out.subjects.HIST, 'HIST G2');
+  assert.strictEqual(out.subjects.POA, 'POA G2', 'a subject from another file is kept');
+  assert.strictEqual(out.sn, '17', 'the office serial number is kept');
+  assert.strictEqual(out.tg, 'SG1', 'a blank column does not blank the value');
+  assert.strictEqual(out.status, 'left', 'a student who has left does not come back on the roll');
+  assert.strictEqual(out.origin, 'added', 'and is still the app\'s own record');
+  assert.strictEqual(out.sourceName, 'Tan Wei Ming', 'the spelling used for matching is kept');
+});
+
 test('two records sharing an id do not multiply through a merge', () => {
   const base = twoAdminFixture();
   const mine = S.cloneModel(base);

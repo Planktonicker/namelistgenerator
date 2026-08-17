@@ -56,6 +56,8 @@ check('double-clicking the row opens it too',
 /* ---------- the name ---------- */
 
 const was = await page.locator('#sfName').inputValue();
+const snBefore = await page.evaluate((id) =>
+  window.__testModel().students.filter((e) => e.id === id)[0].sn, firstId);
 await page.fill('#sfName', 'corrected full name');
 check('the name box forces capitals as you type',
   (await page.locator('#sfName').inputValue()) === 'CORRECTED FULL NAME');
@@ -65,9 +67,11 @@ await page.click('#studentForm button[type="submit"]');
 await page.waitForFunction(() => !document.getElementById('studentDialog').open);
 const renamed = await page.evaluate((id) => {
   const s = window.__testModel().students.filter((e) => e.id === id)[0];
-  return { name: s.name, sourceName: s.sourceName };
+  return { name: s.name, sourceName: s.sourceName, sn: s.sn };
 }, firstId);
 check('the corrected name is stored', renamed.name === 'CORRECTED FULL NAME', renamed.name);
+check('and the office S/N — which this form never shows — survives the edit',
+  renamed.sn === snBefore && snBefore !== '', 'was ' + snBefore + ', now ' + renamed.sn);
 check('and the file\'s spelling is kept alongside it, for matching',
   renamed.sourceName === was, renamed.sourceName);
 const renamedRow = await page.locator('#studentsTable tbody tr[data-id="' + firstId + '"]').innerText();

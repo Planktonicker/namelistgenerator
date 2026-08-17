@@ -1098,6 +1098,30 @@
     return shared === small.length;   // every token of the shorter name is present
   }
 
+  /* Folding an imported row onto a student the app already holds. The import
+   * only knows what its own columns say, so everything it has no opinion about
+   * — whether they have left, whether they were entered here, the spelling an
+   * admin corrected, the office's serial number, subjects from other files —
+   * belongs to the record that is already here. Replacing wholesale is how a
+   * student marked as having left comes back on the roll. */
+  function mergeImportedStudent(current, imported) {
+    var out = {};
+    Object.keys(current).forEach(function (k) { out[k] = current[k]; });
+    ['name', 'class', 'level', 'gender', 'pg', 'tg', 'sn'].forEach(function (f) {
+      if (norm(imported[f])) out[f] = imported[f];
+    });
+    // App-owned facts about the student, never carried by an import.
+    out.origin = current.origin || ORIGIN_FILE;
+    out.status = current.status || '';
+    out.sourceName = current.sourceName || current.name;
+    out.subjects = {};
+    Object.keys(current.subjects || {}).forEach(function (k) { out.subjects[k] = current.subjects[k]; });
+    Object.keys(imported.subjects || {}).forEach(function (k) {
+      if (norm(imported.subjects[k])) out.subjects[k] = imported.subjects[k];
+    });
+    return out;
+  }
+
   function applyLevelUpdate(model, imported, importedKeys) {
     importedKeys = importedKeys || [];
     var changes = [];
@@ -2283,6 +2307,7 @@
     subjectSummary: subjectSummary,
     studentSearchText: studentSearchText,
     applyLevelUpdate: applyLevelUpdate,
+    mergeImportedStudent: mergeImportedStudent,
     findNewestMatch: findNewestMatch,
     isSlotHeader: isSlotHeader,
     slotColumns: slotColumns,

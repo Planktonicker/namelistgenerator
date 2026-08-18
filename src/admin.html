@@ -2627,6 +2627,8 @@
     fillPick($('sfLevel'), levels, '— no level —',
       student ? student.level : (levels.length === 1 ? levels[0] : ''));
     renderStudentFields(student);
+    tgFromClass = '';
+    pgFilled = {};
     suggestStudentId();
     $('studentDialog').showModal();
     $('sfName').focus();        // the id fills itself in from the class
@@ -2719,6 +2721,110 @@
     fillAddSubject(keys);
   }
 
+  /* ---- what the class and the posting group already tell you ----------
+   * Two things about a new student can be read off answers already given, and
+   * both are read from the students already imported rather than from a rule
+   * written here — so they follow the school's own convention, and next year's
+   * if it changes. Both are only ever a default: the admin's own choice is
+   * never overwritten, and everything stays editable in the form. */
+
+  /* Lower secondary is banded by form class — 1R1-1R3 are one tutorial group,
+   * 1R4-1R6 the next, and Sec 2 the same. Upper secondary is not: there the
+   * subject group belongs to the combination, so nothing is guessed. */
+  function isLowerSecondary(level) {
+    var m = /(\d+)/.exec(S.norm(level));
+    return !!m && parseInt(m[1], 10) <= 2;
+  }
+
+  function tgForClass(cls) {
+    cls = S.norm(cls);
+    if (!cls || !isLowerSecondary($('sfLevel').value)) return '';
+    var pool = studentLevelPool();
+    var known = poolValues(pool, function (s) { return S.normTg(s.tg); });
+    var counts = {};
+    var total = 0;
+    pool.forEach(function (s) {
+      if (S.normKey(s.class) !== S.normKey(cls)) return;
+      total++;
+      var tg = S.normTg(s.tg);
+      if (tg) counts[tg] = (counts[tg] || 0) + 1;
+    });
+    if (total) {
+      /* The class is already populated, so it answers for itself — and if its
+       * students disagree, this school does not band by form class and
+       * guessing would be worse than leaving it blank. */
+      var best = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; })[0];
+      return best && counts[best] >= total * 0.6 ? best : '';
+    }
+    /* Nobody in that class yet — the first student of a new form class. Fall
+     * back to the shape of the level, three form classes to a tutorial group,
+     * and only if that names a group the level actually has. */
+    var n = /(\d+)\s*$/.exec(cls);
+    if (!n || !known.length) return '';
+    var guess = S.norm(known[0]).replace(/\d+\s*$/, '') + Math.ceil(parseInt(n[1], 10) / 3);
+    return known.indexOf(guess) === -1 ? '' : guess;
+  }
+
+  var tgFromClass = '';       // what this last filled in, so a chosen TG survives
+  function applyTgDefault() {
+    var want = tgForClass($('sfClass').value);
+    if (!want) return;
+    var cur = S.normTg($('sfTg').value);
+    if (cur && cur !== tgFromClass) return;       // the admin chose that one
+    if (!Array.prototype.some.call($('sfTg').options, function (o) { return o.value === want; })) return;
+    $('sfTg').value = want;
+    tgFromClass = want;
+  }
+
+  /* What a posting group implies, column by column: the allocation most of
+   * this level's PG-N students are on. Read from the data rather than built
+   * out of "EL" + " G2", so it comes out in the school's own spelling — and a
+   * column the posting group decides nothing about is left alone, because it
+   * has no majority. Mother tongue splits by language, not by band; a subject
+   * only a handful take is not something to fill in for somebody new. */
+  function pgDefaults(pg) {
+    var out = {};
+    pg = S.normPg(pg);
+    if (!pg) return out;
+    var cohort = studentLevelPool().filter(function (s) { return S.normPg(s.pg) === pg; });
+    if (cohort.length < 5) return out;          // too few for it to be a convention
+    (model.subjectKeys || []).forEach(function (k) {
+      var counts = {};
+      cohort.forEach(function (s) {
+        var v = S.norm(s.subjects && s.subjects[k]);
+        if (v) counts[v] = (counts[v] || 0) + 1;
+      });
+      var best = Object.keys(counts).sort(function (a, b) {
+        return counts[b] - counts[a] || S.cmp(a, b);
+      })[0];
+      // Counted over the whole cohort, blanks included.
+      if (best && counts[best] >= cohort.length * 0.6) out[k] = best;
+    });
+    return out;
+  }
+
+  var pgFilled = {};          // key -> what this put there, so a chosen one survives
+  function applyPgDefaults() {
+    if (editingStudentId !== null) return;      // only ever when adding somebody
+    var want = pgDefaults($('sfPg').value);
+    var next = {};
+    $('sfSubjects').querySelectorAll('select[data-subj]').forEach(function (sel) {
+      var key = sel.dataset.subj;
+      var cur = S.norm(sel.value);
+      if (cur && cur !== pgFilled[key]) return;   // the admin chose that one
+      var v = want[key] || '';
+      if (v && !Array.prototype.some.call(sel.options, function (o) { return o.value === v; })) return;
+      sel.value = v;
+      if (v) next[key] = v;
+    });
+    pgFilled = next;
+    var n = Object.keys(next).length;
+    if (n) {
+      toast(n + ' subject' + (n === 1 ? '' : 's') + ' filled in from PG ' + S.normPg($('sfPg').value) +
+        ' — change any that are wrong');
+    }
+  }
+
   /* Columns opened by hand in this dialog: a Sec 3 student who has picked up a
    * subject nobody at that level takes yet still needs somewhere to put it. */
   var extraSubjectKeys = [];
@@ -2793,7 +2899,15 @@
     var current = editingStudentId === null ? null : ix.studentsById.get(editingStudentId);
     renderStudentFields(current, true);
     suggestStudentId();
+    // The level decides which of these apply at all, so both are asked again.
+    tgFromClass = '';
+    pgFilled = {};
+    applyTgDefault();
+    applyPgDefaults();
   });
+  $('sfClass').addEventListener('change', applyTgDefault);
+  $('sfTg').addEventListener('change', function () { tgFromClass = ''; });
+  $('sfPg').addEventListener('change', applyPgDefaults);
 
   /* Adding a student: once a class is chosen, suggest the next free register
    * id for it, unless the admin has typed an id themselves. */

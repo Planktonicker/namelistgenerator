@@ -853,6 +853,28 @@ options never appear under Sec 1), plus two ways out of that list:
 - **Another subject** at the bottom adds a column this level does not use, or
   creates one that does not exist anywhere yet.
 
+**Two answers the form works out for itself**, when you are adding somebody:
+
+- **The class says which tutorial group.** Lower secondary is banded by form
+  class — `1R1`–`1R3` are TG1, `1R4`–`1R6` are TG2, and Sec 2 the same — so
+  picking the class fills the TG in. It is read from the students already
+  imported rather than from a rule written into the app, so it follows the
+  school's own convention and next year's if that changes; a class nobody is in
+  yet falls back to three form classes per group, and only if that names a
+  group the level actually has. **Upper secondary is left alone**: there the
+  subject group belongs to the combination, and one form class holds several.
+- **The PG says which band.** Picking PG 2 fills English, Maths, Science and
+  the humanities in at G2 — in the school's own spelling (`Sci PC G2`,
+  `SS/Hist G2`), because it is the allocation most of that level's PG 2
+  students are on rather than a string built out of the column name. A column
+  the posting group decides nothing about is left blank: mother tongue splits
+  by language, not by band, so it has no majority and nothing is guessed. Nor
+  is a subject only a handful of students take.
+
+Both are only defaults, and both stay out of the way: a value you picked
+yourself is never overwritten, and neither runs when you are **editing** an
+existing student — changing somebody's PG does not rewrite their subjects.
+
 **The namelists follow.** Correcting a subject, band, PG, class or level is really
 a statement about which classes the student belongs in, so when you press OK they
 are added to every rule-built class they now match, and you are asked before they

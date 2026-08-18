@@ -140,6 +140,13 @@ for a namelist.
   data — a deletion brings the student back with their class places. The ↶
   button in the topbar names what it will undo before you press it. It stops at
   the point another admin's changes were merged in, and says so.
+- **Adding a student fills in what it can.** Pick a lower-secondary form class
+  and the tutorial group follows (`1R1`–`1R3` are TG1, `1R4`–`1R6` are TG2, and
+  Sec 2 the same); pick a PG and English, Maths, Science and the humanities are
+  set to that band. Both are read off the students already imported, so they
+  follow whatever the files say. Change anything that is wrong — what you pick
+  is never overwritten, and neither happens when you are editing somebody who
+  is already on the roll.
 - **Click a student's name** in the Students tab to open them — name, class, PG,
   TG/SG and every subject in one window. Fixing a subject or a band moves them
   between namelists straight away: they join the classes they now match, and you

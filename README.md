@@ -481,6 +481,27 @@ present, give stable ids (`3S1-01`).
 Cells without a band or a code are ignored, which quietly filters out the
 notes admins leave in spare slot columns.
 
+### Finding a class among forty
+
+The **Teaching groups** table has the same controls the Students table has.
+The search box takes any part of a class name, code, subject, level, teacher
+or auto-fill rule. Beside it sit three filters — **level**, **subject** and
+**teacher** — which stack with the search and with each other.
+
+The teacher filter also offers **No teacher yet**, with a count beside it: the
+quickest way to find the classes still waiting for a name on them at the start
+of a year.
+
+**Click any column header to sort.** Class, subject, teacher, level, rule or
+size, ascending then descending. *Members* sorts as a number rather than as
+text, so 9 comes before 78, and a class with nobody on it yet sorts last
+whichever way the column points. Nothing on screen means *"No class matches
+the search and filters above"* rather than an empty table.
+
+Saving a class that the search or a filter would then hide clears them instead
+— a class disappearing the instant you save it reads as nothing having been
+saved.
+
 ### Teachers and classes
 
 Teacher names live in the **Teachers** tab, so they are picked from a list when

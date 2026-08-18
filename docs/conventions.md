@@ -164,6 +164,10 @@ for a namelist.
 - **Trim by hand in the class dialog.** Half a class shared with a colleague is
   27 matched, four unticked, 23 on the namelist — and the unticked stay out when
   the rule is applied again.
+- **Find a class by narrowing, not by scrolling.** The Teaching groups table
+  searches on anything in a row, filters by level, subject and teacher, and
+  sorts on any column header you click. **No teacher yet** in the teacher
+  filter lists the classes still waiting to be given out.
 - **Watch *Check these***. It reports students who take a subject with no class
   for it, columns that look mislabelled, and possible duplicate students.
 - **Read *What changed…*** after an update — moved class, changed band, new

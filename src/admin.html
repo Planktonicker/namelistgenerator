@@ -375,16 +375,23 @@
     <section id="tab-groups" hidden>
       <div class="toolbar">
         <input type="search" id="groupSearch" placeholder="Search group, subject or teacher" style="min-width:220px">
+        <select id="groupLevelFilter"><option value="">All levels</option></select>
+        <select id="groupSubjectFilter"><option value="">All subjects</option></select>
+        <select id="groupTeacherFilter">
+          <option value="">All teachers</option>
+          <option value="__none">No teacher yet</option>
+        </select>
         <span class="spacer"></span>
         <button id="discoverBtn">Find classes in the data</button>
         <button class="primary" id="addGroupBtn">Add class</button>
       </div>
       <div class="card">
         <table class="list" id="groupsTable">
-          <thead><tr><th>Class</th><th>Subject</th><th>Teachers</th><th>Level</th><th>Auto-fill</th><th>Members</th><th></th></tr></thead>
+          <thead></thead>
           <tbody></tbody>
         </table>
         <p class="empty" id="groupsEmpty" hidden>No teaching groups yet — use <strong>Add group</strong>.</p>
+        <p class="empty" id="groupsNoMatch" hidden>No class matches the search and filters above.</p>
       </div>
     </section>
 
@@ -2077,6 +2084,10 @@
     // Schools that don't use tutorial groups never see the control.
     $('studentTgFilter').hidden = !tgs.length;
     $('memTgFilter').hidden = !tgs.length;
+    fillOptions($('groupLevelFilter'), uniqueValues('level'), 'All levels');
+    fillOptions($('groupSubjectFilter'), Array.from(new Set(model.groups
+      .map(function (g) { return S.norm(g.subject); }).filter(Boolean))).sort(S.cmp), 'All subjects');
+    fillGroupTeacherFilter();
     fillOptions($('memClassFilter'), uniqueValues('class'), 'All classes');
     fillOptions($('memPgFilter'), uniqueValues('pg'), 'All PG');
     fillDatalists();
@@ -2208,6 +2219,24 @@
       return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
     }).join('');
     sel.value = cur;
+  }
+
+  /* Like fillOptions, but with the "nobody yet" entry kept in place — the
+   * quickest way to find the classes still waiting for a name on them. */
+  function fillGroupTeacherFilter() {
+    var sel = $('groupTeacherFilter');
+    var cur = sel.value;
+    var names = Array.from(new Set([].concat.apply([], model.groups.map(function (g) {
+      return S.teacherNames(g);
+    })))).sort(S.cmp);
+    var none = model.groups.filter(function (g) { return !S.teacherNames(g).length; }).length;
+    sel.innerHTML = '<option value="">All teachers</option>' +
+      '<option value="__none">No teacher yet' + (none ? ' (' + none + ')' : '') + '</option>' +
+      names.map(function (t) {
+        return '<option value="' + esc(t) + '">' + esc(t) + '</option>';
+      }).join('');
+    sel.value = cur;
+    if (sel.value !== cur) sel.value = '';    // that teacher lost their last class
   }
 
   function fillDatalists() {
@@ -2977,14 +3006,83 @@
   });
 
   $('groupSearch').addEventListener('input', renderGroups);
+  $('groupLevelFilter').addEventListener('change', renderGroups);
+  $('groupSubjectFilter').addEventListener('change', renderGroups);
+  $('groupTeacherFilter').addEventListener('change', renderGroups);
   $('addGroupBtn').addEventListener('click', function () { pendingBulkAdd = false; openGroupDialog(null); });
 
-  function renderGroups() {
+  /* Thirty-nine classes is more than a list: the same search, filter and
+   * click-a-header sorting the Students tab has, on the columns this table
+   * actually shows. Kept separate from sortedGroups(), which is the fixed
+   * order every class picker in the app relies on. */
+  var groupSortKey = 'subject';
+  var groupSortDir = 1;
+
+  function groupSortValue(g, key) {
+    if (key === 'n') return (ix.membersByGroup.get(g.code) || []).length;
+    if (key === 'name') return g.name || g.code;
+    if (key === 'teachers') return S.teacherNames(g).join(', ');
+    if (key === 'rule') return ruleSummary(g);
+    return g[key] || '';
+  }
+
+  function groupSearchText(g) {
+    return (g.code + ' ' + g.name + ' ' + g.subject + ' ' + g.level + ' ' +
+      S.teacherNames(g).join(' ') + ' ' + ruleSummary(g)).toLowerCase();
+  }
+
+  function filteredGroups() {
     var q = $('groupSearch').value.trim().toLowerCase();
-    var rows = sortedGroups().filter(function (g) {
-      return !q || (g.code + ' ' + g.name + ' ' + g.subject + ' ' + g.level + ' ' +
-        S.teacherNames(g).join(' ')).toLowerCase().indexOf(q) !== -1;
+    var lvl = $('groupLevelFilter').value;
+    var subj = $('groupSubjectFilter').value;
+    var teacher = $('groupTeacherFilter').value;
+    return model.groups.filter(function (g) {
+      var names = S.teacherNames(g);
+      if (lvl && S.normKey(g.level) !== S.normKey(lvl)) return false;
+      if (subj && S.normKey(g.subject) !== S.normKey(subj)) return false;
+      if (teacher === '__none' && names.length) return false;
+      if (teacher && teacher !== '__none' && !names.some(function (t) {
+        return S.normKey(t) === S.normKey(teacher);
+      })) return false;
+      if (q && groupSearchText(g).indexOf(q) === -1) return false;
+      return true;
     });
+  }
+
+  function groupRows() {
+    return filteredGroups().sort(function (a, b) {
+      var va = groupSortValue(a, groupSortKey);
+      var vb = groupSortValue(b, groupSortKey);
+      // An empty cell sorts last whichever way the column is pointing.
+      var d;
+      if (typeof va === 'number') d = va - vb;
+      else if (va === '' || vb === '') d = va === vb ? 0 : (va === '' ? 1 : -1) * groupSortDir;
+      else d = S.cmp(va, vb);
+      return groupSortDir * d || S.cmp(a.name || a.code, b.name || b.code) || S.cmp(a.code, b.code);
+    });
+  }
+
+  $('groupsTable').querySelector('thead').addEventListener('click', function (ev) {
+    var th = ev.target.closest('th.sortable');
+    if (!th) return;
+    if (groupSortKey === th.dataset.key) groupSortDir = -groupSortDir;
+    else { groupSortKey = th.dataset.key; groupSortDir = 1; }
+    renderGroups();
+  });
+
+  function renderGroups() {
+    function sortCls(key) {
+      return 'sortable' + (groupSortKey === key ? (groupSortDir === 1 ? ' sorted-asc' : ' sorted-desc') : '');
+    }
+    $('groupsTable').querySelector('thead').innerHTML = '<tr>' +
+      '<th class="' + sortCls('name') + '" data-key="name">Class</th>' +
+      '<th class="' + sortCls('subject') + '" data-key="subject">Subject</th>' +
+      '<th class="' + sortCls('teachers') + '" data-key="teachers">Teachers</th>' +
+      '<th class="' + sortCls('level') + '" data-key="level">Level</th>' +
+      '<th class="' + sortCls('rule') + '" data-key="rule">Auto-fill</th>' +
+      '<th class="' + sortCls('n') + '" data-key="n">Members</th>' +
+      '<th></th></tr>';
+    var rows = groupRows();
     var tbody = $('groupsTable').querySelector('tbody');
     tbody.innerHTML = rows.map(function (g) {
       var n = (ix.membersByGroup.get(g.code) || []).length;
@@ -2998,6 +3096,7 @@
         '<button class="linklike danger" data-act="del">Delete</button></td></tr>';
     }).join('');
     $('groupsEmpty').hidden = model.groups.length > 0;
+    $('groupsNoMatch').hidden = !model.groups.length || rows.length > 0;
   }
 
   $('groupsTable').addEventListener('click', function (ev) {
@@ -3875,13 +3974,14 @@
     }
     $('groupDialog').close();
     ix = S.buildIndexes(model);
-    /* A search that the saved class does not match would hide it the moment it
-     * is saved, which reads as nothing having happened. The filter steps aside
-     * rather than the class disappearing. */
-    var q = $('groupSearch').value.trim().toLowerCase();
-    if (q && (rec.code + ' ' + rec.name + ' ' + rec.subject + ' ' + rec.level + ' ' +
-      S.teacherNames(rec).join(' ')).toLowerCase().indexOf(q) === -1) {
+    /* A search or filter the saved class does not match would hide it the
+     * moment it is saved, which reads as nothing having happened. They step
+     * aside rather than the class disappearing. */
+    if (!filteredGroups().some(function (g) { return g.code === rec.code; })) {
       $('groupSearch').value = '';
+      $('groupLevelFilter').value = '';
+      $('groupSubjectFilter').value = '';
+      $('groupTeacherFilter').value = '';
     }
     var autoAdded = (isNew || ruleChanged) ? S.autoFillGroup(model, rec) : 0;
     /* Narrowing a rule should be able to drop the members it no longer covers,

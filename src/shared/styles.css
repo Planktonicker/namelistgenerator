@@ -469,6 +469,19 @@ dialog .actions {
 .namelist .nl-gender { text-align: center; }
 .namelist .nl-name { padding-right: 22px; }      /* a little air after the name */
 .namelist .nl-note { width: auto; min-width: 110px; }
+/* The width of one box on the printed namelist — change it here and the
+   number of boxes on the paper follows, because they are counted from it. */
+:root { --nl-box: 14mm; }
+.namelist .nl-box { width: var(--nl-box); min-width: var(--nl-box); padding: 5px 0; }
+/* With boxes at a fixed width, the slack has to land somewhere: it goes into
+   the Name column as extra air, so the grid finishes flush at the margin. */
+.namelist.has-boxes .nl-name { width: 100%; }
+.namelist .nl-blank td { height: 6mm; }
+/* One step short of scaling: a class that just overruns the page loses the
+   air in its rows rather than its readable type. */
+.card.tight .namelist th, .card.tight .namelist td { padding-top: 1px; padding-bottom: 1px; }
+.card.tight .namelist .nl-blank td { height: 4.5mm; }
+.card.tight .namelist-band td { padding-top: 3px; padding-bottom: 3px; }
 .namelist .nl-empty { text-align: center; color: var(--muted); }
 .nl-sub { margin: -6px 0 10px; font-size: 12px; color: var(--muted); }
 
@@ -482,4 +495,15 @@ dialog .actions {
   .namelist tfoot { display: table-footer-group; }
   /* …and its banner never ends up stranded at the foot of the page before it. */
   .namelist-band, .nl-sub { break-after: avoid; page-break-after: avoid; }
+}
+
+/* Laying the print sheet out off-screen to measure it: the same width and the
+   same card treatment it will have on paper, so the height measured is the
+   height printed. */
+.print-sheet.measuring {
+  display: block !important;
+  position: absolute; left: -10000px; top: 0; visibility: hidden;
+}
+.print-sheet.measuring .card {
+  border: none; box-shadow: none; padding: 0; margin-bottom: 18px;
 }

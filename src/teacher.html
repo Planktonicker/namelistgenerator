@@ -215,9 +215,10 @@
       var note = (S.teacherNames(g).length ? S.teacherNames(g).join(', ') + ' · ' : '') +
         (g.name || g.code) + ' · printed ' + today +
         (data.savedAt ? ' · data updated ' + new Date(data.savedAt).toLocaleDateString() : '');
-      return '<div class="card">' + S.namelistHtml(g, members, esc, { note: note }) + '</div>';
+      return '<div class="card">' + S.namelistPrintHtml(g, members, esc, { note: note }) + '</div>';
     }).join('');
     $('printSheet').innerHTML = html;
+    S.fitPrintSheet($('printSheet'));
     document.body.classList.add('print-sheet-mode');
     window.print();
   }

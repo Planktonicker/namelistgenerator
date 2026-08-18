@@ -640,6 +640,40 @@ checked against the office's list line by line; a student added in the app, who
 has no S/N of their own, falls back to their row number. **Note** is left blank
 to write in.
 
+#### What changes when it goes to the printer
+
+On paper the one wide Note column becomes a **row of equal boxes** to mark in:
+
+```
+┌──────┬───────┬──────────────────────────┬────────┬────┬────┬────┬────┬────┐
+│ S/N  │ Class │ Name                     │ Gender │    │    │    │    │    │
+├──────┼───────┼──────────────────────────┼────────┼────┼────┼────┼────┼────┤
+│  25  │ 3S1   │ TAN JAE REN              │ M      │    │    │    │    │    │
+│  45  │ 3S2   │ EDGAR KAUNG ZARNI HEIN   │ M      │    │    │    │    │    │
+├──────┼───────┼──────────────────────────┼────────┼────┼────┼────┼────┼────┤
+│      │       │                          │        │    │    │    │    │    │   ← five
+│      │       │                          │        │    │    │    │    │    │     spare
+└──────┴───────┴──────────────────────────┴────────┴────┴────┴────┴────┴────┘     lines
+```
+
+- **Each box is 14mm wide**, and **how many there are is worked out from the
+  space left after the longest name**. A class of short names gets eight; one
+  with `NUR AISYAH BINTE HASSAN` in it gets six. The list is laid out off-screen
+  at exactly the printable width of A4 and measured, because only the browser
+  knows how wide the longest name is in that font. Any slack under one box's
+  width goes into the Name column as extra air, so the grid finishes flush at
+  the right margin.
+  To change the box width, change `--nl-box` in `src/shared/styles.css` — the
+  count follows from it.
+- **Five blank lines under the last name**, for whoever turns up after the list
+  was printed. They are print-only; the screen list ends at the last student.
+- **One class, one sheet.** A class too tall for the page first loses the air
+  in its rows — 40 names fit an A4 that way with the type untouched — and only
+  then is the whole sheet scaled down, to no less than 65%, which is about the
+  limit of reading it across a staffroom. A class longer than that (a whole
+  cohort in one class) still flows onto a second page, with its column headings
+  repeated.
+
 ### Finding your name
 
 The staff list is a type-to-search box rather than a long dropdown: a hundred

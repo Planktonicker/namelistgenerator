@@ -176,6 +176,11 @@ for a namelist.
   filter lists the classes still waiting to be given out.
 - **Watch *Check these***. It reports students who take a subject with no class
   for it, columns that look mislabelled, and possible duplicate students.
+- **The printed namelist is a mark sheet.** Beside the names it prints equal
+  boxes, 14mm each, as many as the paper has room for once the longest name has
+  had its width — and five blank lines under the last name for a late arrival.
+  A class is fitted onto one sheet: the row spacing goes first, and only a very
+  long class is scaled down at all.
 - **Read *What changed…*** after an update — moved class, changed band, new
   student, gone from the file — and copy the list into an email if teachers need
   to know.

@@ -1717,16 +1717,32 @@
      * puts a "not in my class" button beside each name without a second
      * namelist layout existing anywhere. */
     var extraHead = opts.actionHead ? '<th class="no-print">' + opts.actionHead + '</th>' : '';
-    var cols = opts.actionHead ? 6 : 5;
+    /* On paper the one wide Note column becomes a row of equal boxes to mark
+     * in, as many as the paper has room for once the longest name has had
+     * its width. On screen it stays one column: the box count is worked out
+     * for A4, and a browser window is not A4. */
+    var boxes = Math.max(0, opts.boxes || 0);
+    var tail = boxes
+      ? repeat('<td class="nl-box"></td>', boxes)
+      : '<td class="nl-note"></td>';
+    var tailHead = boxes
+      ? repeat('<th class="nl-box"></th>', boxes)
+      : '<th>Note</th>';
+    var cols = 4 + (boxes || 1) + (opts.actionHead ? 1 : 0);
     var rows = members.map(function (s, i) {
       return '<tr><td class="nl-sn">' + esc(norm(s.sn) || (i + 1)) + '</td>' +
         '<td class="nl-class">' + esc(s.class) + '</td>' +
         '<td class="nl-name">' + esc(s.name) + '</td>' +
         '<td class="nl-gender">' + esc(s.gender) + '</td>' +
-        '<td class="nl-note"></td>' +
+        tail +
         (opts.rowAction ? '<td class="no-print nl-act">' + opts.rowAction(s) + '</td>' : '') +
         '</tr>';
     }).join('') || '<tr><td colspan="' + cols + '" class="nl-empty">No students in this class yet.</td></tr>';
+    /* Room under the last name for whoever turns up after the list was
+     * printed — a transfer in, a name the office had not sent yet. */
+    var blank = repeat('<tr class="nl-blank"><td class="nl-sn"></td><td class="nl-class"></td>' +
+      '<td class="nl-name"></td><td class="nl-gender"></td>' + tail + '</tr>',
+      members.length ? Math.max(0, opts.blankRows || 0) : 0);
     return '<table class="namelist-band"><tbody><tr>' +
       '<td>' + esc(meta.level) + '</td>' +
       '<td>' + esc(meta.band) + '</td>' +
@@ -1734,8 +1750,89 @@
       '<td class="nl-pax">Total pax: <strong>' + meta.total + '</strong></td>' +
       '</tr></tbody></table>' +
       (opts.note ? '<p class="nl-sub">' + esc(opts.note) + '</p>' : '') +
-      '<table class="namelist"><thead><tr><th>S/N</th><th>Class</th><th>Name</th>' +
-      '<th>Gender</th><th>Note</th>' + extraHead + '</tr></thead><tbody>' + rows + '</tbody></table>';
+      '<table class="namelist' + (boxes ? ' has-boxes' : '') + '"><thead><tr>' +
+      '<th>S/N</th><th>Class</th><th>Name</th><th>Gender</th>' + tailHead + extraHead +
+      '</tr></thead><tbody>' + rows + blank + '</tbody></table>';
+  }
+
+  function repeat(html, n) {
+    var out = '';
+    for (var i = 0; i < n; i++) out += html;
+    return out;
+  }
+
+  /* ---- what fits on the paper ----------------------------------------
+   * A4 less the @page margins, in CSS pixels. Print layout is done at 96dpi
+   * whatever the printer does afterwards, so these are exact rather than a
+   * guess, and the same numbers hold on screen — which is what makes it
+   * possible to measure a namelist before it is printed. */
+  var PAGE = { width: 210, height: 297, marginX: 12, marginY: 14 };
+  function mmToPx(mm) { return mm * 96 / 25.4; }
+  function printWidthPx() { return mmToPx(PAGE.width - PAGE.marginX * 2); }
+  function printHeightPx() { return mmToPx(PAGE.height - PAGE.marginY * 2); }
+
+  /* The box width is a CSS value so there is one place to change it. */
+  function boxWidthMm() {
+    var raw = '';
+    try {
+      raw = getComputedStyle(document.documentElement).getPropertyValue('--nl-box');
+    } catch (e) { raw = ''; }
+    var mm = parseFloat(raw);
+    return mm > 0 ? mm : 14;
+  }
+
+  /* How many boxes fit beside the names. Measured, not calculated: the Name
+   * column is as wide as the longest name in it, and only the browser knows
+   * how wide that is in this font. The list is laid out off-screen at exactly
+   * the printable width, and the Note column reports what is left over. */
+  function namelistBoxCount(html) {
+    if (typeof document === 'undefined') return 0;
+    var probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute; left:-10000px; top:0; visibility:hidden; width:' +
+      printWidthPx() + 'px';
+    probe.innerHTML = html;
+    document.body.appendChild(probe);
+    var note = probe.querySelector('.namelist .nl-note');
+    var left = note ? note.getBoundingClientRect().width : 0;
+    document.body.removeChild(probe);
+    return Math.max(1, Math.floor(left / mmToPx(boxWidthMm())));
+  }
+
+  /* The printed namelist: the same layout, with the leftover width split into
+   * boxes and five spare lines under the last name. */
+  function namelistPrintHtml(group, members, esc, opts) {
+    opts = opts || {};
+    var plain = namelistHtml(group, members, esc, opts);
+    var withBoxes = {};
+    Object.keys(opts).forEach(function (k) { withBoxes[k] = opts[k]; });
+    withBoxes.boxes = namelistBoxCount(plain);
+    withBoxes.blankRows = opts.blankRows === undefined ? 5 : opts.blankRows;
+    return namelistHtml(group, members, esc, withBoxes);
+  }
+
+  /* One class, one sheet. A class too tall for the page is scaled down rather
+   * than spilling three names onto a second piece of paper. Chrome's `zoom`
+   * reflows (a transform would not), so the page break is worked out after
+   * the scaling, not before. */
+  function fitPrintSheet(sheet) {
+    if (!sheet) return;
+    var page = printHeightPx();
+    sheet.classList.add('measuring');
+    sheet.style.width = printWidthPx() + 'px';
+    Array.prototype.forEach.call(sheet.querySelectorAll('.card'), function (card) {
+      card.style.zoom = '';
+      card.classList.remove('tight');
+      if (card.getBoundingClientRect().height <= page) return;
+      /* Taking the air out of the rows costs nothing anyone can see, and
+       * leaves the type and the boxes at their proper size, so it is tried
+       * before scaling the whole sheet down. */
+      card.classList.add('tight');
+      var h = card.getBoundingClientRect().height;
+      // Below about two-thirds it stops being readable across a staffroom.
+      if (h > page) card.style.zoom = Math.max(0.65, page / h).toFixed(3);
+    });
+    sheet.classList.remove('measuring');
+    sheet.style.width = '';
   }
 
   /* ---- merging two admins' work -------------------------------------
@@ -2370,6 +2467,9 @@
     allocationMatches: allocationMatches,
     coverageGaps: coverageGaps,
     groupSubjectKeys: groupSubjectKeys,
+    namelistPrintHtml: namelistPrintHtml,
+    namelistBoxCount: namelistBoxCount,
+    fitPrintSheet: fitPrintSheet,
     allocationBand: allocationBand,
     matchers: matchers,
     matchersToString: matchersToString,

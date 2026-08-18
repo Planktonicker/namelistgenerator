@@ -2070,7 +2070,8 @@
       (group.name || group.code) + ' · printed ' + new Date().toLocaleDateString();
     // Exactly what the teacher page prints — one layout, defined once.
     $('printSheet').innerHTML = '<div class="card">' +
-      S.namelistHtml(group, members, esc, { note: note }) + '</div>';
+      S.namelistPrintHtml(group, members, esc, { note: note }) + '</div>';
+    S.fitPrintSheet($('printSheet'));
     document.body.classList.add('print-sheet-mode');
     window.print();
   }

@@ -1,0 +1,4 @@
+# Every change to this repository needs the owner's review.
+# Paired with a ruleset that requires a pull request and review from Code
+# Owners, this is what stops anything reaching the default branch unseen.
+*       @Planktonicker

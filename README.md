@@ -1019,3 +1019,31 @@ subject/band column holding that student's allocation (e.g. `EL G3`, `CL G2`) �
 the same shape as the school's raw worksheet, so the saved file stays familiar.
 
 A teacher's namelists = the members of every group whose Teacher field is their name.
+
+## Licence
+
+**[PolyForm Noncommercial 1.0.0](LICENSE)** — free for anyone who is not making
+money from it, a separate licence if you are.
+
+Free, with no need to ask, for:
+
+- **schools, teachers and students** — the licence names educational
+  institutions explicitly, and covers them regardless of how they are funded,
+  so a government school using this to run its namelists is squarely inside it
+- charities, public research bodies, government departments
+- personal use, study, hobby projects, and reading the code to learn from it
+- forking it, changing it, and sharing your changes under the same terms
+
+**Ask first** if you want to sell it, sell a service built on it, or ship it
+inside something you charge for. That is a commercial licence and it is
+available — [open an issue](https://github.com/Planktonicker/namelistgenerator/issues)
+and say what you have in mind.
+
+One honest caveat about the word *open source*: this licence is
+**source-available**, not OSI-approved open source, because OSI's definition
+rules out restricting who may use software and for what. Everything is public,
+readable, forkable and modifiable; what is reserved is selling it. If that
+distinction matters for where you want to use this, say so in an issue.
+
+SheetJS, which does the `.xlsx` reading and writing, is Apache-2.0 and stays
+under its own terms — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

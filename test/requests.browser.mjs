@@ -35,8 +35,10 @@ await t.goto('file://' + demo + '/namelist.html');
 await t.evaluate(() => localStorage.clear());
 await t.reload();
 
-const teacher = await t.locator('#teacherSelect option').nth(1).getAttribute('value');
-await t.selectOption('#teacherSelect', teacher);
+await t.click('#teacherOpen');
+const teacher = await t.locator('#teacherOptions li').first().innerText();
+await t.fill('#teacherSearch', teacher);
+await t.keyboard.press('Enter');
 await t.waitForSelector('#teacherResults .card');
 
 check('a teacher page starts with no suggestion tray', await t.locator('#trayCard').isHidden());
@@ -320,7 +322,8 @@ const dataJs = await page.evaluate((reqs) => {
 writeFileSync(join(demo, 'data.js'), dataJs);
 
 await t.reload();
-await t.selectOption('#teacherSelect', teacher);
+await t.fill('#teacherSearch', teacher);
+await t.keyboard.press('Enter');
 await t.waitForSelector('#trayCard:not([hidden])');
 const trayText = await t.locator('#trayBody').innerText();
 check('the teacher is told which suggestion was accepted',

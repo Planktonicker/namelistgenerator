@@ -146,10 +146,11 @@ t.on('pageerror', (e) => tErr.push(String(e)));
 await t.goto('file://' + demo + '/namelist.html');
 await t.evaluate(() => localStorage.clear());
 await t.reload();
-await t.selectOption('#teacherSelect', 'Mrs Wong');
+await t.fill('#teacherSearch', 'Mrs Wong');
+await t.keyboard.press('Enter');
 await t.waitForSelector('#teacherResults .card');
-check('the teacher picks their name from a list, not free text',
-  (await t.locator('#teacherSelect').evaluate((e) => e.tagName)) === 'SELECT');
+check('the teacher types a few letters and picks from what matches',
+  (await t.locator('#teacherSearch').inputValue()) === 'Mrs Wong');
 check('their classes are chips they can narrow to',
   (await t.locator('#myClassChips button').count()) === 3,
   (await t.locator('#myClassChips').innerText()).replace(/\s+/g, ' '));

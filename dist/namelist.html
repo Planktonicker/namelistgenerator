@@ -523,7 +523,36 @@ dialog .actions {
   .group-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
   .group-head .left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .group-head h3 { margin: 0; font-size: var(--fs-md); }
-  #teacherSelect { width: 100%; max-width: 520px; font-size: var(--fs-lg); padding: var(--sp-3) var(--sp-4); }
+  /* Type-to-search picker: a staff list of a hundred is no fun to scroll. */
+  .combo { position: relative; width: 100%; max-width: 520px; }
+  .combo input {
+    width: 100%; font-size: var(--fs-lg);
+    padding: var(--sp-3) 40px var(--sp-3) var(--sp-4);
+  }
+  .combo > button {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    border: none; background: none; box-shadow: none; color: var(--muted);
+    font-size: var(--fs-md); padding: 6px 10px; line-height: 1;
+  }
+  .combo > button:hover { background: none; color: var(--accent); }
+  .combo-list {
+    position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px);
+    margin: 0; padding: var(--sp-1); list-style: none;
+    max-height: 46vh; overflow-y: auto;
+    background: var(--surface); border: 1px solid var(--line-strong);
+    border-radius: var(--r-md); box-shadow: var(--shadow-3);
+  }
+  .combo-list li {
+    padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm);
+    cursor: pointer; font-size: var(--fs-md);
+  }
+  .combo-list li.active { background: var(--accent); color: var(--accent-ink); }
+  .combo-list li[aria-selected="true"] { font-weight: 600; }
+  .combo-list li[aria-selected="true"]::after { content: " \2713"; color: var(--accent); }
+  .combo-list li.active[aria-selected="true"]::after { color: var(--accent-ink); }
+  .combo-list li.none { cursor: default; color: var(--muted); font-size: var(--fs-sm); }
+  .combo-list mark { background: #fde68a; color: inherit; border-radius: 3px; padding: 0 1px; }
+  .combo-list li.active mark { background: rgba(255, 255, 255, 0.28); color: inherit; }
   .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .filters select, .filters input { padding: 9px 12px; }
   .filters input { flex: 1; min-width: 220px; }
@@ -593,8 +622,16 @@ dialog .actions {
 
     <section id="teacherTab">
       <div class="card no-print">
-        <label for="teacherSelect"><h2>Choose your name to see your namelists</h2></label>
-        <select id="teacherSelect"></select>
+        <label for="teacherSearch"><h2>Choose your name to see your namelists</h2></label>
+        <div class="combo" id="teacherCombo">
+          <input type="text" id="teacherSearch" role="combobox" aria-expanded="false"
+            aria-controls="teacherOptions" aria-autocomplete="list" aria-haspopup="listbox"
+            autocomplete="off" spellcheck="false" placeholder="Start typing your name…">
+          <button type="button" id="teacherOpen" tabindex="-1"
+            aria-label="Show every teacher">▾</button>
+          <ul class="combo-list" id="teacherOptions" role="listbox" hidden></ul>
+        </div>
+        <p class="hint" id="teacherHint"></p>
         <div class="chips" id="myClassChips"></div>
       </div>
       <div class="card tray no-print" id="trayCard" hidden>
@@ -3066,15 +3103,166 @@ dialog .actions {
   var selectedTeacher = null;
   var selectedClass = '';    // '' = every class this teacher takes
 
-  function fillTeacherSelect() {
-    $('teacherSelect').innerHTML = '<option value="">— choose your name —</option>' +
-      ix.teachers.map(function (t) {
-        return '<option value="' + esc(t) + '">' + esc(t) + '</option>';
-      }).join('');
-    if (!ix.teachers.length) {
-      $('teacherSelect').innerHTML = '<option value="">— no teachers tagged to any class yet —</option>';
-    }
+  /* ---------- the name picker ----------
+   * A plain <select> of a hundred staff meant scrolling for your own name.
+   * This is the same list, but you can type at it: a few letters of a first
+   * name, a surname, or part of either, and the matches narrow as you go.
+   * Nothing is free text — you still end up choosing from the list. */
+  var comboItems = [];       // what is currently shown, in order
+  var comboActive = -1;      // which of them the keyboard is on
+
+  function comboBox() { return $('teacherSearch'); }
+
+  function teacherMatches(query) {
+    var q = S.norm(query).toLowerCase();
+    if (!q) return ix.teachers.slice();
+    var starts = [], words = [], within = [];
+    ix.teachers.forEach(function (t) {
+      var at = t.toLowerCase().indexOf(q);
+      if (at === -1) return;
+      if (at === 0) starts.push(t);
+      else if (/\s/.test(t.charAt(at - 1))) words.push(t);   // start of a word
+      else within.push(t);
+    });
+    /* Nearly every name here starts with a title, so "lim" has to put
+     * "Mrs Lim Bee Leng" above "Mdm Halimah Yusof" — a word you typed beats
+     * the same letters buried inside another one. */
+    return starts.concat(words, within);
   }
+
+  /* Show which part matched, so a long staff list can be scanned rather than
+   * read. Everything is escaped either side of the marked run. */
+  function markMatch(name, query) {
+    var q = S.norm(query).toLowerCase();
+    var at = q ? name.toLowerCase().indexOf(q) : -1;
+    if (at === -1) return esc(name);
+    return esc(name.slice(0, at)) + '<mark>' + esc(name.slice(at, at + q.length)) +
+      '</mark>' + esc(name.slice(at + q.length));
+  }
+
+  function renderCombo() {
+    var query = comboBox().value;
+    comboItems = teacherMatches(query);
+    if (comboActive >= comboItems.length) comboActive = comboItems.length - 1;
+    var list = $('teacherOptions');
+    list.innerHTML = comboItems.length
+      ? comboItems.map(function (t, i) {
+        return '<li role="option" id="tOpt' + i + '" data-i="' + i + '"' +
+          (t === selectedTeacher ? ' aria-selected="true"' : '') +
+          (i === comboActive ? ' class="active"' : '') + '>' + markMatch(t, query) + '</li>';
+      }).join('')
+      : '<li class="none">No teacher matches “' + esc(S.norm(query)) + '”</li>';
+    comboBox().setAttribute('aria-activedescendant',
+      comboActive >= 0 && comboItems.length ? 'tOpt' + comboActive : '');
+    var active = list.querySelector('li.active');
+    if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
+  }
+
+  function openCombo() {
+    if (!ix.teachers.length) return;
+    renderCombo();
+    $('teacherOptions').hidden = false;
+    comboBox().setAttribute('aria-expanded', 'true');
+  }
+
+  function closeCombo() {
+    $('teacherOptions').hidden = true;
+    comboBox().setAttribute('aria-expanded', 'false');
+    comboBox().setAttribute('aria-activedescendant', '');
+    comboActive = -1;
+  }
+
+  function comboIsOpen() { return !$('teacherOptions').hidden; }
+
+  /* Whatever is in the box when focus leaves has to resolve to a real teacher
+   * or go back to the one already chosen — a half-typed name is not an answer. */
+  function settleCombo() {
+    var typed = S.norm(comboBox().value);
+    if (!typed) { if (!selectedTeacher) comboBox().value = ''; else comboBox().value = selectedTeacher; return; }
+    var exact = ix.teachers.filter(function (t) { return S.normKey(t) === S.normKey(typed); })[0];
+    var only = teacherMatches(typed);
+    var settled = exact || (only.length === 1 ? only[0] : null);
+    if (!settled) { comboBox().value = selectedTeacher || ''; return; }
+    /* Re-choosing whoever is already chosen must be a no-op: selectTeacher
+     * clears the class chip filter and redraws, and doing that as focus leaves
+     * the box would pull the chip out from under the click that caused it. */
+    if (settled === selectedTeacher) comboBox().value = settled;
+    else selectTeacher(settled);
+  }
+
+  function fillTeacherSelect() {
+    var hint = $('teacherHint');
+    if (!ix.teachers.length) {
+      comboBox().value = '';
+      comboBox().placeholder = 'No teachers are tagged to any class yet';
+      comboBox().disabled = true;
+      $('teacherOpen').disabled = true;
+      hint.textContent = 'Ask the administrator to tag teachers to their classes.';
+      return;
+    }
+    hint.textContent = ix.teachers.length + ' teachers — type any part of your name, ' +
+      'or press the arrow to see them all.';
+  }
+
+  comboBox().addEventListener('input', function () {
+    comboActive = comboBox().value ? 0 : -1;
+    openCombo();
+  });
+  comboBox().addEventListener('focus', function () { openCombo(); });
+  /* Leaving the box any way at all — Tab, a click elsewhere, the window — has
+   * to resolve what is in it. Choosing an option cannot land here: those
+   * handlers preventDefault on mousedown, so focus never moves. */
+  comboBox().addEventListener('blur', function () { settleCombo(); closeCombo(); });
+  comboBox().addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      if (!comboIsOpen()) { comboActive = 0; openCombo(); return; }
+      if (!comboItems.length) return;
+      var step = ev.key === 'ArrowDown' ? 1 : -1;
+      comboActive = (comboActive + step + comboItems.length) % comboItems.length;
+      renderCombo();
+      return;
+    }
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      if (comboIsOpen() && comboActive >= 0 && comboItems[comboActive]) {
+        selectTeacher(comboItems[comboActive]);
+        closeCombo();
+      } else settleCombo();
+      return;
+    }
+    if (ev.key === 'Escape') {
+      if (comboIsOpen()) { ev.stopPropagation(); closeCombo(); }
+      comboBox().value = selectedTeacher || '';
+      return;
+    }
+    if (ev.key === 'Tab') { settleCombo(); closeCombo(); }
+  });
+
+  $('teacherOptions').addEventListener('mousedown', function (ev) {
+    // mousedown, not click: blur would otherwise settle the box first
+    var li = ev.target.closest('li[data-i]');
+    if (!li) return;
+    ev.preventDefault();
+    selectTeacher(comboItems[+li.dataset.i]);
+    closeCombo();
+  });
+
+  $('teacherOpen').addEventListener('mousedown', function (ev) {
+    ev.preventDefault();
+    if (comboIsOpen()) { closeCombo(); return; }
+    comboBox().focus();
+    comboBox().select();
+    comboActive = -1;
+    openCombo();
+  });
+
+  document.addEventListener('mousedown', function (ev) {
+    if (!comboIsOpen()) return;
+    if (ev.target.closest('#teacherCombo')) return;
+    settleCombo();
+    closeCombo();
+  });
 
   /* One chip per class the chosen teacher takes; clicking narrows the page to
    * that class, so a teacher with eight namelists is not scrolling. */
@@ -3108,7 +3296,7 @@ dialog .actions {
   function selectTeacher(name) {
     selectedTeacher = name || null;
     selectedClass = '';
-    $('teacherSelect').value = name || '';
+    comboBox().value = name || '';
     try {
       if (name) localStorage.setItem(LAST_TEACHER_KEY, name);
     } catch (e) { /* private mode */ }
@@ -3116,10 +3304,6 @@ dialog .actions {
     renderMyChips();
     renderTray();
   }
-
-  $('teacherSelect').addEventListener('change', function () {
-    selectTeacher($('teacherSelect').value);
-  });
 
   /* ---------- suggestions ----------
    * A teacher knows their own class better than the file does — half a shared

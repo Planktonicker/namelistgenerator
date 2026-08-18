@@ -257,7 +257,7 @@ wall — the app works fine with read-only access to that folder.
 
 ### Daily use
 
-- **Teachers:** double-click the shortcut → **pick your name from the list** → your
+- **Teachers:** double-click the shortcut → **type a few letters of your name** → your
   classes appear as chips; click one to see just that namelist, or leave it on *All*
   to see them all. **Print** any single class or all of them; printouts carry a
   Remarks column for marking. The second tab, **All classes**, lists every class in
@@ -616,6 +616,23 @@ when it has none. **S/N is the school's own serial number**, captured from the
 checked against the office's list line by line; a student added in the app, who
 has no S/N of their own, falls back to their row number. **Note** is left blank
 to write in.
+
+### Finding your name
+
+The staff list is a type-to-search box rather than a long dropdown: a hundred
+names is no fun to scroll past to reach your own.
+
+Type any part of your name — first name, surname, or a fragment of either — and
+the list narrows as you go, with the matched letters marked so a long list can
+be scanned rather than read. **A word you typed outranks the same letters buried
+inside another name**, so `lim` puts *Mrs Lim Bee Leng* above *Mdm Halimah
+Yusof*. The arrow at the right shows everyone if you would rather browse.
+
+Arrow keys move through the matches, Enter chooses, Escape abandons what you
+were typing. It is still a list, not free text: leaving the box with something
+half-typed puts back whoever is actually chosen, so a namelist can never be
+attached to a name that does not exist. The page remembers your choice for next
+time, per folder.
 
 ### Undo
 

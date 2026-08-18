@@ -40,11 +40,25 @@ await page.reload();
 check('two tabs: my namelists and every class',
   (await page.locator('.tabs button').allInnerTexts()).join('|') === 'My namelists|All classes');
 
-// --- tab 1: a dropdown of teachers, then chips ---
-check('teachers are chosen from a dropdown, not typed',
-  (await page.locator('#teacherSelect').evaluate((e) => e.tagName)) === 'SELECT' &&
-  (await page.locator('#teacherSelect option').count()) === 18);
-await page.selectOption('#teacherSelect', 'Mrs Lim Bee Leng');
+// --- tab 1: type-to-search the staff list, then chips ---
+await page.click('#teacherOpen');
+check('the arrow shows every teacher',
+  (await page.locator('#teacherOptions li').count()) === 17,
+  await page.locator('#teacherOptions li').count() + '');
+await page.fill('#teacherSearch', 'lim');
+await page.waitForTimeout(150);
+const hits = await page.locator('#teacherOptions li').allInnerTexts();
+check('typing part of a name narrows the list', hits.length === 2, hits.join(' | '));
+check('a name you typed outranks the same letters inside another',
+  hits[0] === 'Mrs Lim Bee Leng', hits[0]);
+check('and the matching part is marked so it can be scanned',
+  (await page.locator('#teacherOptions li').first().innerHTML()).includes('<mark>Lim</mark>'));
+await page.fill('#teacherSearch', 'zzz');
+await page.waitForTimeout(150);
+check('a query nobody matches says so, rather than emptying silently',
+  (await page.locator('#teacherOptions li.none').count()) === 1);
+await page.fill('#teacherSearch', 'Mrs Lim Bee Leng');
+await page.keyboard.press('Enter');
 await page.waitForSelector('#teacherResults .card');
 const chips = await page.locator('#myClassChips button').allInnerTexts();
 check('their classes come back as chips, plus an "all" chip',
@@ -84,7 +98,35 @@ check('a class of short names gets a narrow Name column, and Note takes the rest
 await page.reload();
 await page.waitForSelector('#teacherResults .card');
 check('the page remembers who you are',
-  (await page.locator('#teacherSelect').inputValue()) === 'Mrs Lim Bee Leng');
+  (await page.locator('#teacherSearch').inputValue()) === 'Mrs Lim Bee Leng');
+
+// the picker can also be driven entirely from the keyboard
+await page.locator('#teacherSearch').focus();
+await page.fill('#teacherSearch', 'teo');
+await page.keyboard.press('ArrowDown');
+await page.keyboard.press('Enter');
+await page.waitForTimeout(200);
+check('arrow keys and Enter choose without touching the mouse',
+  (await page.locator('#teacherSearch').inputValue()) === 'Mr Benjamin Teo',
+  await page.locator('#teacherSearch').inputValue());
+check('and the list closes behind it', await page.locator('#teacherOptions').isHidden());
+
+// half-typed text is not an answer
+await page.fill('#teacherSearch', 'half typed rubbish');
+await page.locator('#teacherSearch').blur();
+await page.waitForTimeout(200);
+check('leaving the box half-typed goes back to who is actually chosen',
+  (await page.locator('#teacherSearch').inputValue()) === 'Mr Benjamin Teo',
+  await page.locator('#teacherSearch').inputValue());
+await page.locator('#teacherSearch').focus();
+await page.fill('#teacherSearch', 'x');
+await page.keyboard.press('Escape');
+await page.waitForTimeout(150);
+check('Escape abandons what you were typing', 
+  (await page.locator('#teacherSearch').inputValue()) === 'Mr Benjamin Teo');
+await page.fill('#teacherSearch', 'Mrs Lim Bee Leng');
+await page.keyboard.press('Enter');
+await page.waitForSelector('#teacherResults .card');
 
 // --- tab 2: every class, filterable ---
 await page.click('#tabAllBtn');

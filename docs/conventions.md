@@ -133,6 +133,9 @@ for a namelist.
 - **Build the rest on the map**, top down: level → subject → group → TG/SG.
   Answering higher up clears what hung below, and *Clear the map* starts again.
   PG lives behind *More filters* because the subject group usually implies it.
+- **Teachers find themselves by typing.** The name box on `namelist.html` takes
+  any part of a name and narrows the list as they go — no scrolling a hundred
+  names. Arrow keys and Enter work; half-typed text is never accepted.
 - **Ctrl+Z undoes.** Twenty steps back, covering anything that changes the
   data — a deletion brings the student back with their class places. The ↶
   button in the topbar names what it will undo before you press it. It stops at

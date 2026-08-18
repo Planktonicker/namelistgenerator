@@ -727,6 +727,10 @@ dialog .actions {
   #presenceChip { color: var(--accent); font-weight: 600; }
   #conflictList { max-height: 52vh; overflow-y: auto; }
 
+  .chips .chip.chip-not { background: var(--danger-soft); color: var(--danger-ink); }
+  .also-row { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+  .also-row select { min-width: 150px; }
+
   .req-match { margin: 10px 0 0; font-size: 13px; }
   .req-cand { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
   .req-cand > span:first-child { min-width: 190px; font-weight: 600; }
@@ -1106,6 +1110,19 @@ dialog .actions {
             <div class="graph-row" id="gfPgRow" hidden>
               <span class="graph-key">PG</span>
               <div class="ticks" id="gfPgTicks"></div>
+            </div>
+            <div class="graph-row" id="gfAlsoRow" hidden>
+              <span class="graph-key">Another subject</span>
+              <div>
+                <div class="also-row">
+                  <select id="gfAlsoKey"></select>
+                  <button type="button" id="gfAlsoTakes">also takes it</button>
+                  <button type="button" id="gfAlsoWithout">does not take it</button>
+                </div>
+                <p class="hint" style="margin:6px 0 0; max-width:460px">Splits a class by a
+                  second subject — Sec 3 POA is taught as one class for those who also take
+                  A Math and one for those who do not.</p>
+              </div>
             </div>
             <div class="graph-row" id="gfMoreRow" hidden>
               <span class="graph-key">More</span>
@@ -2733,15 +2750,21 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   /* A rule reads "HIST=HIST G3|HIST G2; TG=TG2": different columns are ANDed,
    * the values ticked inside one column are ORed. Older files hold a single
    * value per column, which parses to a one-entry list. */
+  /* A rule clause is "KEY=v1|v2" (takes one of these), "KEY" (takes anything
+   * in that column), or "!KEY" — takes NOTHING in that column. The negative
+   * form is what lets one subject be split by another: Sec 3 POA is taught as
+   * two classes, those who also take A Math and those who do not, and without
+   * a way to say "does not take" the second class cannot be described at all. */
   function matchers(group) {
     var out = [];
     var seen = {};
-    function add(key, value) {
+    function add(key, value, without) {
       key = norm(key);
+      if (key.charAt(0) === '!') { without = true; key = norm(key.slice(1)); }
       if (!key || seen[normKey(key)]) return;
       seen[normKey(key)] = true;
-      var values = norm(value).split('|').map(norm).filter(Boolean);
-      out.push({ key: key, values: values, value: values[0] || '' });
+      var values = without ? [] : norm(value).split('|').map(norm).filter(Boolean);
+      out.push({ key: key, values: values, value: values[0] || '', without: !!without });
     }
     norm(group.autoMatch).split(';').forEach(function (part) {
       if (!norm(part)) return;
@@ -2756,6 +2779,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   function matchersToString(list) {
     return (list || []).filter(function (m) { return norm(m.key); })
       .map(function (m) {
+        if (m.without) return '!' + norm(m.key);
         var values = m.values || (m.value ? [m.value] : []);
         return norm(m.key) + '=' + values.map(norm).filter(Boolean).join('|');
       })
@@ -2798,6 +2822,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     }
     return matchers(group).every(function (m) {
       var v = student.subjects ? norm(student.subjects[m.key]) : '';
+      if (m.without) return !v;               // takes nothing in that column
       if (!v) return false;
       if (!m.values.length) return true;      // any allocation in that column
       return m.values.some(function (want) { return allocationMatches(student, m.key, want); });
@@ -2831,7 +2856,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   /* Which subject column(s) a class is about: the columns its rule keys on,
    * or failing that its subject label if that matches a column. */
   function groupSubjectKeys(group, subjectKeys) {
-    var keys = matchers(group).map(function (m) { return m.key; });
+    var keys = matchers(group).filter(function (m) { return !m.without; })
+      .map(function (m) { return m.key; });
     if (keys.length) return keys;
     var label = norm(group.subject);
     if (!label) return [];
@@ -5961,11 +5987,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       gfTgRow: picked && hasTg,
       gfClassRow: picked && (!upper || extras),
       gfPgRow: picked && extras,
+      gfAlsoRow: picked && !!currentKey() && (extras || hasAlso()),
       gfMoreRow: picked && !extras,
     };
     $('gfMoreBtn').textContent = upper
-      ? 'More filters — form class, PG…'
-      : 'More filters — PG…';
+      ? 'More filters — form class, PG, another subject…'
+      : 'More filters — PG, another subject…';
     Object.keys(rows).forEach(function (id) {
       var el = $(id);
       var opening = rows[id] && el.hidden;      // only the new branch animates
@@ -5981,7 +6008,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
    * offers. Laid out in script because the position of a branch depends on
    * which node above it is chosen. */
   var MAP_COLS = ['gfLevelRow', 'gfSubjectRow', 'gfValueRow', 'gfTgRow',
-    'gfClassRow', 'gfPgRow', 'gfMoreRow'];
+    'gfClassRow', 'gfPgRow', 'gfAlsoRow', 'gfMoreRow'];
   var ROW_GAP = 46;         // vertical space for the connecting curve
   var PAD = 12;
 
@@ -6090,6 +6117,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     renderPgTicks();
     renderTgTicks();
     renderClassTicks();
+    renderAlso();
     renderCriteria();
     updateGraph();
     updateMatchCount();
@@ -6140,10 +6168,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var n = model.students.filter(function (s) { return S.matchesRule(s, rec); }).length;
     /* A column chosen with nothing ticked still narrows the class to whoever
      * takes that subject at all — say so, or the number looks wrong. */
-    var anyKeys = dialogCriteria.filter(function (c) { return !c.values.length; })
-      .map(function (c) { return c.key; });
-    var note = anyKeys.length
-      ? ' (anyone taking ' + anyKeys.join(' and ') + ' — tick groups above to narrow)'
+    var main = S.normKey(currentKey());
+    var loose = dialogCriteria.filter(function (c) {
+      return !c.values.length && !c.without && S.normKey(c.key) === main;
+    }).map(function (c) { return c.key; });
+    var extra = alsoCriteria().map(alsoLabel);
+    var note = loose.length || extra.length
+      ? ' (' + loose.map(function (k) { return 'anyone taking ' + k; })
+        .concat(extra).join(', ') + ')'
       : '';
     $('gfMatchCount').textContent = n
       ? n + ' student' + (n === 1 ? '' : 's') + ' match this right now' + note + '.'
@@ -6177,6 +6209,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       renderTgTicks();
       renderClassTicks();
       renderPgTicks();
+      renderAlso();
       renderCriteria();
       updateGraph();
       suggestGroupIdentity();
@@ -6200,6 +6233,65 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     moreShown = true;
     updateGraph();
   });
+
+  /* ---- "and another subject" ----
+   * A second column, either taken or not taken. Sec 3 POA is the case that
+   * asked for it: A Math and POA are timetabled together, so the one POA G3
+   * allocation is taught as two classes — those who also take A Math and those
+   * who do not. Sec 4 has no such need, because there the subject group says
+   * which class a student is in. */
+  /* Anything keyed on a column other than the one this class is built from.
+   * An empty value list there means "takes any allocation in it" — which is
+   * exactly what matchesRule does with it. */
+  function alsoCriteria() {
+    var main = S.normKey(currentKey());
+    return dialogCriteria.filter(function (c) {
+      return S.norm(c.key) && S.normKey(c.key) !== main;
+    });
+  }
+
+  function alsoLabel(c) {
+    if (c.without) return 'does not take ' + c.key;
+    if (!c.values.length) return 'also takes ' + c.key;
+    return c.key + ' = ' + c.values.join(' or ');
+  }
+
+  function hasAlso() { return alsoCriteria().length > 0; }
+
+  function alsoAdd(without) {
+    var key = S.norm($('gfAlsoKey').value);
+    if (!key) return;
+    dialogCriteria = dialogCriteria.filter(function (c) { return S.normKey(c.key) !== S.normKey(key); });
+    dialogCriteria.push({ key: key, values: [], without: !!without });
+    renderAlso();
+    renderCriteria();
+    updateGraph();
+    suggestGroupIdentity();
+    updateMatchCount();
+  }
+
+  function renderAlso() {
+    var main = S.normKey(currentKey());
+    var used = {};
+    dialogCriteria.forEach(function (c) {
+      if (S.normKey(c.key) !== main) used[S.normKey(c.key)] = true;
+    });
+    var pool = dialogPool();
+    var rest = (model.subjectKeys || []).filter(function (k) {
+      if (S.normKey(k) === main || used[S.normKey(k)]) return false;
+      // only columns this level actually uses — Sec 1 is not offered POA
+      return pool.some(function (st) { return st.subjects && S.norm(st.subjects[k]); });
+    });
+    $('gfAlsoKey').innerHTML = rest.length
+      ? rest.map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join('')
+      : '<option value="">— no other subject at this level —</option>';
+    $('gfAlsoKey').disabled = !rest.length;
+    $('gfAlsoTakes').disabled = !rest.length;
+    $('gfAlsoWithout').disabled = !rest.length;
+  }
+
+  $('gfAlsoTakes').addEventListener('click', function () { alsoAdd(false); });
+  $('gfAlsoWithout').addEventListener('click', function () { alsoAdd(true); });
 
   /* Start the rule again without closing the dialog — quicker than unticking
    * a path node by node, and the only way back from a single-choice branch. */
@@ -6258,6 +6350,13 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var base = val || key;
     if (!base) return;
     var qualifier = dialogTgs.join('/') || cls || (pg ? 'PG' + pg : '');
+    /* A class split off by a second subject has to say which half it is, or
+     * the two land with the same name: "S3 POA G3 with AMATH" / "…without". */
+    var also = alsoCriteria()[0];
+    if (also) {
+      qualifier = (qualifier ? qualifier + ' ' : '') +
+        (also.without ? 'without ' : 'with ') + also.key;
+    }
     // A level already reads "Sec 1"; only a bare number wants the S prefix.
     var lead = /^\d+$/.test(lvl) ? 'S' + lvl : lvl;
     var label = (lead ? lead + ' ' : '') + base + (qualifier ? ' ' + qualifier : '');
@@ -6336,12 +6435,13 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   function renderCriteria() {
     var current = S.normKey(currentKey());
     var others = dialogCriteria.filter(function (c) {
-      return c.values.length && S.normKey(c.key) !== current;
+      return S.norm(c.key) && S.normKey(c.key) !== current;
     });
     $('gfCriteria').innerHTML = others.length
       ? '<div class="chips"><span class="small muted" style="align-self:center">and</span>' +
         others.map(function (c) {
-          return '<span class="chip">' + esc(c.key + ' = ' + c.values.join(' or ')) +
+          var label = alsoLabel(c);
+          return '<span class="chip' + (c.without ? ' chip-not' : '') + '">' + esc(label) +
             '<button type="button" data-key="' + esc(c.key) + '" title="Remove">\u00d7</button></span>';
         }).join('') + '</div>'
       : '';

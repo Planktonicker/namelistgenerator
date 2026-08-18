@@ -145,6 +145,12 @@ for a namelist.
   between namelists straight away: they join the classes they now match, and you
   are asked before they come off any they no longer do. If the allocation you
   need is not in the list, pick **Other…** and type it as the file writes it.
+- **One allocation, two classes.** Where a subject is timetabled against
+  another — Sec 3 POA against A Math — open *More filters* → **Another
+  subject** and pick *also takes it* / *does not take it*. That gives
+  `POA G3 with AMATH` and `POA G3 without AMATH`, each keeping itself up to
+  date. Sec 4 needs none of this: there the subject group already says which
+  class a student is in.
 - **Trim by hand in the class dialog.** Half a class shared with a colleague is
   27 matched, four unticked, 23 on the namelist — and the unticked stay out when
   the rule is applied again.

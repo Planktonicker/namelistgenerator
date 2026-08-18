@@ -661,6 +661,46 @@ Undo is a change like any other, so an undone step is saved (or autosaved) in
 the normal way. For anything older than the history, `backups/` still holds a
 copy of the workbook from every save.
 
+### Splitting one allocation into two classes
+
+Sometimes a single allocation is taught as two classes because of what else the
+students take. **Sec 3 POA** is the case this was built for: POA and A Math are
+timetabled together, so the one `POA G3` allocation becomes one class for those
+who *also* take A Math and one for those who *do not*. (Sec 4 needs none of
+this — there the subject group already says which class a student is in.)
+
+In the class builder, open **More filters** and use the **Another subject**
+branch: pick the column, then *also takes it* or *does not take it*. The count
+under the map updates, the condition appears as a chip you can take off again,
+and the suggested class name says which half it is — `Sec 3 POA G3 with AMATH`
+and `Sec 3 POA G3 without AMATH`.
+
+Both halves keep working on their own afterwards: a Sec 3 student who turns up
+in a later school-file update taking POA but not A Math joins the "without"
+class by themselves, exactly like any other rule.
+
+The rule is stored as `POA=POA G3; !AMATH` — `!` before a column means *takes
+nothing in it*. A class defined that way is still a POA class: naming A Math
+says who is excluded, not that it teaches any, so it does not count as covering
+A Math and a student taking A Math with no A Math class is still reported under
+*Check these*.
+
+### When the cell and the posting group disagree
+
+The band written in a subject cell always wins over the one the posting group
+would imply. A **PG1** student whose Science cell says `Sci PC G2` is in the
+**G2** class — beside the PG2 students whose cell says only `Sci PC`, because
+for them the band is read from their posting group. Only a cell that names no
+band at all falls back to the PG.
+
+So both office habits land in the same place:
+
+| PG | Cell | Class |
+|---|---|---|
+| 1 | `Sci PC G2` | Sci PC **G2** — the cell said so |
+| 1 | `Sci PC` | Sci PC **G1** — read from the PG |
+| 2 | `Sci PC` | Sci PC **G2** — read from the PG |
+
 ### Opening a student
 
 **Click a name in the Students tab** — or double-click anywhere on the row — and

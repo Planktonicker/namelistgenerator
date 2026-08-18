@@ -1360,15 +1360,21 @@
   /* A rule reads "HIST=HIST G3|HIST G2; TG=TG2": different columns are ANDed,
    * the values ticked inside one column are ORed. Older files hold a single
    * value per column, which parses to a one-entry list. */
+  /* A rule clause is "KEY=v1|v2" (takes one of these), "KEY" (takes anything
+   * in that column), or "!KEY" — takes NOTHING in that column. The negative
+   * form is what lets one subject be split by another: Sec 3 POA is taught as
+   * two classes, those who also take A Math and those who do not, and without
+   * a way to say "does not take" the second class cannot be described at all. */
   function matchers(group) {
     var out = [];
     var seen = {};
-    function add(key, value) {
+    function add(key, value, without) {
       key = norm(key);
+      if (key.charAt(0) === '!') { without = true; key = norm(key.slice(1)); }
       if (!key || seen[normKey(key)]) return;
       seen[normKey(key)] = true;
-      var values = norm(value).split('|').map(norm).filter(Boolean);
-      out.push({ key: key, values: values, value: values[0] || '' });
+      var values = without ? [] : norm(value).split('|').map(norm).filter(Boolean);
+      out.push({ key: key, values: values, value: values[0] || '', without: !!without });
     }
     norm(group.autoMatch).split(';').forEach(function (part) {
       if (!norm(part)) return;
@@ -1383,6 +1389,7 @@
   function matchersToString(list) {
     return (list || []).filter(function (m) { return norm(m.key); })
       .map(function (m) {
+        if (m.without) return '!' + norm(m.key);
         var values = m.values || (m.value ? [m.value] : []);
         return norm(m.key) + '=' + values.map(norm).filter(Boolean).join('|');
       })
@@ -1425,6 +1432,7 @@
     }
     return matchers(group).every(function (m) {
       var v = student.subjects ? norm(student.subjects[m.key]) : '';
+      if (m.without) return !v;               // takes nothing in that column
       if (!v) return false;
       if (!m.values.length) return true;      // any allocation in that column
       return m.values.some(function (want) { return allocationMatches(student, m.key, want); });
@@ -1458,7 +1466,8 @@
   /* Which subject column(s) a class is about: the columns its rule keys on,
    * or failing that its subject label if that matches a column. */
   function groupSubjectKeys(group, subjectKeys) {
-    var keys = matchers(group).map(function (m) { return m.key; });
+    var keys = matchers(group).filter(function (m) { return !m.without; })
+      .map(function (m) { return m.key; });
     if (keys.length) return keys;
     var label = norm(group.subject);
     if (!label) return [];

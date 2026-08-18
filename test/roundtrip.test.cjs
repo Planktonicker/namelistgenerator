@@ -1121,4 +1121,75 @@ test('a teacher request settled by one admin is not reopened by the other', () =
     'their removal applies here too');
 });
 
+test('a class can be defined by what its students do NOT take', () => {
+  const mk = (id, poa, amath) => ({ id, name: id, class: '3E1', level: 'Sec 3', gender: 'M',
+    pg: '3', tg: '', sn: '', origin: 'file', sourceName: id, status: '',
+    subjects: Object.assign({}, poa ? { POA: poa } : {}, amath ? { AMATH: amath } : {}) });
+  const students = [
+    mk('takes-both', 'POA G3', 'AMATH G3'),
+    mk('poa-only-1', 'POA G3', ''),
+    mk('poa-only-2', 'POA G3', ''),
+    mk('amath-only', '', 'AMATH G3'),
+  ];
+  /* Sec 3 POA is timetabled against A Math, so one allocation is taught as two
+   * classes. Without a way to say "does not take", the second cannot exist. */
+  const withAm = { code: 'P1', level: 'Sec 3', autoMatch: 'POA=POA G3; AMATH' };
+  const noAm = { code: 'P2', level: 'Sec 3', autoMatch: 'POA=POA G3; !AMATH' };
+
+  assert.deepStrictEqual(students.filter((s) => S.matchesRule(s, withAm)).map((s) => s.id),
+    ['takes-both']);
+  assert.deepStrictEqual(students.filter((s) => S.matchesRule(s, noAm)).map((s) => s.id),
+    ['poa-only-1', 'poa-only-2']);
+  assert.ok(!S.matchesRule(students[3], noAm), 'not taking POA at all is not "the other half"');
+
+  // the two halves cover every POA student exactly once
+  const covered = students.filter((s) => S.matchesRule(s, withAm) || S.matchesRule(s, noAm));
+  assert.strictEqual(covered.length, 3);
+
+  // it survives the workbook and a re-parse
+  assert.strictEqual(S.matchersToString(S.matchers(noAm)), 'POA=POA G3; !AMATH');
+  assert.deepStrictEqual(S.matchers(noAm)[1], { key: 'AMATH', values: [], value: '', without: true });
+
+  /* The "without" class is about POA. Naming A Math in its rule says who is
+   * excluded, not that it teaches them any A Math. */
+  assert.deepStrictEqual(S.groupSubjectKeys(noAm, ['POA', 'AMATH']), ['POA']);
+
+  // and the student who takes A Math and sits in no A Math class is still
+  // reported — splitting POA must not paper over that
+  const model = S.emptyModel();
+  model.students = students;
+  model.subjectKeys = ['POA', 'AMATH'];
+  model.groups = [withAm, noAm];
+  model.groups.forEach((g) => S.autoFillGroup(model, g));
+  const gap = S.coverageGaps(model).filter((g) => S.normKey(g.key) === 'amath')[0];
+  assert.ok(gap && gap.students.includes('amath-only'),
+    'a student taking A Math with no A Math class is still flagged');
+});
+
+test('the band written in a cell beats the one the posting group implies', () => {
+  const mk = (id, pg, sci) => ({ id, name: id, class: '3E1', level: 'Sec 3', gender: 'M',
+    pg, tg: '', sn: '', origin: 'file', sourceName: id, status: '', subjects: { SCI: sci } });
+  const students = [
+    mk('pg1-said-g2', '1', 'Sci PC G2'),   // PG1, but the cell says G2
+    mk('pg1-blank', '1', 'Sci PC'),        // PG1, nothing written -> G1
+    mk('pg2-blank', '2', 'Sci PC'),        // PG2, nothing written -> G2
+  ];
+  assert.strictEqual(S.allocationLabel(students[0], 'SCI'), 'Sci PC G2');
+  assert.strictEqual(S.allocationLabel(students[1], 'SCI'), 'Sci PC G1');
+  assert.strictEqual(S.allocationLabel(students[2], 'SCI'), 'Sci PC G2');
+
+  // two teaching groups, not three spellings
+  assert.deepStrictEqual(S.allocationOptions(students, 'SCI').map((o) => o.value),
+    ['Sci PC G1', 'Sci PC G2']);
+
+  /* The point: a PG1 student whose cell names G2 belongs in the G2 class,
+   * beside the PG2 students whose cell names no band at all. */
+  const g2 = { code: 'G2', level: 'Sec 3', autoMatch: 'SCI=Sci PC G2' };
+  const g1 = { code: 'G1', level: 'Sec 3', autoMatch: 'SCI=Sci PC G1' };
+  assert.deepStrictEqual(students.filter((s) => S.matchesRule(s, g2)).map((s) => s.id),
+    ['pg1-said-g2', 'pg2-blank']);
+  assert.deepStrictEqual(students.filter((s) => S.matchesRule(s, g1)).map((s) => s.id),
+    ['pg1-blank']);
+});
+
 console.log(passed + ' tests passed');

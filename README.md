@@ -708,6 +708,34 @@ says who is excluded, not that it teaches any, so it does not count as covering
 A Math and a student taking A Math with no A Math class is still reported under
 *Check these*.
 
+### Duplicating a class for another subject
+
+One set of students is often taught more than one subject together: the Sec 1
+humanities tutorial group takes Geography *and* History with the same
+seventeen names. **Duplicate** on the class's row copies it rather than making
+you build the second one from scratch and hope it comes out the same.
+
+The copy keeps the level, the PG, the form classes, the tutorial group and (by
+a tick box) the teachers. Only the subject is swapped — in the rule as well as
+on the class — and the students come with it. **The subject is the only thing
+that can drop anyone**, and the dialog says who before you commit:
+
+- **does not take HIST** — the column is blank for them
+- **takes HIST G3** — they take it, but at a band this class is not for, so
+  they belong in another History class
+
+The allocation box starts on *any allocation in that column*, which is the
+literal reading of "keep the students". If they turn out to be spread across
+bands, the note says so — *"They are on 2 different allocations (HIST G2 ×14,
+HIST G3 ×2) — pick one above unless they really are taught together"* — and
+picking one narrows the copy to that band. The counts beside each allocation
+are over **this class's** students, not the whole level.
+
+Only the carried students are put on the new namelist. The rule keeps it
+current from there, exactly like any other class; if you want everyone else
+the rule covers as well, **Auto-fill from rule** in the Group members tab adds
+them.
+
 ### The default class — everyone the higher bands did not take
 
 Some classes are defined entirely by what their students *do not* take.

@@ -47,12 +47,12 @@ function buildSampleModel() {
     model.groups.push({
       code: 'EL-' + cls, name: 'English ' + cls, subject: 'English Language',
       teachers: [EL_TEACHERS[c]], level: '1',
-      autoMatch: 'EL=', autoPg: '', autoTg: '', autoClasses: cls,
+      autoMatch: 'EL', autoPg: '', autoTg: '', autoClasses: cls,
     });
     model.groups.push({
       code: 'MA-' + cls, name: 'Mathematics ' + cls, subject: 'Mathematics',
       teachers: [MA_TEACHERS[c]], level: '1',
-      autoMatch: 'MA=', autoPg: '', autoTg: '', autoClasses: cls,
+      autoMatch: 'MA', autoPg: '', autoTg: '', autoClasses: cls,
     });
   });
   BAND_GROUPS.forEach((g) => {

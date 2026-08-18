@@ -151,6 +151,12 @@ for a namelist.
   `POA G3 with AMATH` and `POA G3 without AMATH`, each keeping itself up to
   date. Sec 4 needs none of this: there the subject group already says which
   class a student is in.
+- **Two subjects, one set of students.** Where a tutorial group is taught
+  Geography and History by the same teacher, build the first class and press
+  **Duplicate** on its row. The copy keeps the level, PG, form classes,
+  tutorial group and teachers; you pick the new subject and it brings the
+  students with it, except anyone who does not take that subject or takes it
+  at another band — each one named, with the reason, before you press Create.
 - **The default class.** A class can be built from what its students do *not*
   take: lower secondary **G1 HEMS** is every PG 1 student except those given a
   humanities subject at G2 or G3. Under *More filters* → **Another subject**,

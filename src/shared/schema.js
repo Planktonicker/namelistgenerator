@@ -1421,8 +1421,10 @@
       .map(function (m) {
         if (m.notAbove) return '!' + norm(m.key) + '>' + m.notAbove;
         if (m.without) return '!' + norm(m.key);
-        var values = m.values || (m.value ? [m.value] : []);
-        return norm(m.key) + '=' + values.map(norm).filter(Boolean).join('|');
+        var values = (m.values || (m.value ? [m.value] : [])).map(norm).filter(Boolean);
+        // No values means "any allocation in that column" — write it as the
+        // bare column, which is how the rule reads back.
+        return values.length ? norm(m.key) + '=' + values.join('|') : norm(m.key);
       })
       .join('; ');
   }

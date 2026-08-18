@@ -1194,6 +1194,34 @@ dialog .actions {
     </form>
   </dialog>
 
+  <dialog id="dupDialog">
+    <h2>Duplicate for another subject</h2>
+    <p class="small muted" id="dupIntro"></p>
+    <form class="fields" id="dupForm">
+      <label for="dupKey">Subject column</label>
+      <select id="dupKey"></select>
+      <label for="dupValue">Allocation</label>
+      <select id="dupValue"></select>
+      <label for="dupName">Class name *</label>
+      <input type="text" id="dupName" required placeholder="e.g. Sec 1 HIST G2 TG1">
+      <label></label>
+      <label class="autosave" style="justify-self:start">
+        <input type="checkbox" id="dupKeepTeachers" checked> Keep the same teachers
+      </label>
+      <label>Students</label>
+      <div>
+        <p class="hint" id="dupNote" style="margin:0 0 6px"></p>
+        <div class="scrolly" id="dupBox" style="max-height:180px" hidden>
+          <table class="list"><tbody id="dupList"></tbody></table>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" id="dupCancelBtn">Cancel</button>
+        <button type="submit" class="primary">Create the class</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="teacherClassesDialog">
     <h2>Classes for <span id="tcName"></span></h2>
     <p class="small muted">Pick the subject, then tick the classes this teacher takes. Unticking removes
@@ -2832,8 +2860,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       .map(function (m) {
         if (m.notAbove) return '!' + norm(m.key) + '>' + m.notAbove;
         if (m.without) return '!' + norm(m.key);
-        var values = m.values || (m.value ? [m.value] : []);
-        return norm(m.key) + '=' + values.map(norm).filter(Boolean).join('|');
+        var values = (m.values || (m.value ? [m.value] : [])).map(norm).filter(Boolean);
+        // No values means "any allocation in that column" — write it as the
+        // bare column, which is how the rule reads back.
+        return values.length ? norm(m.key) + '=' + values.join('|') : norm(m.key);
       })
       .join('; ');
   }
@@ -6021,6 +6051,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         '<td>' + esc(S.teacherNames(g).join(', ')) + '</td><td>' + esc(g.level) + '</td>' +
         '<td class="tags">' + esc(ruleSummary(g)) + '</td><td>' + n + '</td>' +
         '<td class="actions"><button class="linklike" data-act="edit">Edit</button>' +
+        '<button class="linklike" data-act="dup" title="Copy these students into a class ' +
+        'for another subject">Duplicate</button>' +
         '<button class="linklike danger" data-act="del">Delete</button></td></tr>';
     }).join('');
     $('groupsEmpty').hidden = model.groups.length > 0;
@@ -6034,6 +6066,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var group = ix.groupsByCode.get(code);
     if (!group) return;
     if (btn.dataset.act === 'edit') { pendingBulkAdd = false; openGroupDialog(group); }
+    if (btn.dataset.act === 'dup') openDuplicateDialog(group);
     if (btn.dataset.act === 'del') {
       var n = (ix.membersByGroup.get(code) || []).length;
       if (!confirm('Delete group "' + (group.name || code) + '"' + (n ? ' and its ' + n + ' membership(s)' : '') + '?')) return;
@@ -6951,6 +6984,197 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     } else if (!isNew && ruleChanged) {
       toast('No students match this rule — check the Level, PG and class filters');
     }
+  });
+
+  /* ---- duplicating a class for another subject ----
+   * One set of students is often taught more than one subject together: the
+   * Sec 1 humanities TG takes Geography and History with the same seventeen
+   * names. Rather than build the second class from scratch and hope it comes
+   * out the same, copy the first and swap the subject. Everyone carries over
+   * EXCEPT those the new subject rules out — they take it at another band, so
+   * they belong in another class, or they do not take it at all. */
+  var dupSource = null;
+
+  function dupMembers() {
+    return dupSource ? (ix.membersByGroup.get(dupSource.code) || []) : [];
+  }
+
+  /* The columns worth offering: ones this class's own students actually use,
+   * minus the one the class is already built on. */
+  function dupKeys() {
+    var own = {};
+    S.groupSubjectKeys(dupSource, model.subjectKeys).forEach(function (k) { own[S.normKey(k)] = true; });
+    var members = dupMembers();
+    return (model.subjectKeys || []).filter(function (k) {
+      if (own[S.normKey(k)]) return false;
+      return members.some(function (st) { return st.subjects && S.norm(st.subjects[k]); });
+    });
+  }
+
+  /* Which of the current members the new subject keeps, and why it lets the
+   * rest go. The subject is the only thing that can drop anyone — everything
+   * else about the class is being copied unchanged. */
+  function dupSplit() {
+    var key = S.norm($('dupKey').value);
+    var want = S.norm($('dupValue').value);
+    var keep = [];
+    var out = [];
+    dupMembers().forEach(function (st) {
+      var label = S.allocationLabel(st, key);
+      if (!label) { out.push({ student: st, why: 'does not take ' + key }); return; }
+      if (want && !S.allocationMatches(st, key, want)) {
+        out.push({ student: st, why: 'takes ' + label });
+        return;
+      }
+      keep.push(st);
+    });
+    return { key: key, want: want, keep: keep, out: out };
+  }
+
+  /* What the other classes on this column call the subject ("LIT" the column,
+   * "Literature" the label). The commonest wins, so the new class reads like
+   * its neighbours rather than like a column heading. */
+  function subjectLabelFor(key) {
+    var counts = {};
+    model.groups.forEach(function (g) {
+      var label = S.norm(g.subject);
+      if (!label) return;
+      if (S.groupSubjectKeys(g, model.subjectKeys)
+        .some(function (k) { return S.normKey(k) === S.normKey(key); })) {
+        counts[label] = (counts[label] || 0) + 1;
+      }
+    });
+    var best = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] || S.cmp(a, b); })[0];
+    if (best) return best;
+    /* Nothing on that column yet, so fall back to the subject list — but only
+     * when one entry plainly belongs to it. HIST is History; MA beside both
+     * Mathematics and Malay is nobody's guess to make, so the column stands. */
+    var k = S.normKey(key);
+    var near = allSubjects().filter(function (l) {
+      var n = S.normKey(l);
+      return n === k || n.indexOf(k) === 0 || k.indexOf(n) === 0;
+    });
+    return near.length === 1 ? near[0] : key;
+  }
+
+  function dupSuggestName(key, want) {
+    var lvl = S.norm(dupSource.level);
+    var lead = /^\d+$/.test(lvl) ? 'S' + lvl : lvl;
+    var base = want || key;
+    var qualifier = S.norm(dupSource.autoTg) || S.norm(dupSource.autoClasses) ||
+      (S.norm(dupSource.autoPg) ? 'PG' + S.norm(dupSource.autoPg) : '');
+    return S.norm((lead ? lead + ' ' : '') + base + (qualifier ? ' ' + qualifier : ''));
+  }
+
+  function renderDupValues() {
+    var key = S.norm($('dupKey').value);
+    var cur = $('dupValue').value;
+    // Counted over this class's students, so the numbers are about these ones.
+    var options = key ? S.allocationOptions(dupMembers(), key) : [];
+    $('dupValue').innerHTML = '<option value="">— any allocation in that column —</option>' +
+      options.map(function (o) {
+        return '<option value="' + esc(o.value) + '">' + esc(o.value) + '  (' + o.n + ')</option>';
+      }).join('');
+    /* "Any" is the default because duplicating is about keeping these
+     * students; if they turn out to be spread across bands, the note below
+     * says so rather than the choice being made for them. */
+    $('dupValue').value = options.some(function (o) { return o.value === cur; }) ? cur : '';
+  }
+
+  function renderDup() {
+    var split = dupSplit();
+    if (!$('dupName').dataset.userEdited) {
+      $('dupName').value = dupSuggestName(split.key, split.want);
+    }
+    var n = split.keep.length;
+    var total = dupMembers().length;
+    var spread = split.want ? [] : S.allocationOptions(split.keep, split.key);
+    $('dupNote').textContent = total
+      ? n + ' of ' + total + ' carry over' +
+        (split.out.length ? ' — ' + split.out.length + ' do not, and are listed below' :
+          ' — every one of them') + '.' +
+        (spread.length > 1 ? ' They are on ' + spread.length + ' different allocations (' +
+          spread.slice(0, 4).map(function (o) { return o.value + ' \u00d7' + o.n; }).join(', ') +
+          (spread.length > 4 ? ', \u2026' : '') +
+          ') — pick one above unless they really are taught together.' : '')
+      : 'This class has no students yet, so the copy starts empty.';
+    $('dupNote').classList.toggle('warn', spread.length > 1);
+    $('dupBox').hidden = split.out.length === 0;
+    $('dupList').innerHTML = split.out.map(function (o) {
+      return '<tr class="out"><td>' + esc(o.student.name) + '</td><td>' + esc(o.student.class) +
+        '</td><td class="muted">' + esc(o.why) + '</td></tr>';
+    }).join('');
+  }
+
+  function openDuplicateDialog(group) {
+    dupSource = group;
+    var keys = dupKeys();
+    $('dupIntro').textContent = 'Copies “' + (group.name || group.code) + '” — its level, PG, ' +
+      'form classes and tutorial groups — as a class for another subject, and brings its ' +
+      'students with it.';
+    $('dupKey').innerHTML = keys.length
+      ? keys.map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join('')
+      : '<option value="">— its students take no other subject —</option>';
+    $('dupKey').disabled = !keys.length;
+    $('dupForm').querySelector('button[type="submit"]').disabled = !keys.length;
+    delete $('dupName').dataset.userEdited;
+    $('dupKeepTeachers').checked = true;
+    $('dupValue').value = '';
+    renderDupValues();
+    renderDup();
+    $('dupDialog').showModal();
+    $('dupKey').focus();
+  }
+
+  $('dupKey').addEventListener('change', function () { renderDupValues(); renderDup(); });
+  $('dupValue').addEventListener('change', renderDup);
+  $('dupName').addEventListener('input', function () { $('dupName').dataset.userEdited = '1'; });
+  $('dupCancelBtn').addEventListener('click', function () { $('dupDialog').close(); });
+  $('dupDialog').addEventListener('close', function () { dupSource = null; });
+  $('dupForm').addEventListener('invalid', function (ev) {
+    ev.target.scrollIntoView({ block: 'center' });
+    if (ev.target.id === 'dupName') toast('The new class needs a name.');
+  }, true);
+
+  $('dupForm').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var src = dupSource;
+    var split = dupSplit();
+    var name = S.norm($('dupName').value);
+    if (!src || !name || !split.key) return;
+
+    var code = name;
+    var base = code, n = 2;
+    while (ix.groupsByCode.get(code)) code = base + ' ' + (n++);
+
+    /* Everything about the rule except the subject is copied as it stands, so
+     * the new class narrows to the same students and keeps itself up to date
+     * the same way. Only the subject criterion is swapped. */
+    var own = {};
+    S.groupSubjectKeys(src, model.subjectKeys).forEach(function (k) { own[S.normKey(k)] = true; });
+    var criteria = S.matchers(src).filter(function (m) { return !own[S.normKey(m.key)]; });
+    criteria.push({ key: split.key, values: split.want ? [split.want] : [], without: false, notAbove: '' });
+
+    var known = subjectLabelFor(split.key);
+    var rec = {
+      code: code, name: name, subject: known || split.key,
+      teachers: $('dupKeepTeachers').checked ? S.teacherNames(src).slice() : [],
+      level: S.norm(src.level), autoMatch: S.matchersToString(criteria),
+      autoPg: S.norm(src.autoPg), autoTg: S.norm(src.autoTg), autoClasses: S.norm(src.autoClasses),
+    };
+    model.groups.push(rec);
+    /* The copied students, and only them. The rule is there to keep the class
+     * current from here; it is not run over the whole level now, because the
+     * point of duplicating was to carry THESE students across. */
+    split.keep.forEach(function (st) {
+      model.memberships.push({ studentId: st.id, groupCode: code });
+    });
+    $('dupDialog').close();
+    markDirty('duplicating the class');
+    toast(name + ' created with ' + split.keep.length + ' student' +
+      (split.keep.length === 1 ? '' : 's') +
+      (split.out.length ? ' — ' + split.out.length + ' left out by their ' + split.key : '') +
+      '. Use “Auto-fill from rule” to add anyone else the rule covers.');
   });
 
   /* ================= memberships tab ================= */

@@ -456,7 +456,9 @@ dialog .actions {
 .namelist-band td:nth-child(3) { width: 45%; white-space: normal; }
 .namelist-band .nl-pax { text-align: right; font-weight: 400; }
 .namelist { table-layout: auto; }
-.namelist th, .namelist td { border: 1px solid #333; padding: 5px 8px; }
+.namelist th, .namelist td {
+  border: 1px solid #333; padding: var(--nl-rowpad) 8px; line-height: var(--nl-rowlh);
+}
 .namelist thead th {
   background: var(--accent-soft); font-size: 12px; letter-spacing: .02em; text-align: left;
 }
@@ -471,17 +473,19 @@ dialog .actions {
 .namelist .nl-note { width: auto; min-width: 110px; }
 /* The width of one box on the printed namelist — change it here and the
    number of boxes on the paper follows, because they are counted from it. */
-:root { --nl-box: 14mm; }
-.namelist .nl-box { width: var(--nl-box); min-width: var(--nl-box); padding: 5px 0; }
+:root {
+  --nl-box: 14mm;
+  /* Air above and below each printed row, and the leading inside it. Set on
+     the root rather than on the table so a single class can be given less of
+     both when it has to fit one sheet. */
+  --nl-rowpad: 5px;
+  --nl-rowlh: 1.5;
+}
+.namelist .nl-box { width: var(--nl-box); min-width: var(--nl-box); padding: var(--nl-rowpad) 0; }
 /* With boxes at a fixed width, the slack has to land somewhere: it goes into
    the Name column as extra air, so the grid finishes flush at the margin. */
 .namelist.has-boxes .nl-name { width: 100%; }
-.namelist .nl-blank td { height: 6mm; }
-/* One step short of scaling: a class that just overruns the page loses the
-   air in its rows rather than its readable type. */
-.card.tight .namelist th, .card.tight .namelist td { padding-top: 1px; padding-bottom: 1px; }
-.card.tight .namelist .nl-blank td { height: 4.5mm; }
-.card.tight .namelist-band td { padding-top: 3px; padding-bottom: 3px; }
+
 .namelist .nl-empty { text-align: center; color: var(--muted); }
 .nl-sub { margin: -6px 0 10px; font-size: 12px; color: var(--muted); }
 

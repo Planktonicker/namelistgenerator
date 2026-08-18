@@ -666,10 +666,15 @@ On paper the one wide Note column becomes a **row of equal boxes** to mark in:
   To change the box width, change `--nl-box` in `src/shared/styles.css` — the
   count follows from it.
 - **Five blank lines under the last name**, for whoever turns up after the list
-  was printed. They are print-only; the screen list ends at the last student.
-- **One class, one sheet.** A class too tall for the page first loses the air
-  in its rows — 40 names fit an A4 that way with the type untouched — and only
-  then is the whole sheet scaled down, to no less than 65%, which is about the
+  was printed. Each is exactly the height of a row with a name in it, whatever
+  that height turns out to be, because it is one line of the same text in the
+  same padding rather than a measurement in millimetres. They are print-only;
+  the screen list ends at the last student.
+- **One class, one sheet.** A class too tall for the page gives up the air in
+  its rows first — the space above and below, then the leading — one step at a
+  time, and no further than it has to: 26 names print roomy, 40 names print
+  tight, both at full type size and with the boxes still 14mm. Only when that
+  runs out is the whole sheet scaled, to no less than 65%, which is about the
   limit of reading it across a staffroom. A class longer than that (a whole
   cohort in one class) still flows onto a second page, with its column headings
   repeated.

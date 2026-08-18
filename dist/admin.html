@@ -489,7 +489,9 @@ dialog .actions {
 .namelist-band td:nth-child(3) { width: 45%; white-space: normal; }
 .namelist-band .nl-pax { text-align: right; font-weight: 400; }
 .namelist { table-layout: auto; }
-.namelist th, .namelist td { border: 1px solid #333; padding: 5px 8px; }
+.namelist th, .namelist td {
+  border: 1px solid #333; padding: var(--nl-rowpad) 8px; line-height: var(--nl-rowlh);
+}
 .namelist thead th {
   background: var(--accent-soft); font-size: 12px; letter-spacing: .02em; text-align: left;
 }
@@ -504,17 +506,19 @@ dialog .actions {
 .namelist .nl-note { width: auto; min-width: 110px; }
 /* The width of one box on the printed namelist — change it here and the
    number of boxes on the paper follows, because they are counted from it. */
-:root { --nl-box: 14mm; }
-.namelist .nl-box { width: var(--nl-box); min-width: var(--nl-box); padding: 5px 0; }
+:root {
+  --nl-box: 14mm;
+  /* Air above and below each printed row, and the leading inside it. Set on
+     the root rather than on the table so a single class can be given less of
+     both when it has to fit one sheet. */
+  --nl-rowpad: 5px;
+  --nl-rowlh: 1.5;
+}
+.namelist .nl-box { width: var(--nl-box); min-width: var(--nl-box); padding: var(--nl-rowpad) 0; }
 /* With boxes at a fixed width, the slack has to land somewhere: it goes into
    the Name column as extra air, so the grid finishes flush at the margin. */
 .namelist.has-boxes .nl-name { width: 100%; }
-.namelist .nl-blank td { height: 6mm; }
-/* One step short of scaling: a class that just overruns the page loses the
-   air in its rows rather than its readable type. */
-.card.tight .namelist th, .card.tight .namelist td { padding-top: 1px; padding-bottom: 1px; }
-.card.tight .namelist .nl-blank td { height: 4.5mm; }
-.card.tight .namelist-band td { padding-top: 3px; padding-bottom: 3px; }
+
 .namelist .nl-empty { text-align: center; color: var(--muted); }
 .nl-sub { margin: -6px 0 10px; font-size: 12px; color: var(--muted); }
 
@@ -3203,8 +3207,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     }).join('') || '<tr><td colspan="' + cols + '" class="nl-empty">No students in this class yet.</td></tr>';
     /* Room under the last name for whoever turns up after the list was
      * printed — a transfer in, a name the office had not sent yet. */
+    /* A non-breaking space in the name cell, rather than a height in
+     * millimetres: one line of the same text in the same padding is the same
+     * height as a row with a name in it, whatever the row height turns out to
+     * be — including when a long class has its rows tightened. */
     var blank = repeat('<tr class="nl-blank"><td class="nl-sn"></td><td class="nl-class"></td>' +
-      '<td class="nl-name"></td><td class="nl-gender"></td>' + tail + '</tr>',
+      '<td class="nl-name">&#160;</td><td class="nl-gender"></td>' + tail + '</tr>',
       members.length ? Math.max(0, opts.blankRows || 0) : 0);
     return '<table class="namelist-band"><tbody><tr>' +
       '<td>' + esc(meta.level) + '</td>' +
@@ -3277,6 +3285,18 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
    * than spilling three names onto a second piece of paper. Chrome's `zoom`
    * reflows (a transform would not), so the page break is worked out after
    * the scaling, not before. */
+  /* Roomiest first. Each step takes a little air out of the rows — the space
+   * above and below, then the leading — without touching the size of the type
+   * or of the boxes, which is what a scale would do. */
+  var ROW_STEPS = [
+    { pad: 5, lh: 1.5 },
+    { pad: 4, lh: 1.45 },
+    { pad: 3, lh: 1.4 },
+    { pad: 2, lh: 1.3 },
+    { pad: 1, lh: 1.25 },
+    { pad: 1, lh: 1.1 },
+  ];
+
   function fitPrintSheet(sheet) {
     if (!sheet) return;
     var page = printHeightPx();
@@ -3284,13 +3304,18 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     sheet.style.width = printWidthPx() + 'px';
     Array.prototype.forEach.call(sheet.querySelectorAll('.card'), function (card) {
       card.style.zoom = '';
-      card.classList.remove('tight');
-      if (card.getBoundingClientRect().height <= page) return;
-      /* Taking the air out of the rows costs nothing anyone can see, and
-       * leaves the type and the boxes at their proper size, so it is tried
-       * before scaling the whole sheet down. */
-      card.classList.add('tight');
+      card.style.removeProperty('--nl-rowpad');
+      card.style.removeProperty('--nl-rowlh');
       var h = card.getBoundingClientRect().height;
+      /* Air between the rows is the cheapest thing to give up — nobody reads a
+       * namelist and misses it — so it goes one step at a time, and no further
+       * than it has to. Forty names reach one sheet this way with the type
+       * still at full size. */
+      for (var i = 1; i < ROW_STEPS.length && h > page; i++) {
+        card.style.setProperty('--nl-rowpad', ROW_STEPS[i].pad + 'px');
+        card.style.setProperty('--nl-rowlh', String(ROW_STEPS[i].lh));
+        h = card.getBoundingClientRect().height;
+      }
       // Below about two-thirds it stops being readable across a staffroom.
       if (h > page) card.style.zoom = Math.max(0.65, page / h).toFixed(3);
     });

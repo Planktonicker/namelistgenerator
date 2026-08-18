@@ -88,9 +88,13 @@ const sheet = await page.evaluate(() => {
       tableWidth: table.getBoundingClientRect().width,
       nameWidth: nameCell ? nameCell.getBoundingClientRect().width : 0,
       blanks: table.querySelectorAll('tr.nl-blank').length,
+      rowH: table.querySelector('tbody tr:not(.nl-blank)').getBoundingClientRect().height,
+      blankH: Array.from(table.querySelectorAll('tr.nl-blank'))
+        .map((r) => Math.round(r.getBoundingClientRect().height * 100) / 100),
       hasNote: table.querySelectorAll('.nl-note').length,
       zoom: card.style.zoom || '',
-      tight: card.classList.contains('tight'),
+      rowpad: card.style.getPropertyValue('--nl-rowpad') || '5px',
+      rowlh: card.style.getPropertyValue('--nl-rowlh') || '1.5',
       height: naturalHeight(card),
     };
   });
@@ -100,6 +104,9 @@ const sheet = await page.evaluate(() => {
 });
 
 const mm = 96 / 25.4;
+console.log('  heights:', JSON.stringify(Object.keys(sheet.cards).map((k) =>
+  k + '=' + Math.round(sheet.cards[k].height) + ' pad ' + sheet.cards[k].rowpad),
+) + ' page=' + Math.round(sheet.pageH));
 const small = sheet.cards.SMALL, mid = sheet.cards.MID, big = sheet.cards.BIG;
 
 check('the space beside the names is split into more than one box',
@@ -123,20 +130,28 @@ check('the Note column is gone from the printed list',
 check('there are five blank lines under the last name',
   small.blanks === 5 && mid.blanks === 5 && big.blanks === 5,
   [small.blanks, mid.blanks, big.blanks].join(','));
+check('and each is the same height as a row with a name in it',
+  [small, mid, big].every((c) =>
+    new Set(c.blankH).size === 1 && Math.abs(c.blankH[0] - c.rowH) < 0.5),
+  [small, mid, big].map((c) => c.blankH[0] + ' vs ' + Math.round(c.rowH * 100) / 100).join(' · '));
+check('including after the rows have been tightened to fit the page',
+  Math.abs(mid.blankH[0] - mid.rowH) < 0.5 && mid.rowH < small.rowH,
+  'tightened row ' + Math.round(mid.rowH * 100) / 100 +
+  ' vs a roomier ' + Math.round(small.rowH * 100) / 100);
 
 const onPage = (c) => c.height * (parseFloat(c.zoom) || 1) <= sheet.pageH + 1;
-check('a class that fits is left alone — full size, full row height',
-  small.zoom === '' && !small.tight && onPage(small),
-  'zoom "' + small.zoom + '", tight ' + small.tight);
-check('a class of forty is squeezed onto one sheet, keeping its type size',
-  mid.tight && onPage(mid) && (mid.zoom === '' || parseFloat(mid.zoom) > 0.9),
-  'tight ' + mid.tight + ', zoom "' + mid.zoom + '", ' +
-  Math.round(mid.height) + ' of ' + Math.round(sheet.pageH) + 'px');
-check('taking the air out of the rows is what does most of that work',
-  mid.height < 1.35 * sheet.pageH,
-  Math.round(mid.height) + 'px tightened vs a ' + Math.round(sheet.pageH) + 'px page');
+check('a class of 26 fits on one sheet, and is not scaled to get there',
+  small.zoom === '' && onPage(small),
+  'zoom "' + small.zoom + '", row padding ' + small.rowpad);
+check('a class of 40 fits too, still at full type size',
+  mid.zoom === '' && onPage(mid),
+  'zoom "' + mid.zoom + '", row padding ' + mid.rowpad + ', leading ' + mid.rowlh);
+check('each gives up only as much row spacing as it has to',
+  parseFloat(small.rowpad) > parseFloat(mid.rowpad) && parseFloat(small.rowpad) < 5,
+  '26 names at ' + small.rowpad + ', 40 names at ' + mid.rowpad);
 check('a class too long for any of that is scaled, down to a readable floor',
-  big.tight && parseFloat(big.zoom) === 0.65, 'zoom ' + big.zoom);
+  big.rowpad === '1px' && parseFloat(big.rowlh) < 1.2 && parseFloat(big.zoom) === 0.65,
+  'row padding ' + big.rowpad + ', leading ' + big.rowlh + ', zoom ' + big.zoom);
 
 // the on-screen namelist is untouched: one Note column, no blank rows
 const screen = await page.evaluate(() => {

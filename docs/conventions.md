@@ -179,8 +179,10 @@ for a namelist.
 - **The printed namelist is a mark sheet.** Beside the names it prints equal
   boxes, 14mm each, as many as the paper has room for once the longest name has
   had its width — and five blank lines under the last name for a late arrival.
-  A class is fitted onto one sheet: the row spacing goes first, and only a very
-  long class is scaled down at all.
+  The blank lines are the same height as the ones with names on them. A class
+  is fitted onto one sheet by closing up the rows a step at a time — 26 names
+  print roomy, 40 tight, both at full size — and only a whole cohort in one
+  class is scaled down at all.
 - **Read *What changed…*** after an update — moved class, changed band, new
   student, gone from the file — and copy the list into an email if teachers need
   to know.

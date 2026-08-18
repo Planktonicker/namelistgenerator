@@ -729,7 +729,11 @@ dialog .actions {
 
   .chips .chip.chip-not { background: var(--danger-soft); color: var(--danger-ink); }
   .also-row { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+  .also-row button { white-space: nowrap; }
   .also-row select { min-width: 150px; }
+  /* The band belongs to the button beside it — they never wrap apart. */
+  .also-cap { display: inline-flex; gap: var(--sp-1); align-items: center; }
+  .also-cap select { min-width: 0; }
 
   .req-match { margin: 10px 0 0; font-size: 13px; }
   .req-cand { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
@@ -1119,10 +1123,19 @@ dialog .actions {
                   <select id="gfAlsoKey"></select>
                   <button type="button" id="gfAlsoTakes">also takes it</button>
                   <button type="button" id="gfAlsoWithout">does not take it</button>
+                  <span class="also-cap">
+                    <button type="button" id="gfAlsoCap">not above</button>
+                    <select id="gfAlsoBand" aria-label="Highest band still in this class">
+                      <option value="G1">G1</option>
+                      <option value="G2">G2</option>
+                    </select>
+                  </span>
                 </div>
                 <p class="hint" style="margin:6px 0 0; max-width:460px">Splits a class by a
                   second subject — Sec 3 POA is taught as one class for those who also take
-                  A Math and one for those who do not.</p>
+                  A Math and one for those who do not. <strong>Not above</strong> is for a
+                  default class: lower secondary G1 HEMS takes every PG 1 student
+                  <em>except</em> those given a humanities subject at G2 or G3.</p>
               </div>
             </div>
             <div class="graph-row" id="gfMoreRow" hidden>
@@ -2139,6 +2152,28 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     }).sort(function (a, b) { return cmp(a.value, b.value); });
   }
 
+  /* The band a student is really at in one column: the band written in the
+   * cell, or their posting group's when the cell leaves it out. '' when the
+   * column is empty, or when neither the cell nor the PG says a band — unknown
+   * must not be read as high or as low. */
+  function allocationBand(student, key) {
+    var raw = norm(student.subjects && student.subjects[key]);
+    if (!raw) return '';
+    var p = sbbParts(raw);
+    if (!p) {
+      // A school-coded cell states its band outright: "English Language - G2 - K200".
+      var coded = /\bG\s?([1-3])\b/i.exec(raw);
+      return coded ? 'G' + coded[1] : '';
+    }
+    return p.band || pgBand(student.pg);
+  }
+
+  function bandAbove(student, key, cap) {
+    var band = allocationBand(student, key);
+    if (!band) return false;
+    return Number(band.slice(1)) > Number(norm(cap).slice(1));
+  }
+
   /* Does a student's allocation in `key` answer to `want`? Exactly as written,
    * or as the same subject at the same effective band. */
   function allocationMatches(student, key, want) {
@@ -2762,10 +2797,18 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     function add(key, value, without) {
       key = norm(key);
       if (key.charAt(0) === '!') { without = true; key = norm(key.slice(1)); }
+      /* "!HIST>G1" — not taken ABOVE that band. Blank counts as not above, so
+       * a class can be "everyone the higher classes did not take". */
+      var notAbove = '';
+      var cap = /^(.*?)\s*>\s*G?([1-3])$/i.exec(key);
+      if (cap) { key = norm(cap[1]); notAbove = 'G' + cap[2]; without = false; }
       if (!key || seen[normKey(key)]) return;
       seen[normKey(key)] = true;
-      var values = without ? [] : norm(value).split('|').map(norm).filter(Boolean);
-      out.push({ key: key, values: values, value: values[0] || '', without: !!without });
+      var values = (without || notAbove) ? [] : norm(value).split('|').map(norm).filter(Boolean);
+      out.push({
+        key: key, values: values, value: values[0] || '',
+        without: !!without, notAbove: notAbove,
+      });
     }
     norm(group.autoMatch).split(';').forEach(function (part) {
       if (!norm(part)) return;
@@ -2780,6 +2823,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   function matchersToString(list) {
     return (list || []).filter(function (m) { return norm(m.key); })
       .map(function (m) {
+        if (m.notAbove) return '!' + norm(m.key) + '>' + m.notAbove;
         if (m.without) return '!' + norm(m.key);
         var values = m.values || (m.value ? [m.value] : []);
         return norm(m.key) + '=' + values.map(norm).filter(Boolean).join('|');
@@ -2823,6 +2867,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     }
     return matchers(group).every(function (m) {
       var v = student.subjects ? norm(student.subjects[m.key]) : '';
+      if (m.notAbove) return !bandAbove(student, m.key, m.notAbove);
       if (m.without) return !v;               // takes nothing in that column
       if (!v) return false;
       if (!m.values.length) return true;      // any allocation in that column
@@ -2857,7 +2902,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   /* Which subject column(s) a class is about: the columns its rule keys on,
    * or failing that its subject label if that matches a column. */
   function groupSubjectKeys(group, subjectKeys) {
-    var keys = matchers(group).filter(function (m) { return !m.without; })
+    var keys = matchers(group).filter(function (m) { return !m.without && !m.notAbove; })
       .map(function (m) { return m.key; });
     if (keys.length) return keys;
     var label = norm(group.subject);
@@ -3727,6 +3772,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     allocationMatches: allocationMatches,
     coverageGaps: coverageGaps,
     groupSubjectKeys: groupSubjectKeys,
+    allocationBand: allocationBand,
     matchers: matchers,
     matchersToString: matchersToString,
     derivePattern: derivePattern,
@@ -5988,7 +6034,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       gfTgRow: picked && hasTg,
       gfClassRow: picked && (!upper || extras),
       gfPgRow: picked && extras,
-      gfAlsoRow: picked && !!currentKey() && (extras || hasAlso()),
+      /* A class can be built entirely from what its students do NOT take —
+       * G1 HEMS is every PG 1 student without a higher humanities — so this
+       * branch does not wait for a subject column to be chosen. */
+      gfAlsoRow: picked && (extras || hasAlso()),
       gfMoreRow: picked && !extras,
     };
     $('gfMoreBtn').textContent = upper
@@ -6252,6 +6301,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   }
 
   function alsoLabel(c) {
+    if (c.notAbove) return 'no ' + c.key + ' above ' + c.notAbove;
     if (c.without) return 'does not take ' + c.key;
     if (!c.values.length) return 'also takes ' + c.key;
     return c.key + ' = ' + c.values.join(' or ');
@@ -6259,11 +6309,13 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   function hasAlso() { return alsoCriteria().length > 0; }
 
-  function alsoAdd(without) {
+  function alsoAdd(without, notAbove) {
     var key = S.norm($('gfAlsoKey').value);
     if (!key) return;
     dialogCriteria = dialogCriteria.filter(function (c) { return S.normKey(c.key) !== S.normKey(key); });
-    dialogCriteria.push({ key: key, values: [], without: !!without });
+    dialogCriteria.push({
+      key: key, values: [], without: !!without && !notAbove, notAbove: notAbove || '',
+    });
     renderAlso();
     renderCriteria();
     updateGraph();
@@ -6289,10 +6341,13 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     $('gfAlsoKey').disabled = !rest.length;
     $('gfAlsoTakes').disabled = !rest.length;
     $('gfAlsoWithout').disabled = !rest.length;
+    $('gfAlsoCap').disabled = !rest.length;
+    $('gfAlsoBand').disabled = !rest.length;
   }
 
   $('gfAlsoTakes').addEventListener('click', function () { alsoAdd(false); });
   $('gfAlsoWithout').addEventListener('click', function () { alsoAdd(true); });
+  $('gfAlsoCap').addEventListener('click', function () { alsoAdd(false, $('gfAlsoBand').value); });
 
   /* Start the rule again without closing the dialog — quicker than unticking
    * a path node by node, and the only way back from a single-choice branch. */
@@ -6342,25 +6397,32 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   }
 
   function suggestGroupIdentity() {
-    var first = dialogCriteria.filter(function (c) { return S.norm(c.key); })[0] || { key: '', values: [] };
+    /* Only a subject the class positively takes can name it. A class defined
+     * by what its students do NOT take is named from its level and PG, and the
+     * admin puts the real name on it ("S1 HEMS G1"). */
+    var first = dialogCriteria.filter(function (c) {
+      return S.norm(c.key) && !c.without && !c.notAbove;
+    })[0] || { key: '', values: [] };
     var key = first.key;
     var val = (first.values || []).join(' + ');
     var lvl = S.norm(currentLevel());
     var pg = dialogPgs.join('/');
     var cls = dialogClasses.join('/');
     var base = val || key;
-    if (!base) return;
     var qualifier = dialogTgs.join('/') || cls || (pg ? 'PG' + pg : '');
     /* A class split off by a second subject has to say which half it is, or
-     * the two land with the same name: "S3 POA G3 with AMATH" / "…without". */
-    var also = alsoCriteria()[0];
+     * the two land with the same name: "S3 POA G3 with AMATH" / "…without".
+     * A band cap is left out — it reads as a sentence, not as a name. */
+    var also = alsoCriteria().filter(function (c) { return !c.notAbove; })[0];
     if (also) {
       qualifier = (qualifier ? qualifier + ' ' : '') +
         (also.without ? 'without ' : 'with ') + also.key;
     }
     // A level already reads "Sec 1"; only a bare number wants the S prefix.
     var lead = /^\d+$/.test(lvl) ? 'S' + lvl : lvl;
-    var label = (lead ? lead + ' ' : '') + base + (qualifier ? ' ' + qualifier : '');
+    var label = (lead ? lead + ' ' : '') + (base ? base + (qualifier ? ' ' + qualifier : '') : qualifier);
+    label = S.norm(label);
+    if (!label) return;
     if (!$('gfName').dataset.userEdited) $('gfName').value = label;
     if (!$('gfCode').dataset.userEdited) $('gfCode').value = $('gfName').value;
     if (!$('gfSubject').dataset.userEdited && key) {
@@ -6442,7 +6504,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       ? '<div class="chips"><span class="small muted" style="align-self:center">and</span>' +
         others.map(function (c) {
           var label = alsoLabel(c);
-          return '<span class="chip' + (c.without ? ' chip-not' : '') + '">' + esc(label) +
+          return '<span class="chip' + (c.without || c.notAbove ? ' chip-not' : '') + '">' + esc(label) +
             '<button type="button" data-key="' + esc(c.key) + '" title="Remove">\u00d7</button></span>';
         }).join('') + '</div>'
       : '';
@@ -6689,6 +6751,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     ev.preventDefault();
     if (ev.target.id === 'gfTeacher') $('gfTeacherAdd').click();
   });
+  /* The dialog is taller than the screen, so the browser's own "fill this in"
+   * bubble can point at a field nobody can see — which reads as OK doing
+   * nothing at all. Bring the field to the middle and say it out loud. */
+  $('groupForm').addEventListener('invalid', function (ev) {
+    ev.target.scrollIntoView({ block: 'center' });
+    if (ev.target.id === 'gfName') toast('The class needs a name before it can be saved.');
+  }, true);
+
   $('groupForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
     // A name left sitting in the picker is what the admin meant to add.

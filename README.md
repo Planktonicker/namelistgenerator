@@ -687,6 +687,44 @@ says who is excluded, not that it teaches any, so it does not count as covering
 A Math and a student taking A Math with no A Math class is still reported under
 *Check these*.
 
+### The default class — everyone the higher bands did not take
+
+Some classes are defined entirely by what their students *do not* take.
+**Lower secondary G1 HEMS** is the case: every PG 1 student takes it, unless
+the office gave them a humanities subject at G2 or G3, in which case they sit
+in that class instead.
+
+The third button in the **Another subject** branch says so directly: pick the
+column, press **not above**, and choose the band. Press it once per humanities
+column — `HIST`, `GEOG`, `LIT` — and the conditions stack up as chips:
+
+> Level **Sec 1** · PG **1** · and *no HIST above G1*, *no GEOG above G1*, *no LIT above G1*
+
+which is stored as `!HIST>G1; !GEOG>G1; !LIT>G1` alongside `AutoPG = 1`.
+
+Three things make this work on real files:
+
+- **A blank column counts as "not above".** A student with no History cell at
+  all belongs in HEMS, and gets there.
+- **The band is the one the student is really at.** A cell that says
+  `SS/Hist G2` is G2; a cell that says only `SS/Hist` takes the band from the
+  posting group, so for a PG 1 student it is G1 and they stay in HEMS. A
+  ministry-coded cell (`Literature - G2 - K220`) states its band outright and
+  is read from there.
+- **It keeps itself up to date.** A PG 1 student who appears in a later
+  school-file update joins HEMS by themselves; one who appears already up in
+  History does not.
+
+Because the class does not take a subject of its own, it is not named for one —
+the suggestion is just `Sec 1 PG1`, and you type the real name over it. Naming
+the humanities columns says who is *excluded*, so HEMS does not count as
+covering History, and a student taking History with no History class is still
+reported under *Check these*.
+
+**Sec 1 and Sec 2 are two classes**, since a namelist belongs to one level and
+one teacher. Build the first, then the second — the map remembers nothing
+between them, which is what you want here.
+
 ### When the cell and the posting group disagree
 
 The band written in a subject cell always wins over the one the posting group

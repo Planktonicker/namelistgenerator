@@ -1432,6 +1432,28 @@ dialog .actions {
     }).sort(function (a, b) { return cmp(a.value, b.value); });
   }
 
+  /* The band a student is really at in one column: the band written in the
+   * cell, or their posting group's when the cell leaves it out. '' when the
+   * column is empty, or when neither the cell nor the PG says a band — unknown
+   * must not be read as high or as low. */
+  function allocationBand(student, key) {
+    var raw = norm(student.subjects && student.subjects[key]);
+    if (!raw) return '';
+    var p = sbbParts(raw);
+    if (!p) {
+      // A school-coded cell states its band outright: "English Language - G2 - K200".
+      var coded = /\bG\s?([1-3])\b/i.exec(raw);
+      return coded ? 'G' + coded[1] : '';
+    }
+    return p.band || pgBand(student.pg);
+  }
+
+  function bandAbove(student, key, cap) {
+    var band = allocationBand(student, key);
+    if (!band) return false;
+    return Number(band.slice(1)) > Number(norm(cap).slice(1));
+  }
+
   /* Does a student's allocation in `key` answer to `want`? Exactly as written,
    * or as the same subject at the same effective band. */
   function allocationMatches(student, key, want) {
@@ -2055,10 +2077,18 @@ dialog .actions {
     function add(key, value, without) {
       key = norm(key);
       if (key.charAt(0) === '!') { without = true; key = norm(key.slice(1)); }
+      /* "!HIST>G1" — not taken ABOVE that band. Blank counts as not above, so
+       * a class can be "everyone the higher classes did not take". */
+      var notAbove = '';
+      var cap = /^(.*?)\s*>\s*G?([1-3])$/i.exec(key);
+      if (cap) { key = norm(cap[1]); notAbove = 'G' + cap[2]; without = false; }
       if (!key || seen[normKey(key)]) return;
       seen[normKey(key)] = true;
-      var values = without ? [] : norm(value).split('|').map(norm).filter(Boolean);
-      out.push({ key: key, values: values, value: values[0] || '', without: !!without });
+      var values = (without || notAbove) ? [] : norm(value).split('|').map(norm).filter(Boolean);
+      out.push({
+        key: key, values: values, value: values[0] || '',
+        without: !!without, notAbove: notAbove,
+      });
     }
     norm(group.autoMatch).split(';').forEach(function (part) {
       if (!norm(part)) return;
@@ -2073,6 +2103,7 @@ dialog .actions {
   function matchersToString(list) {
     return (list || []).filter(function (m) { return norm(m.key); })
       .map(function (m) {
+        if (m.notAbove) return '!' + norm(m.key) + '>' + m.notAbove;
         if (m.without) return '!' + norm(m.key);
         var values = m.values || (m.value ? [m.value] : []);
         return norm(m.key) + '=' + values.map(norm).filter(Boolean).join('|');
@@ -2116,6 +2147,7 @@ dialog .actions {
     }
     return matchers(group).every(function (m) {
       var v = student.subjects ? norm(student.subjects[m.key]) : '';
+      if (m.notAbove) return !bandAbove(student, m.key, m.notAbove);
       if (m.without) return !v;               // takes nothing in that column
       if (!v) return false;
       if (!m.values.length) return true;      // any allocation in that column
@@ -2150,7 +2182,7 @@ dialog .actions {
   /* Which subject column(s) a class is about: the columns its rule keys on,
    * or failing that its subject label if that matches a column. */
   function groupSubjectKeys(group, subjectKeys) {
-    var keys = matchers(group).filter(function (m) { return !m.without; })
+    var keys = matchers(group).filter(function (m) { return !m.without && !m.notAbove; })
       .map(function (m) { return m.key; });
     if (keys.length) return keys;
     var label = norm(group.subject);
@@ -3020,6 +3052,7 @@ dialog .actions {
     allocationMatches: allocationMatches,
     coverageGaps: coverageGaps,
     groupSubjectKeys: groupSubjectKeys,
+    allocationBand: allocationBand,
     matchers: matchers,
     matchersToString: matchersToString,
     derivePattern: derivePattern,

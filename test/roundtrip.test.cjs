@@ -1148,7 +1148,8 @@ test('a class can be defined by what its students do NOT take', () => {
 
   // it survives the workbook and a re-parse
   assert.strictEqual(S.matchersToString(S.matchers(noAm)), 'POA=POA G3; !AMATH');
-  assert.deepStrictEqual(S.matchers(noAm)[1], { key: 'AMATH', values: [], value: '', without: true });
+  assert.deepStrictEqual(S.matchers(noAm)[1],
+    { key: 'AMATH', values: [], value: '', without: true, notAbove: '' });
 
   /* The "without" class is about POA. Naming A Math in its rule says who is
    * excluded, not that it teaches them any A Math. */
@@ -1164,6 +1165,62 @@ test('a class can be defined by what its students do NOT take', () => {
   const gap = S.coverageGaps(model).filter((g) => S.normKey(g.key) === 'amath')[0];
   assert.ok(gap && gap.students.includes('amath-only'),
     'a student taking A Math with no A Math class is still flagged');
+});
+
+test('a default class takes everyone the higher bands did not', () => {
+  const mk = (id, pg, subjects) => ({ id, name: id, class: '1R1', level: 'Sec 1', gender: 'F',
+    pg, tg: '', sn: '', origin: 'file', sourceName: id, status: '', subjects });
+  /* Lower secondary G1 HEMS: every PG 1 student, unless the office gave them a
+   * humanities subject at G2 or G3 — in which case they sit in that class. */
+  const students = [
+    mk('hems-blank', '1', {}),                              // no humanities named
+    mk('hems-g1-cell', '1', { HIST: 'SS/Hist G1' }),        // spelt out at G1
+    mk('hems-implied', '1', { HIST: 'SS/Hist' }),           // band read from PG 1
+    mk('up-in-hist', '1', { HIST: 'SS/Hist G2' }),          // bumped up one subject
+    mk('up-in-geog', '1', { GEOG: 'SS/Geog G3' }),          // bumped up in another
+    mk('up-coded', '1', { LIT: 'Literature - G2 - K220' }), // ministry-coded cell
+    mk('pg2', '2', {}),                                     // not PG 1 at all
+  ];
+  const hems = { code: 'HEMS1', level: 'Sec 1', autoPg: '1',
+    autoMatch: '!HIST>G1; !GEOG>G1; !LIT>G1' };
+
+  assert.deepStrictEqual(students.filter((s) => S.matchesRule(s, hems)).map((s) => s.id),
+    ['hems-blank', 'hems-g1-cell', 'hems-implied'],
+    'a G1 cell, an implied G1 and a blank all stay; anything above leaves');
+
+  // a cap is not the same as "takes nothing there"
+  const none = { code: 'X', level: 'Sec 1', autoPg: '1', autoMatch: '!HIST' };
+  assert.ok(!S.matchesRule(students[1], none), 'HIST G1 IS taking HIST');
+  assert.ok(S.matchesRule(students[1], hems), 'but it is not taking it above G1');
+
+  // it survives the workbook and a re-parse
+  assert.strictEqual(S.matchersToString(S.matchers(hems)), '!HIST>G1; !GEOG>G1; !LIT>G1');
+  assert.deepStrictEqual(S.matchers(hems)[0],
+    { key: 'HIST', values: [], value: '', without: false, notAbove: 'G1' });
+
+  // the cap says who is excluded, not that the class teaches History
+  assert.deepStrictEqual(S.groupSubjectKeys(hems, ['HIST', 'GEOG', 'LIT']), []);
+
+  // G2 caps too: an upper-sec class that keeps everyone but the G3 stream
+  const capG2 = { code: 'Y', level: 'Sec 1', autoMatch: '!HIST>G2' };
+  assert.ok(S.matchesRule(students[3], capG2), 'HIST G2 is not above G2');
+  assert.ok(S.matchesRule(students[4], capG2), 'a cap on HIST says nothing about GEOG');
+
+  // and it fills a class end to end
+  const model = S.emptyModel();
+  model.students = students;
+  model.subjectKeys = ['HIST', 'GEOG', 'LIT'];
+  model.groups = [hems];
+  assert.strictEqual(S.autoFillGroup(model, hems), 3);
+});
+
+test('the band a student is really at, column by column', () => {
+  const s = (pg, v) => ({ pg, subjects: { HIST: v } });
+  assert.strictEqual(S.allocationBand(s('1', 'SS/Hist'), 'HIST'), 'G1', 'from the posting group');
+  assert.strictEqual(S.allocationBand(s('1', 'SS/Hist G3'), 'HIST'), 'G3', 'the cell wins');
+  assert.strictEqual(S.allocationBand(s('2', 'History - G2 - K200'), 'HIST'), 'G2', 'coded cell');
+  assert.strictEqual(S.allocationBand(s('', 'SS/Hist'), 'HIST'), '', 'no PG, no band written');
+  assert.strictEqual(S.allocationBand(s('1', ''), 'HIST'), '', 'nothing in the column');
 });
 
 test('the band written in a cell beats the one the posting group implies', () => {

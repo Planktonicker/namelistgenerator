@@ -151,6 +151,14 @@ for a namelist.
   `POA G3 with AMATH` and `POA G3 without AMATH`, each keeping itself up to
   date. Sec 4 needs none of this: there the subject group already says which
   class a student is in.
+- **The default class.** A class can be built from what its students do *not*
+  take: lower secondary **G1 HEMS** is every PG 1 student except those given a
+  humanities subject at G2 or G3. Under *More filters* → **Another subject**,
+  pick the column, press **not above** and choose **G1** — once for `HIST`,
+  once for `GEOG`, once for `LIT`. A blank column counts as "not above", and a
+  cell with no band written in it is read at the student's posting group, so a
+  PG 1 student whose cell says only `SS/Hist` stays in HEMS. Name it yourself:
+  a class with no subject of its own is only suggested as `Sec 1 PG1`.
 - **The teacher box in a class starts blank.** Pick a name and press **Add** —
   or just press **OK**, which takes the name showing in the box with it.
 - **Trim by hand in the class dialog.** Half a class shared with a colleague is

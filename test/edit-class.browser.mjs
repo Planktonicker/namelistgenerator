@@ -103,6 +103,24 @@ await page.locator('#memCandCheckAll').uncheck();
 check('and clears them again',
   (await page.locator('#memAddSelBtn').innerText()) === 'Add selected');
 
+// the teacher picker: a name chosen in the box but never "Add"-ed
+await page.evaluate(() => { window.__testModel().teachers.push('Mdm Sriwanty'); });
+await page.locator('.tabs button[data-tab="groups"]').click();
+await page.locator('#groupsTable tbody tr').first().locator('button[data-act="edit"]').click();
+check('the teacher box starts blank rather than showing a name nobody chose',
+  (await page.locator('#gfTeacher').inputValue()) === '',
+  await page.locator('#gfTeacher').inputValue());
+await page.selectOption('#gfTeacher', 'Mdm Sriwanty');
+check('it says what is about to happen to the name in the box',
+  (await page.locator('#gfTeacherNote').innerText()).includes('Mdm Sriwanty'),
+  await page.locator('#gfTeacherNote').innerText());
+await page.click('#groupForm button[type="submit"]');
+await page.waitForTimeout(400);
+check('OK adopts the picked teacher even without pressing Add',
+  JSON.stringify(await page.evaluate(() => window.__testModel().groups[0].teachers))
+    .includes('Mdm Sriwanty'),
+  JSON.stringify(await page.evaluate(() => window.__testModel().groups[0].teachers)));
+
 check('no JS errors', errors.length === 0, errors.slice(0, 2).join('|'));
 if (process.env.SHOT) {
   await page.locator('.tabs button[data-tab="groups"]').click();

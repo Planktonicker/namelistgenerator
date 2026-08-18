@@ -151,6 +151,8 @@ for a namelist.
   `POA G3 with AMATH` and `POA G3 without AMATH`, each keeping itself up to
   date. Sec 4 needs none of this: there the subject group already says which
   class a student is in.
+- **The teacher box in a class starts blank.** Pick a name and press **Add** —
+  or just press **OK**, which takes the name showing in the box with it.
 - **Trim by hand in the class dialog.** Half a class shared with a colleague is
   27 matched, four unticked, 23 on the namelist — and the unticked stay out when
   the rule is applied again.

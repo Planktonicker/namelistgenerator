@@ -54,7 +54,7 @@ check('the class is named for you, so OK is all that is left',
 check('the class code is the name — not a second thing to fill in',
   (await page.locator('#gfCodeRow').isHidden()) &&
   (await page.locator('#gfCode').inputValue()) === (await page.locator('#gfName').inputValue()));
-await page.selectOption('#gfTeacher', { index: 0 });
+await page.selectOption('#gfTeacher', { index: 1 });   // 0 is the “pick a teacher” placeholder
 await page.click('#gfTeacherAdd');
 await page.click('#groupForm button[type="submit"]');
 await page.waitForFunction(() => !document.getElementById('groupDialog').open);

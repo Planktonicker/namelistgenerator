@@ -1073,6 +1073,7 @@ dialog .actions {
           <button type="button" id="gfTeacherAdd">Add</button>
           <button type="button" id="gfTeacherNew" title="Add a teacher to the list">New…</button>
         </div>
+        <p class="hint" id="gfTeacherNote" style="margin:6px 0 0" hidden></p>
       </div>
       <label id="gfGraphLabel">Who is in it</label>
       <div>
@@ -6546,18 +6547,32 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     toast('"' + cur + '" removed from the subject list');
   });
 
+  /* A <select> always shows its first option, so a list with no blank entry
+   * shows a teacher's name before anybody has chosen one — and that name is
+   * not in the class. The placeholder makes the box tell the truth. */
   function fillTeacherSelect(selected) {
     var avail = allTeachers().filter(function (t) {
       return !dialogTeachers.some(function (d) { return S.normKey(d) === S.normKey(t); });
     });
     $('gfTeacher').innerHTML = avail.length
-      ? avail.map(function (t) {
+      ? '<option value="">— pick a teacher —</option>' + avail.map(function (t) {
           return '<option value="' + esc(t) + '"' +
             (S.normKey(t) === S.normKey(selected || '') ? ' selected' : '') + '>' + esc(t) + '</option>';
         }).join('')
       : '<option value="">— everyone in the list is already added —</option>';
     $('gfTeacherAdd').disabled = !avail.length;
+    teacherPickNote();
   }
+
+  /* Picking a name and pressing OK without pressing Add lost the teacher
+   * silently. The note says what will happen, and OK takes the pending name. */
+  function teacherPickNote() {
+    var pending = S.norm($('gfTeacher').value);
+    $('gfTeacherNote').hidden = !pending;
+    $('gfTeacherNote').textContent = pending
+      ? pending + ' joins this class when you press Add — or OK.' : '';
+  }
+  $('gfTeacher').addEventListener('change', teacherPickNote);
 
   var dialogClasses = [];
   var dialogRemoved = null;   // members struck out in the dialog, applied on OK
@@ -6676,6 +6691,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   });
   $('groupForm').addEventListener('submit', function (ev) {
     ev.preventDefault();
+    // A name left sitting in the picker is what the admin meant to add.
+    addDialogTeacher();
     var name = S.norm($('gfName').value);
     if (!name) return;
     var code = S.norm($('gfCode').value) || name;
@@ -6716,6 +6733,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     }
     $('groupDialog').close();
     ix = S.buildIndexes(model);
+    /* A search that the saved class does not match would hide it the moment it
+     * is saved, which reads as nothing having happened. The filter steps aside
+     * rather than the class disappearing. */
+    var q = $('groupSearch').value.trim().toLowerCase();
+    if (q && (rec.code + ' ' + rec.name + ' ' + rec.subject + ' ' + rec.level + ' ' +
+      S.teacherNames(rec).join(' ')).toLowerCase().indexOf(q) === -1) {
+      $('groupSearch').value = '';
+    }
     var autoAdded = (isNew || ruleChanged) ? S.autoFillGroup(model, rec) : 0;
     /* Narrowing a rule should be able to drop the members it no longer covers,
      * but that is destructive, so it is asked rather than assumed. */
@@ -6746,7 +6771,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       pendingBulkAdd = false;
       addStudentsToGroup(Array.from(selectedIds), code);
     } else {
-      markDirty('renaming the teacher');
+      markDirty(isNew ? 'creating the class' : 'the class edit');
     }
     if (autoAdded || removed) {
       toast([
@@ -6783,7 +6808,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if (!group || !S.groupHasRule(group)) return;
     var added = S.autoFillGroup(model, group);
     if (added) {
-      markDirty('removing the teacher');
+      markDirty('the auto-fill');
       toast(added + ' student' + (added === 1 ? '' : 's') + ' added by rule (' + ruleSummary(group) + ')');
     } else {
       toast('Everyone matching the rule is already in this group');
@@ -6878,7 +6903,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var id = btn.closest('tr').dataset.id;
     var code = selectedGroupCode();
     model.memberships = model.memberships.filter(function (m) { return !(m.studentId === id && m.groupCode === code); });
-    markDirty('the class list for that teacher');
+    markDirty('taking them off the class');
   });
 
   $('memAddSelBtn').addEventListener('click', function () {
@@ -6948,7 +6973,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       model.teachers.push(to);
       toast(to + ' added — now give them their classes');
     }
-    markDirty('taking them off the class');
+    markDirty(from ? 'renaming the teacher' : 'adding the teacher');
   }
 
   /* Start of year: forty names arrive in one message, not one at a time. */
@@ -6991,7 +7016,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     $('pasteTeachersDialog').close();
     if (!fresh.length) { toast('No new names in that list'); return; }
     fresh.forEach(function (name) { model.teachers.push(name); });
-    markDirty('marking them as left');
+    markDirty('adding the teachers');
     toast(fresh.length + ' teacher(s) added — give them their classes with “Classes…”');
   });
 
@@ -7058,7 +7083,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         g.teachers = S.teacherNames(g).filter(function (t) { return S.normKey(t) !== S.normKey(name); });
       });
       model.teachers = (model.teachers || []).filter(function (t) { return S.normKey(t) !== S.normKey(name); });
-      markDirty('the class edit');
+      markDirty('removing the teacher');
     }
   });
 
@@ -7189,7 +7214,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     });
     $('teacherClassesDialog').close();
     if (added || dropped) {
-      markDirty('adding the students');
+      markDirty('the class list for that teacher');
       toast(tcTeacher + ': ' + (added ? added + ' class(es) added' : '') +
         (added && dropped ? ', ' : '') + (dropped ? dropped + ' removed' : ''));
     }
@@ -7244,7 +7269,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     req.status = status;
     req.decided = new Date().toISOString();
     if (note) req.note = note;
-    markDirty('removing from the class');
+    markDirty('the request decision');
   }
 
   function renderRequests() {
@@ -7558,7 +7583,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     addDefaultLevels();
     var added = model.sources.length - before;
     if (!added) { toast('Sec 1–5 are already listed'); return; }
-    markDirty('putting them in the class');
+    markDirty('adding the levels');
     toast(added + ' level' + (added === 1 ? '' : 's') + ' added — now pick each one\'s file');
   });
 
@@ -7582,7 +7607,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       model.sources.push({ level: level, file: '', pattern: '', lastFile: '', lastImported: '', mapping: '' });
     }
     $('sourceDialog').close();
-    markDirty('taking them off the class');
+    markDirty(prev ? 'renaming the level' : 'adding the level');
     if (!prev) openPickFileDialog(model.sources.length - 1);
   });
 
@@ -7647,7 +7672,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     src.pattern = S.derivePattern(name);
     $('pickFileDialog').close();
     pickingIndex = null;
-    markDirty('the request decision');
+    markDirty('choosing the file');
     var entry = S.findByName(srcFiles, name);
     if (entry) runLevelUpdate(index, entry);   // advances to the next level once it finishes
   });

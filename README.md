@@ -491,7 +491,9 @@ an email (one name per line, numbering and stray commas tolerated) and adds only
 the names that are new. Click any name to change it
 (the app asks you to confirm before saving, since **renaming one updates every
 class it is tagged to**). **Classes…** on a teacher's row hands them their
-classes after the fact. The classes are **grouped under their level** — Sec 1's
+classes after the fact. In the class dialog the teacher box starts blank — it
+never shows a name nobody has chosen — and a name picked there is added by
+**Add** or, if you go straight past it, by **OK**. The classes are **grouped under their level** — Sec 1's
 under a Sec 1 heading, Sec 4's under Sec 4 — each a tick box with its size, and
 the level is not repeated on every chip. Narrow further by subject or level with
 the two dropdowns; the list scrolls in its own box, and the line underneath says

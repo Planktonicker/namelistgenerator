@@ -1,7 +1,7 @@
 /* The teacher page: pick your name from a list, chips for your classes, and a
  * browsable list of every class in the school. */
 import { chromium } from 'playwright';
-import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -213,6 +213,25 @@ check('a student name finds the classes that student is in',
   await page.locator('#allCount').innerText());
 check('and says which student matched',
   (await page.locator('#allResults .card').first().innerText()).includes('Grace Koh'));
+
+/* The data file sits beside this page in a flat folder, and in Data\ in the
+ * tidier one. Both have to work, because a folder is one or the other. */
+const tidy = mkdtempSync(join(tmpdir(), 'namelist-tidy-'));
+mkdirSync(join(tidy, 'Data'));
+copyFileSync(join(repo, 'dist/namelist.html'), join(tidy, 'namelist.html'));
+copyFileSync(join(repo, 'sample/data.js'), join(tidy, 'Data', 'data.js'));
+const tidyPage = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+tidyPage.on('pageerror', (e) => errors.push(String(e)));
+await tidyPage.goto('file://' + tidy + '/namelist.html');
+await tidyPage.waitForTimeout(400);
+check('the page finds its data in a Data folder, with nothing beside it',
+  !(await tidyPage.locator('#app').isHidden()) &&
+  (await tidyPage.locator('#errorState').isHidden()));
+check('and reads the same roll from there',
+  (await tidyPage.locator('#teacherOptions li').count()) === 0 &&
+  (await tidyPage.evaluate(() => window.NAMELIST_DATA.students.length)) === 156,
+  await tidyPage.evaluate(() => window.NAMELIST_DATA.students.length) + '');
+await tidyPage.close();
 
 check('no JS errors', errors.length === 0, errors.slice(0, 2).join('|'));
 await browser.close();

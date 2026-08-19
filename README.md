@@ -26,20 +26,39 @@ over to a new year.
 
 ## The deployed folder
 
-Copy the two files from `dist/` into your shared folder. After the first save it looks like:
+Copy the two files from `dist/` into your shared folder. After the first save it
+looks like this — everything the app writes in a `Data` folder, so somebody
+opening the drive sees two files rather than a pile:
 
 ```
 Namelist/
+  Data/
+    namelist.xlsx    ← master data (regenerated on every save)
+    data.js          ← auto-generated snapshot that makes the teacher page zero-click
+    backups/         ← timestamped .xlsx backup written on every save
+    presence/        ← who else has the editor open
+    requests/        ← what teachers have dropped off
   namelist.html      ← teacher view (this is what the shortcut points at)
   admin.html         ← admin editor
-  namelist.xlsx      ← master data (regenerated on every save)
-  data.js            ← auto-generated snapshot that makes the teacher page zero-click
-  backups/           ← timestamped .xlsx backup written on every save
 ```
+
+**A flat folder works just as well**, and is what a folder set up before this
+existed looks like — the same files sitting beside the two pages. The editor
+uses `Data` when it is there and the folder itself when it is not, so a page
+copied in never breaks a folder that has not been rearranged.
+
+**Moving an existing folder over:** *Tidy the folder…* in the editor's topbar,
+which appears only while a folder is flat. It saves, takes a backup, copies
+everything into `Data`, and only then removes the originals — a failure halfway
+leaves the folder exactly as it was. It refuses while another admin has the
+folder open. **Copy the new `namelist.html` in as well**: an older one only
+looks for `data.js` beside itself, and teachers would see *"No data found"*.
 
 `data.js` exists because browsers forbid a double-clicked HTML page from silently
 reading a neighbouring .xlsx. The admin page therefore writes this small snapshot
-alongside the Excel on every save; the teacher page auto-loads it. As long as all
+alongside the Excel on every save; the teacher page auto-loads it — it carries a
+tag for each place the file can be, and the one that is not there simply does not
+run. As long as all
 edits go through `admin.html`, the two can never drift apart.
 
 ## Setting up (admin, once)

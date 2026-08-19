@@ -692,9 +692,10 @@ dialog .actions {
 <main>
   <div id="errorState" class="card" hidden>
     <h2>No data found</h2>
-    <p>This page could not find its data file (<code>data.js</code>) in the same folder.</p>
+    <p>This page could not find its data file (<code>data.js</code>) — it looks for one beside
+      itself, and one in a <code>Data</code> folder next to it.</p>
     <p class="muted">If you are the administrator: open <code>admin.html</code>, load or create the data,
-      and press <strong>Save</strong> — that regenerates <code>data.js</code> next to this page.
+      and press <strong>Save</strong> — that regenerates <code>data.js</code> where this page looks.
       Otherwise, please contact your administrator.</p>
   </div>
 
@@ -805,7 +806,7 @@ dialog .actions {
     <div class="send-ways">
       <button class="primary" id="sendCopyBtn">Copy for email</button>
       <button id="sendFileBtn">Save as a file</button>
-      <button id="sendFolderBtn" hidden>Save into the namelist folder</button>
+      <button id="sendFolderBtn" hidden>Save into the namelist folder</button><!-- pick the folder holding these pages -->
     </div>
     <p class="hint" id="sendResult"></p>
     <div class="actions">
@@ -815,7 +816,11 @@ dialog .actions {
   </dialog>
 </main>
 
+<!-- The data file sits beside this page in a flat folder, and in Data\ in the
+     tidier one. A missing file simply does not run, so both tags are safe and
+     whichever exists wins; Data\ is second so it beats a stale flat copy. -->
 <script src="data.js"></script>
+<script src="Data/data.js"></script>
 <!-- SheetJS is here for the Export tab only. It is most of this page's weight,
      and the price of keeping the page one self-contained file. -->
 <script>
@@ -4261,7 +4266,12 @@ window.Tour = (function () {
   $('sendFolderBtn').addEventListener('click', async function () {
     try {
       var dir = await window.showDirectoryPicker({ mode: 'readwrite' });
-      var sub = await dir.getDirectoryHandle('requests', { create: true });
+      /* Pick the folder holding the pages; the requests folder is inside Data\
+       * when that is how this copy is laid out, and beside them when it is not.
+       * Getting this wrong drops the file where the editor never looks. */
+      var root = dir;
+      try { root = await dir.getDirectoryHandle('Data'); } catch (e) { /* flat */ }
+      var sub = await root.getDirectoryHandle('requests', { create: true });
       var h = await sub.getFileHandle(fileStem() + '-' + Date.now().toString(36) + '.txt',
         { create: true });
       var w = await h.createWritable();

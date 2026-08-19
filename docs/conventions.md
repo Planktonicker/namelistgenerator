@@ -191,6 +191,10 @@ for a namelist.
   searches on anything in a row, filters by level, subject and teacher, and
   sorts on any column header you click. **No teacher yet** in the teacher
   filter lists the classes still waiting to be given out.
+- **Keep the folder tidy.** Everything the app writes belongs in a `Data`
+  folder, so a teacher opening the drive sees two files rather than a pile.
+  *Tidy the folder…* in the topbar does the move, and only shows while there is
+  something to move. Copy the new `namelist.html` in at the same time.
 - **Watch *Check these***. It reports students who take a subject with no class
   for it, columns that look mislabelled, and possible duplicate students.
 - **The printed namelist is a mark sheet.** Beside the names it prints equal
@@ -241,8 +245,8 @@ The cleanest way, and the one to plan for:
    `Namelist 2026 (archive)`. Nothing is lost, and last year's namelists stay
    printable.
 2. **Start the new year empty.** Delete `namelist.xlsx` and `data.js` from the
-   working folder (or make a fresh folder with the two HTML files) and open
-   `admin.html`. It offers the level files walkthrough on first run.
+   `Data` folder (or wherever they sit, if this folder has not been tidied), or
+   make a fresh folder with the two HTML files, and open `admin.html`. It offers the level files walkthrough on first run.
 3. **Point the five levels at the new files** — Sec 1 to Sec 5 in turn. Each is
    imported, and the column review appears once per level so you can confirm
    what it found.

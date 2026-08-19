@@ -838,7 +838,8 @@ dialog .actions {
         Your browser will ask you to allow this page to <strong>edit files</strong> in that folder — choose Allow.</p>
       <p class="muted small">You will be asked once per session. Every Save writes three things:
         the Excel master file, the <code>data.js</code> snapshot the teacher page reads, and a timestamped
-        backup in <code>backups/</code>. Use the app's own folder here — <strong>not</strong> the folder
+        backup in <code>backups/</code> — in a <code>Data</code> folder if this folder has one, and
+        beside the pages if it does not. Use the app's own folder here — <strong>not</strong> the folder
         holding the school's official files; those are only ever opened read-only, via the
         School files tab.</p>
       <div class="unsupported" id="unsupportedNote" hidden>
@@ -860,17 +861,17 @@ dialog .actions {
   <section id="setupScreen" hidden>
     <div class="card">
       <h2>Set up this folder</h2>
-      <p>Folder: <span class="badge" id="setupFolderName"></span> — no <code>namelist.xlsx</code> here yet.</p>
+      <p>Folder: <span class="badge" id="setupFolderName"></span> — no <code>namelist.xlsx</code> there yet.</p>
       <p>Tell the app which file in the school's folder is each level's namelist, Sec 1 to Sec 5.
         The files can be named anything, they are only ever <strong>read</strong>, and your choice
         is shared with every other admin.</p>
       <p><button class="primary bigbtn" id="setupLevelsBtn">Choose the level files (Sec 1–5)…</button></p>
       <p class="muted small">Nothing is written until you press <strong>Save</strong> — and that
-        creates <code>namelist.xlsx</code> and <code>data.js</code> right here.</p>
+        creates <code>namelist.xlsx</code> and <code>data.js</code> where the badge above says.</p>
       <div class="notice" id="setupCarryOn" hidden>
         <span id="setupCarryOnText"></span>
         <button id="setupAdoptBtn">Use an existing namelist.xlsx…</button>
-        <button id="setupRecoverBtn" hidden>Rebuild from the data.js here</button>
+        <button id="setupRecoverBtn" hidden>Rebuild from the data.js found</button>
       </div>
       <details>
         <summary class="small">Other ways to start</summary>
@@ -892,6 +893,8 @@ dialog .actions {
         <span class="muted small" id="dirtyNote"></span>
         <button class="statchip" id="presenceChip" hidden></button>
         <button class="statchip" id="mergedNote" hidden title="What has come in from other admins"></button>
+        <button class="statchip" id="tidyFolderBtn" hidden
+          title="Move namelist.xlsx, data.js and the app's folders into a Data folder">Tidy the folder…</button>
       </div>
       <span class="spacer"></span>
       <div class="topbar-actions">
@@ -4521,11 +4524,38 @@ window.Tour = (function () {
     rememberHandle('dataDir', handle);
   });
 
+  /* ---- where this app's own files live ---------------------------------
+   * Two shapes are real. A folder set up before this existed is flat — the
+   * workbook, data.js and the app's subfolders sit beside the two pages. The
+   * tidier one puts all of that in Data\, leaving a teacher looking at two
+   * files rather than a pile.
+   *
+   * dirHandle keeps meaning THE FOLDER THAT WAS PICKED, and the data folder is
+   * derived from it on every load. Persisting the Data\ handle instead would
+   * break three things at once: the picker cannot hand back a subfolder, a
+   * permission granted on a child does not cover its parent, and the reconnect
+   * check compares the saved handle's name against the folder holding
+   * admin.html — which would then differ on every correct install. */
+  var DATA_FOLDER = 'Data';
+  var dataDir = null;        // where the app writes; dirHandle when flat
+
+  async function resolveDataDir(root) {
+    try { return await root.getDirectoryHandle(DATA_FOLDER); }   // never create
+    catch (e) { return root; }
+  }
+
+  function usingDataFolder() { return !!dataDir && dataDir !== dirHandle; }
+
+  function folderLabel() {
+    return dirHandle ? dirHandle.name + (usingDataFolder() ? ' \u203a ' + DATA_FOLDER : '') : '';
+  }
+
   async function useDataFolder(handle) {
     dirHandle = handle;
-    $('folderMeta').textContent = 'Folder: ' + dirHandle.name;
-    $('folderName').textContent = dirHandle.name;
-    $('setupFolderName').textContent = dirHandle.name;
+    dataDir = await resolveDataDir(handle);
+    $('folderMeta').textContent = 'Folder: ' + folderLabel();
+    $('folderName').textContent = folderLabel();
+    $('setupFolderName').textContent = folderLabel();
     await loadFromFolder();
   }
 
@@ -4593,24 +4623,27 @@ window.Tour = (function () {
   async function loadFromFolder() {
     resetSessionState();
     try {
-      fileHandle = await dirHandle.getFileHandle('namelist.xlsx');
+      fileHandle = await dataDir.getFileHandle('namelist.xlsx');
     } catch (e) {
       fileHandle = null;
-      // Guard against someone picking the school's official records folder as
-      // the app's data folder. Even then no existing file would ever be
-      // touched (the app only writes namelist.xlsx, data.js and backups/),
-      // but the app should live in its own folder.
+      /* Two different questions, which used to share one loop over one folder.
+       * "Have you pointed me at the school's records?" is about the folder that
+       * was PICKED. "Is there a data.js here to rebuild from?" is about the
+       * data folder, which may be Data\ inside it. */
       var foreign = [];
       var strayDataJs = false;
       try {
         for await (var entry of dirHandle.values()) {
           if (entry.kind !== 'file') continue;
-          if (/^data\.js$/i.test(entry.name)) strayDataJs = true;
           if (/\.(xlsx|xls|xlsm|csv)$/i.test(entry.name) && !/^~\$/.test(entry.name)) {
             foreign.push(entry.name);
           }
         }
       } catch (scanErr) { /* folder scan is best-effort */ }
+      try {
+        await dataDir.getFileHandle('data.js');
+        strayDataJs = true;
+      } catch (noDataJs) { /* nothing here to rebuild from */ }
       if (foreign.length) {
         var ok = confirm('Careful — this folder has no namelist.xlsx yet, but contains ' + foreign.length +
           ' other spreadsheet(s), e.g.:\n' + foreign.slice(0, 3).join('\n') +
@@ -4858,7 +4891,7 @@ window.Tour = (function () {
    * own file when the workbook has been lost, minus the school-file settings. */
   $('setupRecoverBtn').addEventListener('click', async function () {
     try {
-      var handle = await dirHandle.getFileHandle('data.js');
+      var handle = await dataDir.getFileHandle('data.js');
       var text = await (await handle.getFile()).text();
       var win = {};
       new Function('window', text)(win);
@@ -4953,7 +4986,7 @@ window.Tour = (function () {
   async function writeBackup(file) {
     if (!file.size) return;
     var bytes = await file.arrayBuffer();
-    var dir = await dirHandle.getDirectoryHandle('backups', { create: true });
+    var dir = await dataDir.getDirectoryHandle('backups', { create: true });
     var name = 'namelist-' + stamp(new Date(file.lastModified)) + '.xlsx';
     var h = await dir.getFileHandle(name, { create: true });
     await writeFile(h, bytes);
@@ -5196,7 +5229,7 @@ window.Tour = (function () {
     if (Date.now() - lastBeat < PRESENCE_BEAT) return;
     lastBeat = Date.now();
     try {
-      var dir = await dirHandle.getDirectoryHandle('presence', { create: true });
+      var dir = await dataDir.getDirectoryHandle('presence', { create: true });
       var h = await dir.getFileHandle(meId + '.txt', { create: true });
       await writeFile(h, JSON.stringify({ name: myName, at: Date.now(), tab: currentTab }));
       var seen = [];
@@ -5244,7 +5277,7 @@ window.Tour = (function () {
   window.addEventListener('pagehide', function () {
     if (!dirHandle) return;
     // best effort: sign off so nobody sees a ghost for the next minute
-    dirHandle.getDirectoryHandle('presence').then(function (dir) {
+    dataDir.getDirectoryHandle('presence').then(function (dir) {
       return dir.removeEntry(meId + '.txt');
     }).catch(function () { /* nothing to clean up */ });
   });
@@ -5311,7 +5344,7 @@ window.Tour = (function () {
          * with no backup, which is exactly what used to happen. */
         var existing = null;
         try {
-          existing = await dirHandle.getFileHandle('namelist.xlsx');
+          existing = await dataDir.getFileHandle('namelist.xlsx');
         } catch (notFound) {
           existing = null;
         }
@@ -5344,12 +5377,12 @@ window.Tour = (function () {
             }
           }
         }
-        fileHandle = await dirHandle.getFileHandle('namelist.xlsx', { create: true });
+        fileHandle = await dataDir.getFileHandle('namelist.xlsx', { create: true });
       }
       var wb = S.modelToWorkbook(model);
       var bytes = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       await writeFile(fileHandle, bytes);
-      var dj = await dirHandle.getFileHandle('data.js', { create: true });
+      var dj = await dataDir.getFileHandle('data.js', { create: true });
       await writeFile(dj, S.modelToDataJs(model, new Date().toISOString()));
       loadedLastModified = (await fileHandle.getFile()).lastModified;
       noteBase();          // what we just wrote is the new common ancestor
@@ -5444,6 +5477,9 @@ window.Tour = (function () {
       clearTimeout(autosaveTimer);
     }
     renderDirtyNote();
+    // The first save is what creates a workbook to tidy away, so the offer to
+    // do it can only appear once a save has happened.
+    renderTidyBtn();
     document.title = (v ? '● ' : '') + 'Namelist Admin';
   }
 
@@ -5573,7 +5609,7 @@ window.Tour = (function () {
       body: '<p>This builds the class lists teachers see, out of the files the office sends.</p>' +
         '<p>Two things worth knowing before anything else. <strong>The school\u2019s own files are ' +
         'only ever read</strong> \u2014 this app cannot write to them, by design. And everything it ' +
-        'does write goes in this one folder, beside these pages.</p>',
+        'does write goes in the one folder named at the top left, and nowhere else.</p>',
     },
     {
       el: '.tabs button[data-tab="students"]',
@@ -5631,6 +5667,93 @@ window.Tour = (function () {
 
   $('tourBtn').addEventListener('click', function () { Tour.start(TOUR_STEPS); });
 
+  /* ---- moving the data into Data\ ------------------------------------
+   * A folder set up before this existed has the workbook, data.js and three
+   * app folders sitting beside the two pages, so a teacher opening it sees a
+   * pile and has to know which two to click. This puts all of it in Data\.
+   *
+   * Copy first, delete after — never a move in place. A failure halfway leaves
+   * the original where it is and the app still finds it. */
+
+  function renderTidyBtn() {
+    $('tidyFolderBtn').hidden = !dirHandle || usingDataFolder() || !fileHandle;
+  }
+
+  async function copyFileInto(fromDir, toDir, name) {
+    var src = await fromDir.getFileHandle(name);
+    var bytes = await (await src.getFile()).arrayBuffer();
+    await writeFile(await toDir.getFileHandle(name, { create: true }), bytes);
+  }
+
+  /* Everything inside one of the app's own folders, one level deep — that is
+   * all any of them ever holds. */
+  async function copyFolderInto(fromDir, toDir, name) {
+    var from;
+    try { from = await fromDir.getDirectoryHandle(name); } catch (e) { return 0; }
+    var to = await toDir.getDirectoryHandle(name, { create: true });
+    var moved = 0;
+    var names = [];
+    for await (var entry of from.values()) {
+      if (entry.kind === 'file') names.push(entry.name);
+    }
+    for (var i = 0; i < names.length; i++) {
+      await copyFileInto(from, to, names[i]);
+      moved++;
+    }
+    return moved;
+  }
+
+  $('tidyFolderBtn').addEventListener('click', function () {
+    if (othersHere.length) {
+      alert('Someone else has this folder open (' +
+        othersHere.map(function (p) { return S.norm(p.name) || 'someone'; }).join(', ') +
+        ').\n\nMoving the files while they are working would pull the folder out from ' +
+        'under them. Try again once they have closed it.');
+      return;
+    }
+    if (!confirm('Move this app\u2019s files into a "' + DATA_FOLDER + '" folder?\n\n' +
+      'namelist.xlsx, data.js, backups, presence and requests all move in. ' +
+      'The two pages stay where they are.\n\n' +
+      'A backup is taken first, and nothing is deleted until the copy has worked.\n\n' +
+      'AFTERWARDS: copy the new namelist.html in as well. An older one only ' +
+      'looks for data.js beside itself, and teachers would see "No data found".')) return;
+    withBusy(tidyIntoDataFolder).catch(function (err) {
+      alert('The move stopped and nothing was deleted: ' + err.message +
+        '\n\nThe folder is as it was.');
+    });
+  });
+
+  async function tidyIntoDataFolder() {
+    if (dirty) await saveInner({ silent: true });
+    var current = await fileHandle.getFile();
+    await writeBackup(current);
+
+    var target = await dirHandle.getDirectoryHandle(DATA_FOLDER, { create: true });
+    await copyFileInto(dirHandle, target, 'namelist.xlsx');
+    try { await copyFileInto(dirHandle, target, 'data.js'); } catch (e) { /* first save not done */ }
+    var carried = 0;
+    carried += await copyFolderInto(dirHandle, target, 'backups');
+    carried += await copyFolderInto(dirHandle, target, 'presence');
+    carried += await copyFolderInto(dirHandle, target, 'requests');
+
+    /* Only now that everything is in the new place. removeEntry on a folder
+     * needs recursive, and a folder that was never there is not an error. */
+    await dirHandle.removeEntry('namelist.xlsx').catch(function () {});
+    await dirHandle.removeEntry('data.js').catch(function () {});
+    for (var i = 0, subs = ['backups', 'presence', 'requests']; i < subs.length; i++) {
+      await dirHandle.removeEntry(subs[i], { recursive: true }).catch(function () {});
+    }
+
+    dataDir = target;
+    $('folderMeta').textContent = 'Folder: ' + folderLabel();
+    $('folderName').textContent = folderLabel();
+    $('setupFolderName').textContent = folderLabel();
+    fileHandle = await dataDir.getFileHandle('namelist.xlsx');
+    renderTidyBtn();
+    toast('Moved into ' + DATA_FOLDER + '\\ \u2014 ' + (carried + 2) + ' files. ' +
+      'Copy the new namelist.html in too, or teachers will see \u201cNo data found\u201d.');
+  }
+
   /* ================= printing ================= */
 
   function printGroupSheet(group) {
@@ -5672,6 +5795,7 @@ window.Tour = (function () {
 
     refreshCoverageIssue();
     renderWarnings();
+    renderTidyBtn();
 
     fillOptions($('studentLevelFilter'), uniqueValues('level'), 'All levels');
     fillOptions($('studentClassFilter'), uniqueValues('class'), 'All classes');
@@ -8692,7 +8816,7 @@ window.Tour = (function () {
     if (!dirHandle) return 0;
     var dir;
     try {
-      dir = await dirHandle.getDirectoryHandle('requests');
+      dir = await dataDir.getDirectoryHandle('requests');
     } catch (e) {
       if (!quiet) toast('No requests folder here yet — teachers can email you their requests instead');
       return 0;

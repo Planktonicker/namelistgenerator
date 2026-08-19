@@ -37,8 +37,8 @@ await page.waitForTimeout(400);
 
 check('it introduces itself the first time the page is opened',
   await page.locator('.tour-bubble').isVisible());
-check('starting at step one of five',
-  (await page.locator('.tour-count').innerText()) === '1 of 5',
+check('starting at step one of six',
+  (await page.locator('.tour-count').innerText()) === '1 of 6',
   await page.locator('.tour-count').innerText());
 check('the first step says the page changes nothing',
   (await page.locator('.tour-body').innerText()).toLowerCase().includes('read-only'));
@@ -60,9 +60,10 @@ check('and the highlight sits over it, not somewhere else',
 await page.keyboard.press('ArrowLeft');
 await page.waitForTimeout(250);
 check('arrow keys walk back and forward',
-  (await page.locator('.tour-count').innerText()) === '1 of 5');
+  (await page.locator('.tour-count').innerText()) === '1 of 6',
+  await page.locator('.tour-count').innerText());
 
-for (let i = 0; i < 4; i++) { await page.click('.tour-next'); await page.waitForTimeout(200); }
+for (let i = 0; i < 5; i++) { await page.click('.tour-next'); await page.waitForTimeout(200); }
 check('the last step offers Done rather than Next',
   (await page.locator('.tour-next').innerText()) === 'Done');
 await page.click('.tour-next');

@@ -37,8 +37,10 @@ await page.goto('file://' + demo + '/namelist.html');
 await page.evaluate(() => localStorage.clear());
 await page.reload();
 
-check('two tabs: my namelists and every class',
-  (await page.locator('.tabs button').allInnerTexts()).join('|') === 'My namelists|All classes');
+check('three tabs: my namelists, every class, and the Excel export',
+  (await page.locator('.tabs button').allInnerTexts()).join('|') ===
+    'My namelists|All classes|Export to Excel',
+  (await page.locator('.tabs button').allInnerTexts()).join('|'));
 
 // --- tab 1: type-to-search the staff list, then chips ---
 await page.click('#teacherOpen');

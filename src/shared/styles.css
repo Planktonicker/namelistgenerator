@@ -512,6 +512,21 @@ dialog .actions {
   border: none; box-shadow: none; padding: 0; margin-bottom: 18px;
 }
 
+/* A link that sits among buttons without pretending to be one. */
+.headerlink {
+  font: inherit; font-size: var(--fs-sm); color: var(--accent); text-decoration: none;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  padding: 5px 10px; background: var(--surface); white-space: nowrap;
+}
+.headerlink:hover { background: var(--accent-soft); }
+
+/* The export tab: three numbered questions, then what they add up to. */
+.subhead {
+  margin: var(--sp-5) 0 var(--sp-2); font-size: var(--fs-xs); font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+}
+.ex-count { margin: var(--sp-5) 0 var(--sp-2); font-size: var(--fs-md); }
+
 /* A quiet way back into the walk-through, on the dark header. */
 .headerbtn {
   background: rgba(255, 255, 255, 0.14); color: var(--accent-ink);

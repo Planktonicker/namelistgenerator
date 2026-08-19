@@ -124,6 +124,10 @@ for a namelist.
 
 ## Part 2 — the admin, in the app
 
+- **Export to Excel** is the third tab on the teacher page — pick who goes in,
+  what makes a tab, and which columns, and it writes a workbook to Downloads.
+  A Summary tab records the filters, so a file found later explains itself. The
+  editor's **Namelist page ↗** link opens it in a new tab.
 - **Let it show you round once.** The first time either page is opened it walks
   through itself, pointing at the real buttons. The **?** in the topbar (and
   **Show me around** on the teacher page) brings it back whenever somebody new

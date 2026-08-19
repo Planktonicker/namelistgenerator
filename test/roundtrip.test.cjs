@@ -1223,6 +1223,86 @@ test('the band a student is really at, column by column', () => {
   assert.strictEqual(S.allocationBand(s('1', ''), 'HIST'), '', 'nothing in the column');
 });
 
+test('sheet names Excel will actually open', () => {
+  const taken = {};
+  /* Excel refuses the whole workbook if one name is wrong, and says nothing
+   * useful about which. Every rule here has bitten a real file. */
+  assert.strictEqual(S.exportSheetName('SS/Hist G2 A/BC', taken), 'SS Hist G2 A BC',
+    'a slash is illegal in a sheet name and arrives in every subject label');
+  assert.strictEqual(S.exportSheetName('History', taken), 'History list',
+    'Excel reserves "History", and a humanities export produces it');
+  assert.strictEqual(S.exportSheetName('', taken), 'Sheet', 'a blank name is refused too');
+  assert.strictEqual(S.exportSheetName("'quoted'", taken), 'quoted',
+    'a name cannot start or end with an apostrophe');
+  assert.ok(S.exportSheetName('a'.repeat(60), taken).length <= 31);
+
+  // truncation before the suffix, or two long names collide after being cut
+  const t2 = {};
+  const a = S.exportSheetName('Sec 3 Social Studies History G2 Tutorial A', t2);
+  const b = S.exportSheetName('Sec 3 Social Studies History G2 Tutorial B', t2);
+  assert.notStrictEqual(a, b, 'two long names must not truncate onto each other');
+  assert.ok(a.length <= 31 && b.length <= 31);
+
+  // uniqueness ignores case, because Excel does
+  const t3 = {};
+  assert.strictEqual(S.exportSheetName('1R1', t3), '1R1');
+  assert.strictEqual(S.exportSheetName('1r1', t3), '1r1 2');
+});
+
+test('splitting a roll into sheets loses nobody', () => {
+  const model = buildSampleModel();
+  const all = model.students;
+  ['', 'class', 'level', 'pg', 'tg'].forEach((by) => {
+    const sheets = S.splitStudents(model, all, by);
+    const ids = [].concat.apply([], sheets.map((x) => x.students.map((s) => s.id)));
+    assert.strictEqual(ids.length, all.length, by + ': every student appears once');
+    assert.strictEqual(new Set(ids).size, all.length, by + ': and only once');
+    assert.ok(sheets.every((x) => x.label), by + ': every sheet is named');
+  });
+  assert.strictEqual(S.splitStudents(model, all, '').length, 1, 'one sheet means one sheet');
+  assert.ok(S.splitStudents(model, all, 'class').length > 1, 'by class gives one per class');
+
+  /* Splitting by class or by teacher is a different shape: somebody in three
+   * classes belongs on three sheets, and somebody in none must still land
+   * somewhere rather than being quietly dropped. */
+  const byGroup = S.splitStudents(model, all, 'group');
+  const placed = new Set([].concat.apply([], byGroup.map((x) => x.students.map((s) => s.id))));
+  assert.strictEqual(placed.size, all.length, 'nobody vanishes when splitting by class');
+  const loose = byGroup.filter((x) => x.label === '(in no class)')[0];
+  const inNoClass = all.filter((s) => !model.memberships.some((m) => m.studentId === s.id));
+  assert.strictEqual(loose ? loose.students.length : 0, inNoClass.length,
+    'students in no class get their own sheet rather than disappearing');
+});
+
+test('the exported workbook opens, with the tabs and rows asked for', () => {
+  const model = buildSampleModel();
+  const sheets = S.splitStudents(model, model.students, 'class');
+  const wb = S.exportWorkbook(model, sheets, {
+    columns: ['sn', 'class', 'name', 'gender', 's:EL'],
+    splitLabel: 'Form class', filterNote: 'Level 1', madeAt: '2026-08-18',
+  });
+  const bytes = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const back = XLSX.read(bytes, { type: 'array' });
+
+  assert.strictEqual(back.SheetNames[0], 'Summary', 'the summary comes first');
+  assert.strictEqual(back.SheetNames.length, sheets.length + 1);
+  assert.ok(back.SheetNames.every((n) => n.length <= 31 && !/[\\\/\?\*\[\]:]/.test(n)),
+    'every tab name survived: ' + back.SheetNames.join(', '));
+
+  const first = sheets[0];
+  const rows = XLSX.utils.sheet_to_json(back.Sheets[back.SheetNames[1]], { header: 1 });
+  assert.deepStrictEqual(rows[0], ['S/N', 'Class', 'Name', 'Gender', 'EL'],
+    'the header is the columns that were asked for, in order');
+  assert.strictEqual(rows.length - 1, first.students.length, 'one row per student');
+  assert.strictEqual(rows[1][2], first.students[0].name);
+
+  const summary = XLSX.utils.sheet_to_json(back.Sheets.Summary, { header: 1 });
+  const flat = JSON.stringify(summary);
+  assert.ok(flat.includes('Form class') && flat.includes('Level 1'),
+    'the summary records what the export was and what it left out');
+  assert.ok(flat.includes(String(model.students.length)), 'and the total it came to');
+});
+
 test('the band written in a cell beats the one the posting group implies', () => {
   const mk = (id, pg, sci) => ({ id, name: id, class: '3E1', level: 'Sec 3', gender: 'M',
     pg, tg: '', sn: '', origin: 'file', sourceName: id, status: '', subjects: { SCI: sci } });

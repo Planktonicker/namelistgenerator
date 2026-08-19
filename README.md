@@ -502,6 +502,40 @@ Saving a class that the search or a filter would then hide clears them instead
 — a class disappearing the instant you save it reads as nothing having been
 saved.
 
+### Export to Excel
+
+The third tab on `namelist.html`. Three questions, with a running count between
+them, so a wrong filter shows up before the file exists rather than after it has
+gone round the department:
+
+1. **Who goes in** — level, class, PG, TG/SG, teacher, subject and allocation,
+   and a search box. Students marked as having left are out unless asked for.
+2. **One sheet per…** — everything on one sheet, form class, level, PG, TG/SG,
+   teaching group, or teacher. A student in three teaching groups appears on
+   three tabs, and the count says so.
+3. **Which columns each row carries** — the fixed ones and any subject column,
+   written in the order the columns are declared rather than the order they were
+   ticked, so every workbook reads the same way.
+
+**Download the workbook** writes it into Downloads through a Blob — the one
+file-writing route that needs no folder permission at all. A **Summary** tab
+goes in first: every tab, its size, and the filters the export was made under,
+so somebody handed the file three weeks later can see what it is and what it
+left out.
+
+**Sheet names are the part that would break it.** Excel refuses a whole workbook
+if any tab name is over 31 characters, contains `\ / ? * [ ] :` — which
+`SS/Hist` does every time — duplicates another compared without case, or is
+literally `History`, which Excel reserves and which a humanities department
+produces on its first export. Truncation happens *before* the uniqueness suffix,
+or two long class names cut down to the same 31 characters and the file will not
+open. The preview shows the name Excel will actually give each tab, marked
+**renamed** where it differs, with the original beside it.
+
+The teacher page carries SheetJS for this, which is most of its 1.1 MB. The
+editor links to the page (**Namelist page ↗**) and opens it in a new tab, since
+the editor holds unsaved work.
+
 ### The walk-through
 
 Neither page is opened by somebody who asked for it. A teacher is handed a

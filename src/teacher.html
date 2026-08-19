@@ -109,6 +109,7 @@
     <div class="tabs no-print">
       <button id="tabTeacherBtn" class="active">My namelists</button>
       <button id="tabAllBtn">All classes</button>
+      <button id="tabExportBtn">Export to Excel</button>
     </div>
 
     <section id="teacherTab">
@@ -150,6 +151,54 @@
       </div>
       <div id="allResults"></div>
     </section>
+
+    <section id="exportTab" hidden>
+      <div class="card no-print">
+        <h2>Export to Excel</h2>
+        <p class="hint" style="margin-top:0">Choose who goes in, what makes a tab, and which
+          columns each row carries. Nothing here changes anything — it writes a new workbook
+          into your Downloads folder.</p>
+
+        <p class="subhead">1 &middot; who goes in</p>
+        <div class="filters">
+          <select id="exLevel"></select>
+          <select id="exClass"></select>
+          <select id="exPg"></select>
+          <select id="exTg"></select>
+          <select id="exTeacher"></select>
+          <select id="exSubject"></select>
+          <select id="exAlloc"></select>
+          <input type="search" id="exSearch" placeholder="Name, class or a subject" autocomplete="off">
+          <button type="button" id="exClear">Clear</button>
+        </div>
+        <p class="hint" style="margin:8px 0 0">
+          <label><input type="checkbox" id="exLeavers"> Include students marked as having left</label>
+        </p>
+
+        <p class="subhead">2 &middot; one sheet per…</p>
+        <div class="filters">
+          <select id="exSplit" style="min-width:220px"></select>
+        </div>
+
+        <p class="subhead">3 &middot; columns in each row</p>
+        <div class="ticks" id="exColumns"></div>
+
+        <p id="exCount" class="ex-count"></p>
+        <div class="scrolly" id="exSheetsBox" style="max-height:190px" hidden>
+          <table class="list"><thead><tr><th>Tab</th><th>Named for</th><th>Students</th></tr></thead>
+            <tbody id="exSheets"></tbody></table>
+        </div>
+        <p class="hint" id="exNote" style="margin:10px 0 0"></p>
+        <p style="margin:14px 0 0"><button class="primary bigbtn" id="exGo">Download the workbook</button></p>
+      </div>
+
+      <div class="card no-print" id="exPreviewCard" hidden>
+        <h2 style="font-size:var(--fs-md)">First rows of <span id="exPreviewName"></span></h2>
+        <div class="scrolly" style="max-height:280px">
+          <table class="list" id="exPreview"><thead></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </section>
   </div>
 
   <div class="print-sheet" id="printSheet"></div>
@@ -172,6 +221,9 @@
 </main>
 
 <script src="data.js"></script>
+<!-- SheetJS is here for the Export tab only. It is most of this page's weight,
+     and the price of keeping the page one self-contained file. -->
+<script src="../vendor/xlsx.full.min.js"></script>
 <script src="shared/schema.js"></script>
 <script src="shared/tour.js"></script>
 <script>
@@ -235,6 +287,13 @@
         'by a student\u2019s name, which is the quickest way to find out whose class somebody is in.</p>',
     },
     {
+      el: '#tabExportBtn',
+      title: 'Or take it away in Excel',
+      body: '<p>Pick who goes in, what makes a tab \u2014 a form class, a level, a teaching ' +
+        'group, whatever you need \u2014 and which columns each row carries.</p>' +
+        '<p>It writes a workbook into your Downloads folder. Nothing here changes anything.</p>',
+    },
+    {
       title: 'If a list is wrong, say so',
       body: '<p><strong>Suggest a change</strong> on any of your classes lets you add somebody who is ' +
         'missing, or flag somebody who should not be there.</p>' +
@@ -273,11 +332,15 @@
   /* ---------- tabs ---------- */
   $('tabTeacherBtn').addEventListener('click', function () { switchTab('teacher'); });
   $('tabAllBtn').addEventListener('click', function () { switchTab('all'); });
+  $('tabExportBtn').addEventListener('click', function () { switchTab('export'); });
   function switchTab(which) {
     $('teacherTab').hidden = which !== 'teacher';
     $('allTab').hidden = which !== 'all';
+    $('exportTab').hidden = which !== 'export';
     $('tabTeacherBtn').classList.toggle('active', which === 'teacher');
     $('tabAllBtn').classList.toggle('active', which === 'all');
+    $('tabExportBtn').classList.toggle('active', which === 'export');
+    if (which === 'export') renderExport();
   }
 
   /* ---------- my namelists ---------- */
@@ -1005,6 +1068,236 @@
     $('allSearch').value = '';
     renderAllResults();
   });
+
+  /* ---------- export to Excel ----------
+   * The same students, in a workbook: sortable, mail-mergeable, and something
+   * to hand to somebody who wants a list rather than a namelist. Three
+   * questions — who goes in, what makes a tab, what each row carries — and a
+   * count between them, so a wrong filter is caught before the file exists
+   * rather than after it has been mailed round the department. */
+
+  var exColumns = ['sn', 'class', 'name', 'gender', 'pg', 'tg'];
+  var exSheets = [];        // what the current settings would produce
+
+  function exModel() {
+    // The page holds a snapshot, not a model; splitStudents wants the shape.
+    return {
+      students: data.students, groups: data.groups, memberships: data.memberships,
+      subjectKeys: data.subjectKeys || [],
+    };
+  }
+
+  function fillExportFilters() {
+    function values(read) {
+      var seen = {};
+      data.students.forEach(function (s) {
+        var v = S.norm(read(s));
+        if (v) seen[v] = true;
+      });
+      return Object.keys(seen).sort(S.cmp);
+    }
+    fillFilter($('exLevel'), values(function (s) { return S.levelLabel(s.level); }), 'Every level');
+    fillFilter($('exClass'), values(function (s) { return s.class; }), 'Every class');
+    fillFilter($('exPg'), values(function (s) { return S.normPg(s.pg); }), 'Every PG');
+    var tgs = values(function (s) { return S.normTg(s.tg); });
+    fillFilter($('exTg'), tgs, 'Every TG / SG');
+    $('exTg').hidden = !tgs.length;
+    fillFilter($('exTeacher'), ix.teachers, 'Every teacher');
+    fillFilter($('exSubject'), (data.subjectKeys || []).slice(), 'Every subject');
+    fillExportAllocations();
+    $('exSplit').innerHTML = S.EXPORT_SPLITS.map(function (o) {
+      return '<option value="' + esc(o.key) + '"' + (o.key === 'class' ? ' selected' : '') +
+        '>' + esc(o.label) + '</option>';
+    }).join('');
+    renderExportColumns();
+  }
+
+  /* The allocation list belongs to whichever subject column is chosen — Sec 4's
+   * POA groups are no use while looking at Sec 1. */
+  function fillExportAllocations() {
+    var key = S.norm($('exSubject').value);
+    var box = $('exAlloc');
+    if (!key) {
+      box.innerHTML = '<option value="">Every allocation</option>';
+      box.disabled = true;
+      return;
+    }
+    box.disabled = false;
+    var opts = S.allocationOptions(data.students, key);
+    fillFilter(box, opts.map(function (o) { return o.value; }), 'Every allocation');
+  }
+
+  function renderExportColumns() {
+    var cols = S.EXPORT_COLUMNS.map(function (c) { return { key: c.key, label: c.label }; })
+      .concat((data.subjectKeys || []).map(function (k) { return { key: 's:' + k, label: k }; }));
+    $('exColumns').innerHTML = cols.map(function (c) {
+      var on = exColumns.indexOf(c.key) !== -1;
+      return '<label class="' + (on ? 'on' : '') + '"><input type="checkbox" data-col="' +
+        esc(c.key) + '"' + (on ? ' checked' : '') + '>' + esc(c.label) + '</label>';
+    }).join('');
+  }
+
+  $('exColumns').addEventListener('change', function (ev) {
+    var box = ev.target.closest('input[data-col]');
+    if (!box) return;
+    var key = box.dataset.col;
+    /* Keep the order the columns are declared in rather than the order they
+     * were ticked, so a workbook always reads S/N, Class, Name, Gender… */
+    exColumns = exColumns.filter(function (k) { return k !== key; });
+    if (box.checked) exColumns.push(key);
+    var order = S.EXPORT_COLUMNS.map(function (c) { return c.key; })
+      .concat((data.subjectKeys || []).map(function (k) { return 's:' + k; }));
+    exColumns.sort(function (a, b) { return order.indexOf(a) - order.indexOf(b); });
+    box.closest('label').classList.toggle('on', box.checked);
+    renderExport();
+  });
+
+  function exFilterNote() {
+    var bits = [];
+    [['exLevel', 'level'], ['exClass', 'class'], ['exPg', 'PG'], ['exTg', 'TG/SG'],
+      ['exTeacher', 'teacher'], ['exSubject', 'subject'], ['exAlloc', 'allocation']]
+      .forEach(function (pair) {
+        var v = S.norm($(pair[0]).value);
+        if (v) bits.push(pair[1] + ' ' + v);
+      });
+    var q = S.norm($('exSearch').value);
+    if (q) bits.push('matching \u201c' + q + '\u201d');
+    if ($('exLeavers').checked) bits.push('including leavers');
+    return bits.length ? bits.join(', ') : 'none';
+  }
+
+  function exFiltered() {
+    var lvl = S.norm($('exLevel').value);
+    var cls = S.norm($('exClass').value);
+    var pg = S.norm($('exPg').value);
+    var tg = S.norm($('exTg').value);
+    var teacher = S.norm($('exTeacher').value);
+    var key = S.norm($('exSubject').value);
+    var alloc = S.norm($('exAlloc').value);
+    var q = S.norm($('exSearch').value).toLowerCase();
+    var keys = data.subjectKeys || [];
+    var theirs = null;
+    if (teacher) {
+      theirs = {};
+      (ix.groupsByTeacher.get(teacher) || []).forEach(function (g) {
+        (ix.membersByGroup.get(g.code) || []).forEach(function (s) { theirs[s.id] = true; });
+      });
+    }
+    return data.students.filter(function (s) {
+      if (!$('exLeavers').checked && S.hasLeft(s)) return false;
+      if (lvl && S.normKey(S.levelLabel(s.level)) !== S.normKey(lvl)) return false;
+      if (cls && S.normKey(s.class) !== S.normKey(cls)) return false;
+      if (pg && S.normPg(s.pg) !== pg) return false;
+      if (tg && S.normTg(s.tg) !== S.normTg(tg)) return false;
+      if (theirs && !theirs[s.id]) return false;
+      if (key && !S.norm(s.subjects && s.subjects[key])) return false;
+      if (key && alloc && !S.allocationMatches(s, key, alloc)) return false;
+      if (q && S.studentSearchText(s, keys).indexOf(q) === -1) return false;
+      return true;
+    });
+  }
+
+  function renderExport() {
+    var students = exFiltered();
+    var by = $('exSplit').value;
+    exSheets = students.length ? S.splitStudents(exModel(), students, by) : [];
+    var rows = exSheets.reduce(function (n, x) { return n + x.students.length; }, 0);
+    var n = students.length;
+    $('exCount').innerHTML = n
+      ? '<strong>' + n + ' student' + (n === 1 ? '' : 's') + '</strong> \u2192 <strong>' +
+        exSheets.length + ' tab' + (exSheets.length === 1 ? '' : 's') + '</strong>' +
+        (rows !== n ? ' , ' + rows + ' rows \u2014 somebody in more than one class ' +
+          'appears on each of their tabs' : '')
+      : '<strong>Nothing matches these filters.</strong>';
+    $('exGo').disabled = !n || !exColumns.length;
+    $('exNote').textContent = !exColumns.length
+      ? 'Tick at least one column.'
+      : 'A Summary tab goes in first, listing every tab, its size, and the filters used.';
+
+    // the tabs, with the name Excel will actually give them
+    var taken = {};
+    $('exSheetsBox').hidden = !exSheets.length;
+    $('exSheets').innerHTML = exSheets.map(function (x) {
+      var name = S.exportSheetName(x.label, taken);
+      var renamed = S.normKey(name) !== S.normKey(x.label);
+      return '<tr><td>' + esc(name) + (renamed ? ' <span class="badge plain">renamed</span>' : '') +
+        '</td><td class="muted">' + esc(x.label) + '</td><td>' + x.students.length + '</td></tr>';
+    }).join('');
+    renderExportPreview();
+  }
+
+  function renderExportPreview() {
+    var sheet = exSheets[0];
+    $('exPreviewCard').hidden = !sheet || !exColumns.length;
+    if (!sheet || !exColumns.length) return;
+    $('exPreviewName').textContent = sheet.label;
+    var labels = exColumns.map(function (k) {
+      if (k.indexOf('s:') === 0) return k.slice(2);
+      var c = S.EXPORT_COLUMNS.filter(function (x) { return x.key === k; })[0];
+      return c ? c.label : k;
+    });
+    $('exPreview').querySelector('thead').innerHTML =
+      '<tr>' + labels.map(function (l) { return '<th>' + esc(l) + '</th>'; }).join('') + '</tr>';
+    $('exPreview').querySelector('tbody').innerHTML = sheet.students.slice(0, 8).map(function (s) {
+      return '<tr>' + exColumns.map(function (k) {
+        var v = k.indexOf('s:') === 0 ? S.norm(s.subjects && s.subjects[k.slice(2)])
+          : k === 'tg' ? S.normTg(s.tg)
+          : k === 'pg' ? S.normPg(s.pg)
+          : k === 'level' ? S.levelLabel(s.level)
+          : S.norm(s[k]);
+        return '<td>' + esc(v) + '</td>';
+      }).join('') + '</tr>';
+    }).join('');
+  }
+
+  function exportStem() {
+    var by = S.EXPORT_SPLITS.filter(function (o) { return o.key === $('exSplit').value; })[0];
+    var d = new Date();
+    var stamp = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
+    return ('namelists ' + (by ? by.label : '') + ' ' + stamp)
+      .replace(/[^A-Za-z0-9 \-]/g, '').replace(/\s+/g, '-').toLowerCase();
+  }
+
+  $('exGo').addEventListener('click', function () {
+    if (!exSheets.length || !exColumns.length) return;
+    var by = S.EXPORT_SPLITS.filter(function (o) { return o.key === $('exSplit').value; })[0];
+    var wb = S.exportWorkbook(exModel(), exSheets, {
+      columns: exColumns.slice(),
+      splitLabel: by ? by.label : '',
+      filterNote: exFilterNote(),
+      madeAt: new Date().toLocaleString(),
+    });
+    var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    var blob = new Blob([out], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = exportStem() + '.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    $('exNote').textContent = 'Saved to your Downloads folder as ' + a.download + '.';
+  });
+
+  ['exLevel', 'exClass', 'exPg', 'exTg', 'exTeacher', 'exAlloc', 'exSplit'].forEach(function (id) {
+    $(id).addEventListener('change', renderExport);
+  });
+  $('exSubject').addEventListener('change', function () { fillExportAllocations(); renderExport(); });
+  $('exLeavers').addEventListener('change', renderExport);
+  $('exSearch').addEventListener('input', renderExport);
+  $('exClear').addEventListener('click', function () {
+    ['exLevel', 'exClass', 'exPg', 'exTg', 'exTeacher', 'exSubject', 'exAlloc']
+      .forEach(function (id) { $(id).value = ''; });
+    $('exSearch').value = '';
+    $('exLeavers').checked = false;
+    fillExportAllocations();
+    renderExport();
+  });
+
+  fillExportFilters();
 
   fillAllFilters();
   renderAllResults();

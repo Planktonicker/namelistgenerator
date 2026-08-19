@@ -545,6 +545,21 @@ dialog .actions {
   border: none; box-shadow: none; padding: 0; margin-bottom: 18px;
 }
 
+/* A link that sits among buttons without pretending to be one. */
+.headerlink {
+  font: inherit; font-size: var(--fs-sm); color: var(--accent); text-decoration: none;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  padding: 5px 10px; background: var(--surface); white-space: nowrap;
+}
+.headerlink:hover { background: var(--accent-soft); }
+
+/* The export tab: three numbered questions, then what they add up to. */
+.subhead {
+  margin: var(--sp-5) 0 var(--sp-2); font-size: var(--fs-xs); font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+}
+.ex-count { margin: var(--sp-5) 0 var(--sp-2); font-size: var(--fs-md); }
+
 /* A quiet way back into the walk-through, on the dark header. */
 .headerbtn {
   background: rgba(255, 255, 255, 0.14); color: var(--accent-ink);
@@ -884,6 +899,8 @@ dialog .actions {
           title="Show me around">?</button>
         <button id="undoBtn" class="iconbtn" disabled aria-label="Undo">↶</button>
         <button id="redoBtn" class="iconbtn" disabled aria-label="Redo">↷</button>
+        <a class="headerlink" id="openNamelistBtn" href="namelist.html" target="_blank"
+          rel="noopener" title="The teachers' page, including the Excel export">Namelist page ↗</a>
         <button id="importBtn">Import…</button>
         <button id="reloadBtn">Reload from file</button>
         <label class="autosave" title="Save a few seconds after each change">
@@ -3564,6 +3581,164 @@ window.Tour = (function () {
     sheet.style.width = '';
   }
 
+  /* ---- exporting to a workbook ----------------------------------------
+   * A namelist can be printed and read on screen; this is the third thing
+   * anyone asks for — the same students in Excel, so they can be sorted,
+   * marked up or mail-merged. The filtering belongs to the page; what lives
+   * here is the part that has to be right or the file will not open at all.
+   */
+
+  var EXPORT_COLUMNS = [
+    { key: 'sn', label: 'S/N' },
+    { key: 'class', label: 'Class' },
+    { key: 'name', label: 'Name' },
+    { key: 'gender', label: 'Gender' },
+    { key: 'level', label: 'Level' },
+    { key: 'pg', label: 'PG' },
+    { key: 'tg', label: 'TG / SG' },
+    { key: 'id', label: 'Student ID' },
+  ];
+
+  var EXPORT_SPLITS = [
+    { key: '', label: 'Everything on one sheet' },
+    { key: 'class', label: 'Form class' },
+    { key: 'level', label: 'Level' },
+    { key: 'pg', label: 'Posting group' },
+    { key: 'tg', label: 'TG / SG' },
+    { key: 'group', label: 'Teaching group' },
+    { key: 'teacher', label: 'Teacher' },
+  ];
+
+  /* Excel refuses to open a workbook at all if any sheet name breaks one of
+   * these, and says nothing useful about which one did it:
+   *   - 31 characters at most
+   *   - none of \ / ? * [ ] :          ("SS/Hist" arrives here every time)
+   *   - not blank, and not wrapped in apostrophes
+   *   - unique, compared without case
+   *   - not "History", which Excel reserves — and which splitting by subject
+   *     or by teaching group produces on a humanities department's data
+   * Truncating happens BEFORE the uniqueness suffix, or two long class names
+   * both cut down to the same 31 characters and the file is rejected. */
+  var SHEET_LIMIT = 31;
+  var RESERVED_SHEET = { history: true };
+
+  function exportSheetName(label, taken) {
+    taken = taken || {};
+    var name = norm(String(label == null ? '' : label))
+      .replace(/[\\\/\?\*\[\]:]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/^'+|'+$/g, '')
+      .trim();
+    if (!name) name = 'Sheet';
+    if (RESERVED_SHEET[name.toLowerCase()]) name = name + ' list';
+    name = name.slice(0, SHEET_LIMIT).trim() || 'Sheet';
+    var base = name;
+    var n = 2;
+    while (taken[name.toLowerCase()]) {
+      var tail = ' ' + n++;
+      name = (base.slice(0, SHEET_LIMIT - tail.length).trim() + tail);
+    }
+    taken[name.toLowerCase()] = true;
+    return name;
+  }
+
+  /* [{ label, students }] — every student in exactly one sheet, except under
+   * "group" and "teacher", where somebody genuinely belongs to several and
+   * appears on each. Anyone the split cannot place lands in a named leftover
+   * sheet rather than being dropped. */
+  function splitStudents(model, students, by) {
+    var ix = null;
+    var out = [];
+    var seen = {};
+    function bucket(label, student) {
+      var k = normKey(label);
+      if (!seen[k]) { seen[k] = { label: label, students: [] }; out.push(seen[k]); }
+      seen[k].students.push(student);
+    }
+    if (by === 'group' || by === 'teacher') {
+      ix = buildIndexes(model);
+      var wanted = {};
+      students.forEach(function (s) { wanted[s.id] = true; });
+      var loose = [];
+      students.forEach(function (s) {
+        if (!(ix.groupsByStudent.get(s.id) || []).length) loose.push(s);
+      });
+      (model.groups || []).forEach(function (g) {
+        var members = (ix.membersByGroup.get(g.code) || []).filter(function (s) { return wanted[s.id]; });
+        if (!members.length) return;
+        if (by === 'group') {
+          members.forEach(function (s) { bucket(g.name || g.code, s); });
+        } else {
+          var names = teacherNames(g);
+          if (!names.length) names = ['(no teacher yet)'];
+          names.forEach(function (t) {
+            members.forEach(function (s) { bucket(t, s); });
+          });
+        }
+      });
+      if (loose.length) loose.forEach(function (s) { bucket('(in no class)', s); });
+    } else if (!by) {
+      out.push({ label: 'All students', students: students.slice() });
+    } else {
+      students.forEach(function (s) {
+        var v = by === 'pg' ? normPg(s.pg) : by === 'tg' ? normTg(s.tg) : norm(s[by]);
+        bucket(v || '(blank)', s);
+      });
+    }
+    out.forEach(function (sheet) { sheet.students.sort(byClassThenName); });
+    out.sort(function (a, b) { return cmp(a.label, b.label); });
+    return out;
+  }
+
+  function exportCellValue(student, key, subjectKeys) {
+    if (key.indexOf('s:') === 0) return norm(student.subjects && student.subjects[key.slice(2)]);
+    if (key === 'sn') return norm(student.sn);
+    if (key === 'tg') return normTg(student.tg);
+    if (key === 'pg') return normPg(student.pg);
+    if (key === 'level') return levelLabel(student.level);
+    return norm(student[key]);
+  }
+
+  function exportHeader(columns, subjectKeys) {
+    return columns.map(function (key) {
+      if (key.indexOf('s:') === 0) return key.slice(2);
+      var col = EXPORT_COLUMNS.filter(function (c) { return c.key === key; })[0];
+      return col ? col.label : key;
+    });
+  }
+
+  /* The workbook: a Summary sheet first, then one per split. The summary is
+   * there so somebody handed the file three weeks later can see what it is and,
+   * more to the point, what it left out. */
+  function exportWorkbook(model, sheets, opts) {
+    opts = opts || {};
+    var columns = opts.columns && opts.columns.length ? opts.columns : ['sn', 'class', 'name', 'gender'];
+    var subjectKeys = model.subjectKeys || [];
+    var wb = XLSX.utils.book_new();
+    var taken = {};
+    var placed = sheets.map(function (sheet) {
+      return { name: exportSheetName(sheet.label, taken), label: sheet.label, students: sheet.students };
+    });
+    if (opts.summary !== false) {
+      var rows = [['Namelist export'], ['Made', opts.madeAt || ''], ['Split by', opts.splitLabel || ''],
+        ['Filters', opts.filterNote || 'none'], [],
+        ['Sheet', 'Named for', 'Students']];
+      placed.forEach(function (p) { rows.push([p.name, p.label, p.students.length]); });
+      rows.push([]);
+      rows.push(['Total rows', '', placed.reduce(function (n, p) { return n + p.students.length; }, 0)]);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows),
+        exportSheetName('Summary', taken));
+    }
+    placed.forEach(function (p) {
+      var aoa = [exportHeader(columns, subjectKeys)];
+      p.students.forEach(function (s) {
+        aoa.push(columns.map(function (key) { return exportCellValue(s, key, subjectKeys); }));
+      });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), p.name);
+    });
+    return wb;
+  }
+
   /* ---- merging two admins' work -------------------------------------
    * Two people with the folder open are editing two copies of the same
    * workbook. Whoever saves second used to win outright, which meant the other
@@ -4196,6 +4371,11 @@ window.Tour = (function () {
     allocationMatches: allocationMatches,
     coverageGaps: coverageGaps,
     groupSubjectKeys: groupSubjectKeys,
+    EXPORT_COLUMNS: EXPORT_COLUMNS,
+    EXPORT_SPLITS: EXPORT_SPLITS,
+    exportSheetName: exportSheetName,
+    splitStudents: splitStudents,
+    exportWorkbook: exportWorkbook,
     namelistPrintHtml: namelistPrintHtml,
     namelistBoxCount: namelistBoxCount,
     fitPrintSheet: fitPrintSheet,

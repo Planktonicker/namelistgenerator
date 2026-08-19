@@ -502,6 +502,21 @@ Saving a class that the search or a filter would then hide clears them instead
 — a class disappearing the instant you save it reads as nothing having been
 saved.
 
+### The walk-through
+
+Neither page is opened by somebody who asked for it. A teacher is handed a
+shortcut; an admin inherits the job from whoever had it last. So each page
+**introduces itself the first time it is opened**, in a few steps that point at
+the real controls — the teacher page in five, the editor in seven, changing tab
+as it goes so each thing is on screen when it is described.
+
+It runs once per folder and then never again. **Show me around** in the teacher
+page's header, and the **?** in the editor's topbar, bring it back. Escape,
+Skip, or clicking outside it end it; arrow keys and Enter walk it.
+
+It holds off under browser automation, so it never blocks a test — the
+walk-through's own tests pass `?tour=on` to drive it deliberately.
+
 ### Teachers and classes
 
 Teacher names live in the **Teachers** tab, so they are picked from a list when

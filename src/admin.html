@@ -300,6 +300,8 @@
       </div>
       <span class="spacer"></span>
       <div class="topbar-actions">
+        <button id="tourBtn" class="iconbtn" aria-label="Show me around"
+          title="Show me around">?</button>
         <button id="undoBtn" class="iconbtn" disabled aria-label="Undo">↶</button>
         <button id="redoBtn" class="iconbtn" disabled aria-label="Redo">↷</button>
         <button id="importBtn">Import…</button>
@@ -900,6 +902,7 @@
 </main>
 
 <script src="../vendor/xlsx.full.min.js"></script>
+<script src="shared/tour.js"></script>
 <script src="shared/schema.js"></script>
 <script>
 (function () {
@@ -1150,6 +1153,9 @@
   function enterMain() {
     show('mainScreen');
     refresh();
+    /* Whoever has this job next inherited it from somebody who left. It
+     * introduces itself once, and the ? in the topbar brings it back. */
+    Tour.startOnce('admin', TOUR_STEPS);
     if (!baseModel && !baseCleared) noteBase();
     if (undoBase === null) noteUndoPoint();
     startSync();
@@ -2061,6 +2067,72 @@
     var willNotSave = !autosaveOn || saveBlocked || requireManualFirstSave;
     if (dirty && willNotSave) { e.preventDefault(); e.returnValue = ''; }
   });
+
+  /* ================= the walk-through ================= */
+
+  var TOUR_STEPS = [
+    {
+      title: 'The namelist editor',
+      body: '<p>This builds the class lists teachers see, out of the files the office sends.</p>' +
+        '<p>Two things worth knowing before anything else. <strong>The school\u2019s own files are ' +
+        'only ever read</strong> \u2014 this app cannot write to them, by design. And everything it ' +
+        'does write goes in this one folder, beside these pages.</p>',
+    },
+    {
+      el: '.tabs button[data-tab="students"]',
+      title: 'Students \u2014 everybody the files list',
+      body: '<p>Click a name to open them: name, class, PG, tutorial group and every subject.</p>' +
+        '<p>Fixing a subject or a band here moves them between namelists straight away \u2014 they ' +
+        'join the classes they now match, and you are asked before they come off any they do not.</p>',
+      before: function () { return switchToTab('students'); },
+    },
+    {
+      el: '.tabs button[data-tab="groups"]',
+      title: 'Teaching groups \u2014 one row per class',
+      body: '<p><strong>Find classes in the data</strong> makes one for every teaching group the ' +
+        'files already contain. <strong>Add class</strong> builds one by hand, from a map: level, ' +
+        'then subject, then which group.</p>' +
+        '<p>A class built that way keeps itself up to date \u2014 a student who arrives later and ' +
+        'matches the rule joins it without being asked.</p>',
+      before: function () { return switchToTab('groups'); },
+    },
+    {
+      el: '.tabs button[data-tab="teachers"]',
+      title: 'Teachers',
+      body: '<p>Paste the staff list once at the start of the year, then give each of them their ' +
+        'classes from their own row.</p>' +
+        '<p>Rename somebody here and every class they teach follows.</p>',
+      before: function () { return switchToTab('teachers'); },
+    },
+    {
+      el: '.tabs button[data-tab="requests"]',
+      title: 'Requests \u2014 what teachers have suggested',
+      body: '<p>Teachers send these from their own page: somebody missing from a list, or somebody ' +
+        'who should not be on it. <strong>A red number means one is waiting.</strong></p>' +
+        '<p>Nothing they send changes anything until you accept it.</p>',
+      before: function () { return switchToTab('requests'); },
+    },
+    {
+      el: '.tabs button[data-tab="sources"]',
+      title: 'School files \u2014 where the students come from',
+      body: '<p>Point each level at the office\u2019s file for it, once. From then on every level ' +
+        'refreshes by itself whenever you open this page, and <em>What changed\u2026</em> tells you ' +
+        'what moved.</p>' +
+        '<p>Those files are opened read-only. Nothing here can alter them.</p>',
+      before: function () { return switchToTab('sources'); },
+    },
+    {
+      el: '#saveBtn',
+      title: 'Saving, and getting it back',
+      body: '<p>Autosave is on \u2014 four seconds after you stop typing. Pressing <strong>Save</strong> ' +
+        'yourself also takes a backup, which an autosave only does once an hour.</p>' +
+        '<p><strong>Ctrl+Z</strong> undoes, twenty steps back, and the \u21b6 button names what it will ' +
+        'undo before you press it.</p>',
+      before: function () { return switchToTab('students'); },
+    },
+  ];
+
+  $('tourBtn').addEventListener('click', function () { Tour.start(TOUR_STEPS); });
 
   /* ================= printing ================= */
 

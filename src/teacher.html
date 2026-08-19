@@ -89,7 +89,10 @@
 <body>
 <header class="app-header">
   <h1>Class Namelists</h1>
-  <div class="meta" id="dataMeta"></div>
+  <div class="meta">
+    <span id="dataMeta"></span>
+    <button type="button" class="headerbtn no-print" id="tourBtn">Show me around</button>
+  </div>
 </header>
 <main>
   <div id="errorState" class="card" hidden>
@@ -170,6 +173,7 @@
 
 <script src="data.js"></script>
 <script src="shared/schema.js"></script>
+<script src="shared/tour.js"></script>
 <script>
 (function () {
   'use strict';
@@ -201,6 +205,44 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+
+  /* ---------- the walk-through ---------- */
+
+  var TOUR_STEPS = [
+    {
+      title: 'Your class namelists',
+      body: '<p>Everything here is <strong>read-only</strong>. Nothing you do on this page ' +
+        'changes anybody\u2019s data \u2014 it is a window onto what the administrator has saved.</p>' +
+        '<p>It updates itself: the next time you open it after they press Save, it is current.</p>',
+    },
+    {
+      el: '#teacherSearch',
+      title: 'Start with your name',
+      body: '<p>Type any part of it \u2014 <em>lim</em>, <em>bee</em>, <em>blim</em> \u2014 and the ' +
+        'list narrows as you go. Arrow keys move, Enter picks.</p>' +
+        '<p>It remembers you, so next time it is already filled in.</p>',
+    },
+    {
+      title: 'Your classes appear below',
+      body: '<p>One card for each, with everybody on it, and a <strong>Print</strong> button on each card.</p>' +
+        '<p>What prints is a mark sheet: boxes beside every name to tick or date, and five ' +
+        'spare lines under the last one for whoever arrives after you printed it.</p>',
+    },
+    {
+      el: '#tabAllBtn',
+      title: 'Everyone else\u2019s classes',
+      body: '<p>Every class in the school, filtered by level, subject or teacher \u2014 and searchable ' +
+        'by a student\u2019s name, which is the quickest way to find out whose class somebody is in.</p>',
+    },
+    {
+      title: 'If a list is wrong, say so',
+      body: '<p><strong>Suggest a change</strong> on any of your classes lets you add somebody who is ' +
+        'missing, or flag somebody who should not be there.</p>' +
+        '<p>Nothing you send changes the namelist. It goes to the administrator, who decides.</p>',
+    },
+  ];
+
+  $('tourBtn').addEventListener('click', function () { Tour.start(TOUR_STEPS); });
 
   /* ---------- printing ---------- */
 
@@ -913,6 +955,11 @@
 
   fillAllFilters();
   renderAllResults();
+
+  /* Last, so the page it points at is fully drawn. Whoever opens this was
+   * handed a link, not a manual: it introduces itself once and then leaves
+   * them alone. */
+  Tour.startOnce('teacher', TOUR_STEPS);
 })();
 </script>
 </body>

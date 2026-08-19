@@ -511,3 +511,43 @@ dialog .actions {
 .print-sheet.measuring .card {
   border: none; box-shadow: none; padding: 0; margin-bottom: 18px;
 }
+
+/* A quiet way back into the walk-through, on the dark header. */
+.headerbtn {
+  background: rgba(255, 255, 255, 0.14); color: var(--accent-ink);
+  border: 1px solid rgba(255, 255, 255, 0.28); border-radius: var(--r-sm);
+  font: inherit; font-size: var(--fs-xs); padding: 2px 10px; cursor: pointer;
+  margin-left: var(--sp-3);
+}
+.headerbtn:hover { background: rgba(255, 255, 255, 0.24); }
+
+/* ---- the first-open walk-through ----
+   One ring with an enormous shadow spread does both jobs: it outlines the
+   control and dims everything else, so there is no separate mask to keep in
+   step with it as the page scrolls. */
+.tour { position: fixed; inset: 0; z-index: 200; }
+.tour[hidden] { display: none; }
+.tour-dim { position: absolute; inset: 0; background: transparent; }
+.tour.plain .tour-dim { background: rgba(16, 24, 40, 0.55); }
+.tour-ring {
+  position: fixed; pointer-events: none; border-radius: var(--r-md);
+  box-shadow: 0 0 0 2px var(--red), 0 0 0 9999px rgba(16, 24, 40, 0.55);
+  transition: left .18s, top .18s, width .18s, height .18s;
+}
+.tour-bubble {
+  position: fixed; width: min(380px, calc(100vw - 24px));
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-top: 3px solid var(--accent);
+  border-radius: var(--r-md); box-shadow: var(--shadow-3);
+  padding: var(--sp-4);
+}
+.tour-bubble h2 { margin: 0 0 var(--sp-2); font-size: var(--fs-lg); color: var(--accent); }
+.tour-body { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink); }
+.tour-body p { margin: 0 0 var(--sp-2); }
+.tour-body p:last-child { margin-bottom: 0; }
+.tour-foot {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--line);
+}
+.tour-foot .spacer { flex: 1; }
+.tour-foot button { white-space: nowrap; }

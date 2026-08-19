@@ -124,6 +124,10 @@ for a namelist.
 
 ## Part 2 — the admin, in the app
 
+- **Let it show you round once.** The first time either page is opened it walks
+  through itself, pointing at the real buttons. The **?** in the topbar (and
+  **Show me around** on the teacher page) brings it back whenever somebody new
+  takes over.
 - **Teachers first.** Paste the staff list once at the start of the year
   (Teachers → *Paste list…*), then give each of them their classes from their
   own row. Rename a teacher there and every class follows.

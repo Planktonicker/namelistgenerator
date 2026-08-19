@@ -8,6 +8,7 @@ node_modules/
 # with these names came from a school.
 *.xlsx
 !sample/namelist.xlsx
+!sample/school/*.xlsx
 data.js
 !sample/data.js
 requests/

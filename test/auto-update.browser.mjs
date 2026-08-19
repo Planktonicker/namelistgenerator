@@ -1,6 +1,6 @@
 /* Opening the editor must refresh the levels by itself and republish data.js. */
 import { chromium } from 'playwright';
-import { readFileSync, copyFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, copyFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
@@ -10,8 +10,15 @@ import { tmpdir } from 'node:os';
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
 /* Any school level file works:
  *   ALLOCATION_XLSX=/path/to/file.xlsx node test/auto-update.browser.mjs */
-const SRC = process.env.ALLOCATION_XLSX;
-if (!SRC) { console.log('set ALLOCATION_XLSX to a school workbook to run this test'); process.exit(0); }
+/* Falls back to the synthetic one built by tools/gen-school-file.cjs, so the
+ * level refresh is exercised on every run rather than only when somebody has a
+ * real workbook to hand. */
+const SRC = process.env.ALLOCATION_XLSX ||
+  join(repo, 'sample/school/Sec 1 Subject Grouping List.xlsx');
+if (!existsSync(SRC)) {
+  console.log('run: node tools/gen-school-file.cjs   (or set ALLOCATION_XLSX)');
+  process.exit(1);
+}
 const demo = join(mkdtempSync(join(tmpdir(), 'namelist-')), 'auto');
 mkdirSync(demo, { recursive: true });
 copyFileSync(join(repo, 'dist/admin.html'), join(demo, 'admin.html'));
@@ -37,7 +44,18 @@ await page.addInitScript(() => {
     async getFileHandle(f, o) { const p = prefix + f;
       if (!files.has(p) && !(o && o.create)) { const e = new Error('nf'); e.name = 'NotFoundError'; throw e; }
       if (!files.has(p)) window.__fs.put(p, new Uint8Array(), 0); return mkFile(p); },
-    async getDirectoryHandle(d) { return mkDir(prefix + d + '/', d); },
+    async getDirectoryHandle(d, o) {
+      /* A real one throws when the folder is not there. This used to hand back
+       * an empty view of nothing, so "is there a Data folder?" was always yes
+       * and the flat-folder branch of the app never ran in a test. */
+      const dp = prefix + d + '/';
+      let found = false;
+      for (const k of files.keys()) { if (k.startsWith(dp)) { found = true; break; } }
+      if (!found && !(o && o.create)) {
+        const e = new Error('NotFoundError'); e.name = 'NotFoundError'; throw e;
+      }
+      return mkDir(dp, d);
+    },
     async *values() { for (const p of files.keys())
       if (p.startsWith(prefix) && !p.slice(prefix.length).includes('/')) yield mkFile(p); },
     async queryPermission() { return 'granted'; }, async requestPermission() { return 'granted'; } });

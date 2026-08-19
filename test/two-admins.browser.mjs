@@ -59,7 +59,18 @@ await page.addInitScript(() => {
       if (!files.has(p)) window.__fs.put(p, new Uint8Array());
       return mkFile(p);
     },
-    async getDirectoryHandle(d) { return mkDir(prefix + d + '/', d); },
+    async getDirectoryHandle(d, o) {
+      /* A real one throws when the folder is not there. This used to hand back
+       * an empty view of nothing, so "is there a Data folder?" was always yes
+       * and the flat-folder branch of the app never ran in a test. */
+      const dp = prefix + d + '/';
+      let found = false;
+      for (const k of files.keys()) { if (k.startsWith(dp)) { found = true; break; } }
+      if (!found && !(o && o.create)) {
+        const e = new Error('NotFoundError'); e.name = 'NotFoundError'; throw e;
+      }
+      return mkDir(dp, d);
+    },
     async removeEntry(f) { files.delete(prefix + f); },
     async *values() {
       for (const p of Array.from(files.keys())) {

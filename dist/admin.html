@@ -893,6 +893,8 @@ dialog .actions {
         <span class="muted small" id="dirtyNote"></span>
         <button class="statchip" id="presenceChip" hidden></button>
         <button class="statchip" id="mergedNote" hidden title="What has come in from other admins"></button>
+        <button class="statchip" id="backupsBtn" hidden
+          title="Every save leaves a copy here — go back to one">Backups…</button>
         <button class="statchip" id="tidyFolderBtn" hidden
           title="Move namelist.xlsx, data.js and the app's folders into a Data folder">Tidy the folder…</button>
       </div>
@@ -1391,6 +1393,22 @@ dialog .actions {
     </div>
     <div class="actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px">
       <button type="button" id="changesCloseBtn" class="primary">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="backupsDialog">
+    <h2>Backups</h2>
+    <p class="small muted" id="backupsSummary"></p>
+    <div class="scrolly" style="max-height:340px">
+      <table class="list" id="backupsTable">
+        <thead><tr><th>Taken</th><th>Size</th><th>Kept</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="hint" id="backupsNote" style="margin:10px 0 0"></p>
+    <div class="actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px">
+      <button type="button" id="backupsCloseBtn">Close</button>
+      <button type="button" id="backupsRestoreBtn" class="primary" disabled>Go back to this one</button>
     </div>
   </dialog>
 
@@ -3584,6 +3602,79 @@ window.Tour = (function () {
     sheet.style.width = '';
   }
 
+  /* ---- which backups are worth keeping --------------------------------
+   * The editor copies namelist.xlsx into backups\ before every save it makes,
+   * which is the right instinct and a folder that grows forever. Two kinds of
+   * copy are worth keeping, and they answer different questions:
+   *
+   *   the newest few   "undo what I did five minutes ago"
+   *   one a day        "put back what we had before Monday's import"
+   *
+   * A backup is named from the modified time of the file it copied, so
+   * namelist-20260818-1632.xlsx IS the workbook as it stood at 16:32 on the
+   * 18th. The earliest name carrying a date is therefore the state that day
+   * opened with — which is why the daily keeper is the FIRST of each day and
+   * not the last.
+   *
+   * The names are zero-padded and big-endian, so this needs no file metadata
+   * at all: sorting the names is sorting by time. (stamp() is local time, so
+   * the hour that repeats at a daylight-saving fall-back can sort an hour out
+   * of true once a year. The worst that costs is a keeper an hour off.)
+   *
+   * "The last 14 days" means the fourteen most recent dates that actually
+   * appear, not a fortnight of calendar: somebody who opens the editor once a
+   * week still gets fourteen rewind points rather than one.
+   *
+   * Two things are never dropped. A name that does not fit the pattern is
+   * somebody else's file and not ours to delete; and opts.keepNames is how a
+   * restore protects the backup it is restoring FROM against the prune its
+   * own save sets off.
+   */
+  var BACKUP_NAME = /^namelist-(\d{8})-(\d{6})\.xlsx$/i;
+
+  function backupStamp(name) {
+    var m = BACKUP_NAME.exec(name);
+    return m ? m[1] + m[2] : '';
+  }
+
+  function backupsToKeep(names, opts) {
+    names = names || [];
+    opts = opts || {};
+    var newest = opts.newest == null ? 3 : opts.newest;
+    var days = opts.days == null ? 14 : opts.days;
+    var keeping = {};
+    var ours = [];
+
+    names.forEach(function (name) {
+      if (backupStamp(name)) ours.push(name);
+      else keeping[name] = true;
+    });
+    (opts.keepNames || []).forEach(function (name) { keeping[name] = true; });
+
+    ours.sort(function (a, b) {
+      var x = backupStamp(a), y = backupStamp(b);
+      if (x !== y) return x < y ? -1 : 1;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+
+    for (var i = ours.length - 1; i >= 0 && ours.length - i <= newest; i--) keeping[ours[i]] = true;
+
+    var dates = [];
+    var firstOn = {};
+    ours.forEach(function (name) {
+      var day = backupStamp(name).slice(0, 8);
+      if (!firstOn[day]) { firstOn[day] = name; dates.push(day); }
+    });
+    dates.slice(Math.max(0, dates.length - days)).forEach(function (day) {
+      keeping[firstOn[day]] = true;
+    });
+
+    return {
+      keep: names.filter(function (n) { return keeping[n]; }),
+      drop: names.filter(function (n) { return !keeping[n]; }),
+    };
+  }
+
   /* ---- exporting to a workbook ----------------------------------------
    * A namelist can be printed and read on screen; this is the third thing
    * anyone asks for — the same students in Excel, so they can be sorted,
@@ -4374,6 +4465,7 @@ window.Tour = (function () {
     allocationMatches: allocationMatches,
     coverageGaps: coverageGaps,
     groupSubjectKeys: groupSubjectKeys,
+    backupsToKeep: backupsToKeep,
     EXPORT_COLUMNS: EXPORT_COLUMNS,
     EXPORT_SPLITS: EXPORT_SPLITS,
     exportSheetName: exportSheetName,
@@ -4983,13 +5075,68 @@ window.Tour = (function () {
     await w.close();
   }
 
-  async function writeBackup(file) {
+  /* backups\ is the only safety net there is, so a copy goes in before every
+   * save — and the folder is pruned straight after, or a year of saves is a
+   * year of files. S.backupsToKeep decides which survive; see the comment
+   * there for why the daily keeper is the FIRST of each day.
+   *
+   * keepToo protects a name from this round: restoring reads an old backup and
+   * then saves, and the save must not delete the copy it was just handed. */
+  var BACKUP_KEEP = { newest: 3, days: 14 };
+
+  async function writeBackup(file, keepToo) {
     if (!file.size) return;
     var bytes = await file.arrayBuffer();
     var dir = await dataDir.getDirectoryHandle('backups', { create: true });
     var name = 'namelist-' + stamp(new Date(file.lastModified)) + '.xlsx';
     var h = await dir.getFileHandle(name, { create: true });
     await writeFile(h, bytes);
+    await pruneBackups(dir, keepToo);
+  }
+
+  /* Names first, deletions after: a folder must not be changed while it is
+   * being walked. A backup that will not go is not a reason to fail a save,
+   * so nothing in here throws. */
+  async function pruneBackups(dir, keepToo) {
+    try {
+      var names = [];
+      for await (var entry of dir.values()) {
+        if (entry.kind === 'file') names.push(entry.name);
+      }
+      var drop = S.backupsToKeep(names, {
+        newest: BACKUP_KEEP.newest, days: BACKUP_KEEP.days, keepNames: keepToo || [],
+      }).drop;
+      for (var i = 0; i < drop.length; i++) {
+        await dir.removeEntry(drop[i]).catch(function () {});
+      }
+    } catch (e) { /* no backups folder, or the drive said no */ }
+  }
+
+  /* The time in the name is the time the copy is OF — the file's own mtime is
+   * merely when the copy was made, which is a second later and not useful. */
+  function backupTakenAt(name) {
+    var m = /^namelist-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\.xlsx$/i.exec(name);
+    return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
+  }
+
+  /* [{ name, at, size, keep, handle }], newest first. */
+  async function listBackups() {
+    var dir;
+    try { dir = await dataDir.getDirectoryHandle('backups'); } catch (e) { return []; }
+    var found = [];
+    for await (var entry of dir.values()) {
+      if (entry.kind !== 'file') continue;
+      var at = backupTakenAt(entry.name);
+      if (!at) continue;
+      var f = await entry.getFile();
+      found.push({ name: entry.name, at: at, size: f.size, handle: entry });
+    }
+    var keeping = {};
+    S.backupsToKeep(found.map(function (b) { return b.name; }), BACKUP_KEEP).keep
+      .forEach(function (n) { keeping[n] = true; });
+    found.forEach(function (b) { b.keep = !!keeping[b.name]; });
+    found.sort(function (a, b) { return a.name < b.name ? 1 : a.name > b.name ? -1 : 0; });
+    return found;
   }
 
   /* ---- keeping two admins in step ----------------------------------
@@ -5289,6 +5436,7 @@ window.Tour = (function () {
   async function saveInner(opts) {
     var silent = opts && opts.silent;
     var auto = opts && opts.auto;
+    var keepBackup = opts && opts.keepBackup;   // a restore protects the copy it came from
     if (!dirHandle) return;
     /* An automatic save merges the file in on its way past, and merging
      * rebuilds the page — so it waits, exactly as the poll does, rather than
@@ -5334,7 +5482,7 @@ window.Tour = (function () {
           }
         }
         if (!auto || Date.now() - lastBackupAt > AUTOSAVE_BACKUP_GAP) {
-          await writeBackup(current);
+          await writeBackup(current, keepBackup ? [keepBackup] : null);
           lastBackupAt = Date.now();
         }
       } else {
@@ -5479,7 +5627,7 @@ window.Tour = (function () {
     renderDirtyNote();
     // The first save is what creates a workbook to tidy away, so the offer to
     // do it can only appear once a save has happened.
-    renderTidyBtn();
+    renderFolderBtns();
     document.title = (v ? '● ' : '') + 'Namelist Admin';
   }
 
@@ -5660,7 +5808,8 @@ window.Tour = (function () {
       body: '<p>Autosave is on \u2014 four seconds after you stop typing. Pressing <strong>Save</strong> ' +
         'yourself also takes a backup, which an autosave only does once an hour.</p>' +
         '<p><strong>Ctrl+Z</strong> undoes, twenty steps back, and the \u21b6 button names what it will ' +
-        'undo before you press it.</p>',
+        'undo before you press it. For anything older, <strong>Backups\u2026</strong> at the top left ' +
+        'goes back to the roll as it stood before an earlier save.</p>',
       before: function () { return switchToTab('students'); },
     },
   ];
@@ -5675,8 +5824,10 @@ window.Tour = (function () {
    * Copy first, delete after — never a move in place. A failure halfway leaves
    * the original where it is and the app still finds it. */
 
-  function renderTidyBtn() {
+  function renderFolderBtns() {
     $('tidyFolderBtn').hidden = !dirHandle || usingDataFolder() || !fileHandle;
+    /* There is a backup to go back to only once a save has made one. */
+    $('backupsBtn').hidden = !dirHandle || !fileHandle;
   }
 
   async function copyFileInto(fromDir, toDir, name) {
@@ -5749,9 +5900,135 @@ window.Tour = (function () {
     $('folderName').textContent = folderLabel();
     $('setupFolderName').textContent = folderLabel();
     fileHandle = await dataDir.getFileHandle('namelist.xlsx');
-    renderTidyBtn();
+    renderFolderBtns();
     toast('Moved into ' + DATA_FOLDER + '\\ \u2014 ' + (carried + 2) + ' files. ' +
       'Copy the new namelist.html in too, or teachers will see \u201cNo data found\u201d.');
+  }
+
+  /* ---- going back to a backup ----------------------------------------
+   * A restore is a SAVE of an older model, not a file copy, and everything
+   * that makes it safe is already in saveInner: it copies what is about to be
+   * replaced into backups\ first, so a restore can itself be undone; it
+   * rewrites data.js, so teachers see the roll that is now real; and it resets
+   * loadedLastModified and the merge ancestor together, which is what stops
+   * the 8-second poll folding the file we just replaced straight back over the
+   * one we restored.
+   *
+   * The check and the save are one turn of the busy queue on purpose. Split
+   * across two, another admin's save can land in between, and saveInner would
+   * merge the restore into it as though it were an afternoon's editing — the
+   * one outcome worse than not restoring at all.
+   */
+  var backupsList = [];
+  var backupPicked = '';
+
+  function renderBackups() {
+    var body = $('backupsTable').querySelector('tbody');
+    body.innerHTML = backupsList.length
+      ? backupsList.map(function (b) {
+          return '<tr><td style="width:30px"><input type="radio" name="backupPick" ' +
+            'aria-label="' + esc(b.at.toLocaleString()) + '" value="' + esc(b.name) + '"' +
+            (b.name === backupPicked ? ' checked' : '') + '></td>' +
+            '<td>' + esc(b.at.toLocaleString()) + '</td>' +
+            '<td class="small muted">' + Math.max(1, Math.round(b.size / 1024)) + ' KB</td>' +
+            '<td class="small muted">' + (b.keep ? 'kept' : 'goes on the next save') + '</td></tr>';
+        }).join('')
+      : '<tr><td colspan="4" class="muted">Nothing here yet — the first save makes one.</td></tr>';
+    $('backupsRestoreBtn').disabled = !backupPicked;
+  }
+
+  /* A time on its own does not answer "which one do I want". */
+  async function describeBackup(name) {
+    var b = backupsList.filter(function (x) { return x.name === name; })[0];
+    if (!b) return;
+    $('backupsNote').textContent = 'Reading it…';
+    try {
+      b.model = b.model || await readModelFromFile(await b.handle.getFile());
+    } catch (e) {
+      $('backupsNote').textContent = 'That one will not open: ' + e.message;
+      backupPicked = '';
+      $('backupsRestoreBtn').disabled = true;
+      return;
+    }
+    if (backupPicked !== name) return;      // they moved on while it was reading
+    var d = b.model.students.length - model.students.length;
+    $('backupsNote').textContent = b.model.students.length + ' students, ' +
+      b.model.groups.length + ' classes — ' +
+      (d === 0 ? 'the same number of students as now'
+        : d > 0 ? d + ' more than on screen now'
+        : (-d) + ' fewer than on screen now');
+  }
+
+  $('backupsBtn').addEventListener('click', async function () {
+    backupPicked = '';
+    backupsList = [];
+    $('backupsNote').textContent = '';
+    $('backupsSummary').textContent = 'Reading the folder…';
+    $('backupsTable').querySelector('tbody').innerHTML = '';
+    $('backupsRestoreBtn').disabled = true;
+    $('backupsDialog').showModal();
+    try { backupsList = await listBackups(); } catch (e) { backupsList = []; }
+    $('backupsSummary').textContent = backupsList.length
+      ? backupsList.length + ' copy(s) of namelist.xlsx. The newest ' + BACKUP_KEEP.newest +
+        ' are kept, and the first of each of the last ' + BACKUP_KEEP.days +
+        ' days the roll was saved on; the rest are cleared out at the next save.'
+      : 'Nothing here yet. A copy of namelist.xlsx goes into backups\\ before every save.';
+    renderBackups();
+  });
+
+  $('backupsTable').addEventListener('change', function (ev) {
+    if (!ev.target || ev.target.name !== 'backupPick') return;
+    backupPicked = ev.target.value;
+    $('backupsRestoreBtn').disabled = false;
+    describeBackup(backupPicked);
+  });
+
+  $('backupsCloseBtn').addEventListener('click', function () { $('backupsDialog').close(); });
+
+  $('backupsRestoreBtn').addEventListener('click', function () {
+    var b = backupsList.filter(function (x) { return x.name === backupPicked; })[0];
+    if (!b) return;
+    if (othersHere.length) {
+      alert('Someone else has this folder open (' +
+        othersHere.map(function (p) { return S.norm(p.name) || 'someone'; }).join(', ') +
+        ').\n\nGoing back to a backup would throw away work they can see and you ' +
+        'cannot. Try again once they have closed it.');
+      return;
+    }
+    if (!confirm('Go back to the roll as it was on ' + b.at.toLocaleString() + '?\n\n' +
+      (b.model ? b.model.students.length + ' students, ' + b.model.groups.length + ' classes.\n\n' : '') +
+      'Everything since then is replaced — including anything on screen you have ' +
+      'not saved.\n\nWhat is in namelist.xlsx now is backed up first, so this can itself ' +
+      'be undone.')) return;
+    $('backupsDialog').close();
+    withBusy(function () { return restoreBackup(b); }).catch(function (err) {
+      alert('The restore stopped and nothing was changed: ' + err.message);
+    });
+  });
+
+  async function restoreBackup(b) {
+    var restored = b.model || await readModelFromFile(await b.handle.getFile());
+
+    /* Inside the queue, so nothing can land between this and the save below. */
+    if (fileHandle && loadedLastModified !== null) {
+      var current = await fileHandle.getFile();
+      if (current.lastModified !== loadedLastModified) {
+        alert('Somebody saved namelist.xlsx while that dialog was open.\n\n' +
+          'Nothing has been changed. Press “Reload from file” to see what they did, ' +
+          'then go back to a backup if you still want to.');
+        return;
+      }
+    }
+
+    /* Conflicts, merge notes and coverage warnings all belong to a model that
+     * no longer exists, and an undo snapshot would put it straight back. */
+    resetSessionState();
+    model = restored;
+    clearUndo('Undo history was cleared when you went back to a backup.');
+    setDirty(true);
+    refresh();
+    await saveInner({ silent: true, keepBackup: b.name });
+    toast('Back to the roll as it was on ' + b.at.toLocaleString());
   }
 
   /* ================= printing ================= */
@@ -5795,7 +6072,7 @@ window.Tour = (function () {
 
     refreshCoverageIssue();
     renderWarnings();
-    renderTidyBtn();
+    renderFolderBtns();
 
     fillOptions($('studentLevelFilter'), uniqueValues('level'), 'All levels');
     fillOptions($('studentClassFilter'), uniqueValues('class'), 'All classes');

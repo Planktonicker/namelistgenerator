@@ -232,6 +232,9 @@ for a namelist.
   yours staying in effect until you choose. Nothing is blocked while it waits.
 - **Save.** Teachers see the update the next time they open the page. Pressing
   Save yourself also takes a backup, which an autosave only does once an hour.
+- **Backups…** in the topbar goes back to any copy still in `backups/`. The
+  folder keeps the newest three and the first copy of each of the last fourteen
+  days the roll was saved on; the rest are cleared out at the next save.
 - **Added students** are for genuine late arrivals. They are kept when a level
   refreshes and adopted automatically once the office lists them.
 

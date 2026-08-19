@@ -35,7 +35,7 @@ Namelist/
   Data/
     namelist.xlsx    ← master data (regenerated on every save)
     data.js          ← auto-generated snapshot that makes the teacher page zero-click
-    backups/         ← timestamped .xlsx backup written on every save
+    backups/         ← a copy of the workbook from before each save, pruned as it goes
     presence/        ← who else has the editor open
     requests/        ← what teachers have dropped off
   namelist.html      ← teacher view (this is what the shortcut points at)
@@ -173,7 +173,8 @@ Three things keep it safe on a shared drive:
   saved namelist.xlsx. Reload, or press Save to overwrite.* Nothing is written
   until you choose.
 - **It does not flood `backups/`.** An automatic save takes a backup at most once
-  an hour. Pressing **Save** yourself always takes one.
+  an hour. Pressing **Save** yourself always takes one, and every save prunes the
+  folder afterwards — see *Going back to a backup*.
 - **It can be turned off** with the *Autosave* box in the topbar, per copy of the
   app. With it off, the browser warns before you close with unsaved changes, as
   before.
@@ -304,7 +305,8 @@ wall — the app works fine with read-only access to that folder.
   ```
 - Two admins can edit at the same time: each one's work is merged into the other's page
   within a few seconds, and only a field both of them changed needs a decision. See
-  *Two people editing at once*. Clear out old backups occasionally if the folder gets large.
+  *Two people editing at once*. Backups look after themselves — see
+  *Going back to a backup*.
 
 ### One-minute pilot test (before rolling out)
 
@@ -334,6 +336,7 @@ test/coverage-changes.browser.mjs  coverage gaps, the change report, pasted staf
 test/carry-over.browser.mjs    an empty folder: carry data over, or rebuild from data.js
 test/teacher-page.browser.mjs  teacher dropdown, class chips, the All classes tab
 test/add-student.browser.mjs   level-first add-student dialog
+test/backups.browser.mjs       pruning backups/, and going back to one
 ```
 
 Requires only Node (no npm packages):
@@ -795,8 +798,36 @@ Two deliberate limits:
   immediately.
 
 Undo is a change like any other, so an undone step is saved (or autosaved) in
-the normal way. For anything older than the history, `backups/` still holds a
-copy of the workbook from every save.
+the normal way. For anything older than the history, **Backups…** in the topbar
+goes back to the workbook as it stood before an earlier save.
+
+### Going back to a backup
+
+A copy of `namelist.xlsx` goes into `backups/` before every save the editor
+makes, named for the moment that copy is *of* — `namelist-20260818-1632.xlsx` is
+the workbook as it stood at 16:32 on the 18th.
+
+**Backups…** in the topbar lists them, newest first, with what is in each one
+(*156 students, 16 classes — 4 fewer than on screen now*), because a time on its
+own does not answer "which one do I want". Picking one and pressing **Go back to
+this one** replaces the roll and saves it, which means the version being thrown
+away is itself backed up first: a restore can be undone by restoring again.
+
+Two things stop it. It is refused while somebody else has the folder open —
+going back would throw away work they can see and you cannot — and it is refused
+if `namelist.xlsx` changed while the dialog was open, because blending an old
+roll into somebody's afternoon is worse than not restoring at all.
+
+**The folder prunes itself** on every save, so it never grows without limit:
+
+- the **newest three** copies, for undoing the last half hour
+- the **first copy of each of the last fourteen days the roll was saved on** —
+  first of the day, because a backup holds the state as it was *before* that
+  save, so the earliest copy on a Tuesday is what Monday finished with
+
+"The last fourteen days" counts days that actually appear, not a fortnight of
+calendar: an editor opened once a week still has fourteen rewind points. Any
+file in `backups/` that is not one of ours is left alone.
 
 ### Splitting one allocation into two classes
 
@@ -1070,7 +1101,8 @@ The rules underneath, for the cases that are not simple field edits:
 | One settles a teacher's request | It stays settled for both |
 
 A backup of the version being replaced still goes into `backups/` on every save,
-so the pre-merge state is always recoverable.
+so the pre-merge state is recoverable from **Backups…** for as long as the
+pruning rule keeps it.
 
 **Who else is in.** Each open editor drops a small note in `presence/` every
 twenty seconds and reads everyone else's, so the topbar can say *Mrs Wong is

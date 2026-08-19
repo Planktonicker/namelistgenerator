@@ -1329,4 +1329,94 @@ test('the band written in a cell beats the one the posting group implies', () =>
     ['pg1-blank']);
 });
 
+/* ---- which backups survive a prune ---------------------------------- */
+
+const bk = (d, t) => `namelist-${d}-${t}.xlsx`;
+
+test('three saves in one afternoon keep all three', () => {
+  const names = [bk('20260818', '090000'), bk('20260818', '091500'), bk('20260818', '093000')];
+  const out = S.backupsToKeep(names, { newest: 3, days: 14 });
+  assert.deepStrictEqual(out.drop, []);
+  assert.deepStrictEqual(out.keep, names);
+});
+
+test('a busy day keeps the newest three and the one the day opened with', () => {
+  const names = [];
+  for (let h = 9; h < 17; h++) names.push(bk('20260818', String(h).padStart(2, '0') + '0000'));
+  const out = S.backupsToKeep(names, { newest: 3, days: 14 });
+  assert.deepStrictEqual(out.keep, [
+    bk('20260818', '090000'),                                  // what Tuesday opened with
+    bk('20260818', '140000'), bk('20260818', '150000'), bk('20260818', '160000'),
+  ]);
+  assert.strictEqual(out.drop.length, 4);
+});
+
+test('a fortnight of daily saves keeps one a day', () => {
+  const names = [];
+  for (let d = 1; d <= 10; d++) {
+    const day = '202608' + String(d).padStart(2, '0');
+    names.push(bk(day, '080000'), bk(day, '170000'));
+  }
+  const out = S.backupsToKeep(names, { newest: 3, days: 14 });
+  // one a day, and the last day keeps both because the newest three reach back into it
+  assert.deepStrictEqual(out.keep.filter((n) => n.includes('080000')).length, 10, 'the first of each day');
+  assert.ok(out.keep.includes(bk('20260810', '170000')), 'and the newest few whatever day they are on');
+  assert.strictEqual(out.keep.length + out.drop.length, names.length);
+});
+
+test('older than fourteen dates and it goes, however many saves that day held', () => {
+  const names = [];
+  for (let d = 1; d <= 20; d++) names.push(bk('202608' + String(d).padStart(2, '0'), '080000'));
+  const out = S.backupsToKeep(names, { newest: 3, days: 14 });
+  assert.strictEqual(out.keep.length, 14, 'fourteen dates, and the newest three are among them');
+  assert.ok(out.drop.includes(bk('20260801', '080000')));
+  assert.ok(out.keep.includes(bk('20260807', '080000')), 'the fourteenth date back survives');
+  assert.ok(!out.keep.includes(bk('20260806', '080000')), 'the fifteenth does not');
+});
+
+test('fourteen dates means fourteen the editor was opened, not a fortnight of calendar', () => {
+  const names = [];
+  for (let w = 0; w < 14; w++) {                       // once a week since March
+    const d = 1 + w * 7;
+    names.push(bk('20260' + (d > 30 ? '4' : '3') + String(d > 30 ? d - 30 : d).padStart(2, '0'), '080000'));
+  }
+  const out = S.backupsToKeep(names, { newest: 3, days: 14 });
+  assert.deepStrictEqual(out.drop, [], 'a term of weekly saves is still fourteen rewind points');
+});
+
+test('a file that is not ours is never dropped', () => {
+  const names = ['notes.txt', 'namelist backup FINAL.xlsx', bk('20260101', '080000'),
+    bk('20260818', '090000'), bk('20260818', '091500'), bk('20260818', '093000'),
+    bk('20260818', '094500')];
+  const out = S.backupsToKeep(names, { newest: 3, days: 1 });
+  assert.ok(out.keep.includes('notes.txt') && out.keep.includes('namelist backup FINAL.xlsx'),
+    'somebody else put those there');
+  assert.ok(out.drop.includes(bk('20260101', '080000')), 'but an old one of ours goes');
+});
+
+test('the backup being restored from is not deleted by the save that restores it', () => {
+  const old = bk('20260701', '083000');
+  const names = [old];
+  for (let h = 9; h < 13; h++) names.push(bk('20260818', String(h).padStart(2, '0') + '0000'));
+  assert.ok(S.backupsToKeep(names, { newest: 3, days: 1 }).drop.includes(old),
+    'it would go on the usual rule');
+  assert.ok(!S.backupsToKeep(names, { newest: 3, days: 1, keepNames: [old] }).drop.includes(old));
+});
+
+test('pruning twice deletes nothing the second time', () => {
+  const names = [];
+  for (let d = 1; d <= 20; d++) {
+    const day = '202608' + String(d).padStart(2, '0');
+    names.push(bk(day, '080000'), bk(day, '120000'), bk(day, '170000'));
+  }
+  const once = S.backupsToKeep(names, { newest: 3, days: 14 });
+  assert.ok(once.drop.length > 0);
+  assert.deepStrictEqual(S.backupsToKeep(once.keep, { newest: 3, days: 14 }).drop, []);
+});
+
+test('nothing to prune is not an error', () => {
+  assert.deepStrictEqual(S.backupsToKeep([], { newest: 3, days: 14 }), { keep: [], drop: [] });
+  assert.deepStrictEqual(S.backupsToKeep(null), { keep: [], drop: [] });
+});
+
 console.log(passed + ' tests passed');

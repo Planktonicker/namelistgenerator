@@ -2707,6 +2707,79 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     sheet.style.width = '';
   }
 
+  /* ---- which backups are worth keeping --------------------------------
+   * The editor copies namelist.xlsx into backups\ before every save it makes,
+   * which is the right instinct and a folder that grows forever. Two kinds of
+   * copy are worth keeping, and they answer different questions:
+   *
+   *   the newest few   "undo what I did five minutes ago"
+   *   one a day        "put back what we had before Monday's import"
+   *
+   * A backup is named from the modified time of the file it copied, so
+   * namelist-20260818-1632.xlsx IS the workbook as it stood at 16:32 on the
+   * 18th. The earliest name carrying a date is therefore the state that day
+   * opened with — which is why the daily keeper is the FIRST of each day and
+   * not the last.
+   *
+   * The names are zero-padded and big-endian, so this needs no file metadata
+   * at all: sorting the names is sorting by time. (stamp() is local time, so
+   * the hour that repeats at a daylight-saving fall-back can sort an hour out
+   * of true once a year. The worst that costs is a keeper an hour off.)
+   *
+   * "The last 14 days" means the fourteen most recent dates that actually
+   * appear, not a fortnight of calendar: somebody who opens the editor once a
+   * week still gets fourteen rewind points rather than one.
+   *
+   * Two things are never dropped. A name that does not fit the pattern is
+   * somebody else's file and not ours to delete; and opts.keepNames is how a
+   * restore protects the backup it is restoring FROM against the prune its
+   * own save sets off.
+   */
+  var BACKUP_NAME = /^namelist-(\d{8})-(\d{6})\.xlsx$/i;
+
+  function backupStamp(name) {
+    var m = BACKUP_NAME.exec(name);
+    return m ? m[1] + m[2] : '';
+  }
+
+  function backupsToKeep(names, opts) {
+    names = names || [];
+    opts = opts || {};
+    var newest = opts.newest == null ? 3 : opts.newest;
+    var days = opts.days == null ? 14 : opts.days;
+    var keeping = {};
+    var ours = [];
+
+    names.forEach(function (name) {
+      if (backupStamp(name)) ours.push(name);
+      else keeping[name] = true;
+    });
+    (opts.keepNames || []).forEach(function (name) { keeping[name] = true; });
+
+    ours.sort(function (a, b) {
+      var x = backupStamp(a), y = backupStamp(b);
+      if (x !== y) return x < y ? -1 : 1;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+
+    for (var i = ours.length - 1; i >= 0 && ours.length - i <= newest; i--) keeping[ours[i]] = true;
+
+    var dates = [];
+    var firstOn = {};
+    ours.forEach(function (name) {
+      var day = backupStamp(name).slice(0, 8);
+      if (!firstOn[day]) { firstOn[day] = name; dates.push(day); }
+    });
+    dates.slice(Math.max(0, dates.length - days)).forEach(function (day) {
+      keeping[firstOn[day]] = true;
+    });
+
+    return {
+      keep: names.filter(function (n) { return keeping[n]; }),
+      drop: names.filter(function (n) { return !keeping[n]; }),
+    };
+  }
+
   /* ---- exporting to a workbook ----------------------------------------
    * A namelist can be printed and read on screen; this is the third thing
    * anyone asks for — the same students in Excel, so they can be sorted,
@@ -3497,6 +3570,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     allocationMatches: allocationMatches,
     coverageGaps: coverageGaps,
     groupSubjectKeys: groupSubjectKeys,
+    backupsToKeep: backupsToKeep,
     EXPORT_COLUMNS: EXPORT_COLUMNS,
     EXPORT_SPLITS: EXPORT_SPLITS,
     exportSheetName: exportSheetName,

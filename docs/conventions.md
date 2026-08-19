@@ -139,7 +139,9 @@ for a namelist.
   PG lives behind *More filters* because the subject group usually implies it.
 - **Teachers find themselves by typing.** The name box on `namelist.html` takes
   any part of a name and narrows the list as they go — no scrolling a hundred
-  names. Arrow keys and Enter work; half-typed text is never accepted.
+  names. Arrow keys and Enter work; half-typed text is never accepted. Clicking
+  the box again shows the whole staff list, not just the name already in it, so
+  looking up a colleague costs nothing.
 - **Ctrl+Z undoes.** Twenty steps back, covering anything that changes the
   data — a deletion brings the student back with their class places. The ↶
   button in the topbar names what it will undo before you press it. It stops at

@@ -705,6 +705,13 @@ be scanned rather than read. **A word you typed outranks the same letters buried
 inside another name**, so `lim` puts *Mrs Lim Bee Leng* above *Mdm Halimah
 Yusof*. The arrow at the right shows everyone if you would rather browse.
 
+**Once you have chosen, the box stops being a search.** Your name stays in it,
+but clicking back in offers the whole staff list again rather than the one
+person that name matches — with you ticked and scrolled into view, and the
+keyboard already on you so the arrows walk from where you are. Your name is
+selected, so typing replaces it. Looking up a colleague's namelist never means
+deleting your own name first.
+
 Arrow keys move through the matches, Enter chooses, Escape abandons what you
 were typing. It is still a list, not free text: leaving the box with something
 half-typed puts back whoever is actually chosen, so a namelist can never be

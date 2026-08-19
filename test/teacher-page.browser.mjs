@@ -122,6 +122,52 @@ await page.locator('#teacherSearch').focus();
 await page.fill('#teacherSearch', 'x');
 await page.keyboard.press('Escape');
 await page.waitForTimeout(150);
+/* Once somebody is chosen the box holds their name, and that name as a search
+ * matches exactly one person. Looking up a colleague must not mean deleting
+ * your own name first. */
+await page.locator('#teacherSearch').blur();
+await page.waitForTimeout(150);
+await page.click('#teacherSearch');
+await page.waitForTimeout(200);
+check('clicking back into the box offers everybody, not just the one chosen',
+  (await page.locator('#teacherOptions li').count()) === 17,
+  (await page.locator('#teacherOptions li').count()) + ' shown');
+check('with your own name still in the box, and ticked in the list',
+  (await page.locator('#teacherSearch').inputValue()) === 'Mr Benjamin Teo' &&
+  (await page.locator('#teacherOptions li[aria-selected]').innerText()).includes('Benjamin Teo'),
+  await page.locator('#teacherSearch').inputValue());
+check('the name is selected, so typing replaces it rather than appending',
+  await page.evaluate(() => {
+    const i = document.getElementById('teacherSearch');
+    return i.selectionStart === 0 && i.selectionEnd === i.value.length && i.value.length > 0;
+  }));
+check('and the keyboard starts on you, not at the top of the staff list',
+  (await page.locator('#teacherOptions li.active').innerText()).includes('Benjamin Teo'),
+  await page.locator('#teacherOptions li.active').innerText());
+await page.keyboard.type('Sarah');
+await page.waitForTimeout(200);
+check('typing over it filters again',
+  (await page.locator('#teacherOptions li').count()) === 1 &&
+  (await page.locator('#teacherSearch').inputValue()) === 'Sarah',
+  await page.locator('#teacherSearch').inputValue());
+await page.locator('#teacherOptions li').first().click();
+await page.waitForTimeout(300);
+check('and picking from it switches teacher',
+  (await page.locator('#teacherSearch').inputValue()) === 'Dr Sarah Loh',
+  await page.locator('#teacherSearch').inputValue());
+await page.locator('#teacherSearch').blur();
+await page.waitForTimeout(150);
+await page.locator('#teacherSearch').focus();
+await page.fill('#teacherSearch', 'Mr Benjamin Teo');
+await page.waitForTimeout(150);
+await page.locator('#teacherSearch').blur();
+await page.waitForTimeout(250);
+
+await page.locator('#teacherSearch').focus();
+await page.fill('#teacherSearch', 'x');
+await page.waitForTimeout(150);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(150);
 check('Escape abandons what you were typing', 
   (await page.locator('#teacherSearch').inputValue()) === 'Mr Benjamin Teo');
 await page.fill('#teacherSearch', 'Mrs Lim Bee Leng');

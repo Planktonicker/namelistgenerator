@@ -3584,6 +3584,19 @@ window.Tour = (function () {
    * Nothing is free text — you still end up choosing from the list. */
   var comboItems = [];       // what is currently shown, in order
   var comboActive = -1;      // which of them the keyboard is on
+  var comboTyped = false;    // has anything been typed since the box was opened
+  var justFocused = false;   // to keep the selection a click would otherwise drop
+
+  /* What the list should be filtered by — which is NOT always what is in the
+   * box. After choosing somebody the box holds their name, and as a search
+   * that matches one person, so opening it would offer a list of one and the
+   * only way to see anybody else would be to delete the name first. Until
+   * something is typed the box is a label, not a query. */
+  function comboQuery() {
+    var v = comboBox().value;
+    if (!comboTyped && selectedTeacher && S.normKey(v) === S.normKey(selectedTeacher)) return '';
+    return v;
+  }
 
   function comboBox() { return $('teacherSearch'); }
 
@@ -3615,7 +3628,7 @@ window.Tour = (function () {
   }
 
   function renderCombo() {
-    var query = comboBox().value;
+    var query = comboQuery();
     comboItems = teacherMatches(query);
     if (comboActive >= comboItems.length) comboActive = comboItems.length - 1;
     var list = $('teacherOptions');
@@ -3628,12 +3641,20 @@ window.Tour = (function () {
       : '<li class="none">No teacher matches “' + esc(S.norm(query)) + '”</li>';
     comboBox().setAttribute('aria-activedescendant',
       comboActive >= 0 && comboItems.length ? 'tOpt' + comboActive : '');
-    var active = list.querySelector('li.active');
+    // Failing a keyboard position, scroll to whoever is already chosen: opening
+    // a hundred-name list at the top hides the one you are standing on.
+    var active = list.querySelector('li.active') || list.querySelector('li[aria-selected]');
     if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
   }
 
   function openCombo() {
     if (!ix.teachers.length) return;
+    /* Opening on the current choice puts the keyboard on it, so the arrows
+     * walk from where you are rather than from the top of the staff list. */
+    if (comboActive < 0 && !comboQuery() && selectedTeacher) {
+      var at = ix.teachers.indexOf(selectedTeacher);
+      if (at >= 0) comboActive = at;
+    }
     renderCombo();
     $('teacherOptions').hidden = false;
     comboBox().setAttribute('aria-expanded', 'true');
@@ -3664,6 +3685,15 @@ window.Tour = (function () {
     else selectTeacher(settled);
   }
 
+  /* Re-choosing whoever is already chosen is a no-op: selectTeacher clears the
+   * class chip filter and redraws, and browsing the list to look at somebody
+   * else and then landing back on yourself should not cost you that. */
+  function chooseTeacher(name) {
+    if (!name) return;
+    if (name === selectedTeacher) { comboBox().value = name; comboTyped = false; return; }
+    selectTeacher(name);
+  }
+
   function fillTeacherSelect() {
     var hint = $('teacherHint');
     if (!ix.teachers.length) {
@@ -3679,14 +3709,34 @@ window.Tour = (function () {
   }
 
   comboBox().addEventListener('input', function () {
+    comboTyped = true;
     comboActive = comboBox().value ? 0 : -1;
     openCombo();
   });
-  comboBox().addEventListener('focus', function () { openCombo(); });
+  /* Focus selects the name that is there, so typing replaces it rather than
+   * appending to it — and the list opens on everybody, not on the one match
+   * the name in the box would make. */
+  comboBox().addEventListener('focus', function () {
+    comboTyped = false;
+    justFocused = true;
+    comboActive = -1;
+    comboBox().select();
+    openCombo();
+  });
+  comboBox().addEventListener('mouseup', function () {
+    // A click into the box would otherwise drop the selection focus just made.
+    if (!justFocused) return;
+    justFocused = false;
+    comboBox().select();
+  });
   /* Leaving the box any way at all — Tab, a click elsewhere, the window — has
    * to resolve what is in it. Choosing an option cannot land here: those
    * handlers preventDefault on mousedown, so focus never moves. */
-  comboBox().addEventListener('blur', function () { settleCombo(); closeCombo(); });
+  comboBox().addEventListener('blur', function () {
+    justFocused = false;
+    settleCombo();
+    closeCombo();
+  });
   comboBox().addEventListener('keydown', function (ev) {
     if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
       ev.preventDefault();
@@ -3700,7 +3750,7 @@ window.Tour = (function () {
     if (ev.key === 'Enter') {
       ev.preventDefault();
       if (comboIsOpen() && comboActive >= 0 && comboItems[comboActive]) {
-        selectTeacher(comboItems[comboActive]);
+        chooseTeacher(comboItems[comboActive]);
         closeCombo();
       } else settleCombo();
       return;
@@ -3708,6 +3758,7 @@ window.Tour = (function () {
     if (ev.key === 'Escape') {
       if (comboIsOpen()) { ev.stopPropagation(); closeCombo(); }
       comboBox().value = selectedTeacher || '';
+      comboTyped = false;
       return;
     }
     if (ev.key === 'Tab') { settleCombo(); closeCombo(); }
@@ -3718,13 +3769,14 @@ window.Tour = (function () {
     var li = ev.target.closest('li[data-i]');
     if (!li) return;
     ev.preventDefault();
-    selectTeacher(comboItems[+li.dataset.i]);
+    chooseTeacher(comboItems[+li.dataset.i]);
     closeCombo();
   });
 
   $('teacherOpen').addEventListener('mousedown', function (ev) {
     ev.preventDefault();
     if (comboIsOpen()) { closeCombo(); return; }
+    comboTyped = false;          // the arrow always means "show me everybody"
     comboBox().focus();
     comboBox().select();
     comboActive = -1;
@@ -3771,6 +3823,7 @@ window.Tour = (function () {
     selectedTeacher = name || null;
     selectedClass = '';
     comboBox().value = name || '';
+    comboTyped = false;
     try {
       if (name) localStorage.setItem(LAST_TEACHER_KEY, name);
     } catch (e) { /* private mode */ }

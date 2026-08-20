@@ -77,6 +77,10 @@ window.Tour = (function () {
     ui.skip.addEventListener('click', finish);
     ui.dim.addEventListener('click', finish);
     window.addEventListener('resize', place);
+    window.addEventListener('orientationchange', function () {
+      // The new size is not readable until the rotation has settled.
+      setTimeout(place, 200);
+    });
     window.addEventListener('keydown', function (ev) {
       if (ui.root.hidden) return;
       if (ev.key === 'Escape') { ev.preventDefault(); finish(); }
@@ -96,39 +100,69 @@ window.Tour = (function () {
     return (box.width && box.height) ? node : null;
   }
 
+  var PAD = 6;
+  /* Below this the card stops floating beside the control and docks to the
+   * bottom of the screen. A phone has neither the width to put a card beside
+   * anything nor the height to put a tall one anywhere. */
+  var DOCK_WIDTH = 560;
+
+  function ringTo(node) {
+    ui.ring.hidden = !node;
+    if (!node) return;
+    var b = node.getBoundingClientRect();
+    ui.ring.style.left = (b.left - PAD) + 'px';
+    ui.ring.style.top = (b.top - PAD) + 'px';
+    ui.ring.style.width = (b.width + PAD * 2) + 'px';
+    ui.ring.style.height = (b.height + PAD * 2) + 'px';
+  }
+
+  /* Docked, the card owns the bottom of the screen. If the control it is
+   * talking about is underneath it, move the page rather than the card. */
+  function keepClear(node) {
+    if (!node) return;
+    var over = node.getBoundingClientRect().bottom + 12 - ui.bubble.getBoundingClientRect().top;
+    if (over > 0) { window.scrollBy(0, over); ringTo(node); }
+  }
+
   /* The highlight is one element with an enormous shadow spread: the ring sits
    * over the control and the shadow dims everything else, so there is no mask
    * to keep in step with it. */
   function place() {
     if (!ui || ui.root.hidden) return;
     var node = target();
-    var pad = 6;
     ui.root.classList.toggle('plain', !node);
-    ui.ring.hidden = !node;
-    if (node) {
-      var b = node.getBoundingClientRect();
-      ui.ring.style.left = (b.left - pad) + 'px';
-      ui.ring.style.top = (b.top - pad) + 'px';
-      ui.ring.style.width = (b.width + pad * 2) + 'px';
-      ui.ring.style.height = (b.height + pad * 2) + 'px';
-    }
-    var bw = ui.bubble.offsetWidth;
-    var bh = ui.bubble.offsetHeight;
+    ringTo(node);
+
     var vw = document.documentElement.clientWidth;
     var vh = document.documentElement.clientHeight;
-    if (!node) {
-      ui.bubble.style.left = Math.round((vw - bw) / 2) + 'px';
-      ui.bubble.style.top = Math.round((vh - bh) / 2) + 'px';
+    var docked = vw <= DOCK_WIDTH;
+    ui.root.classList.toggle('docked', docked);
+    if (docked) {
+      // Let the stylesheet pin it; an inline position would win over that.
+      ui.bubble.style.left = '';
+      ui.bubble.style.top = '';
+      keepClear(node);
       return;
     }
-    var r = node.getBoundingClientRect();
-    // Below the control if it fits, above if it does not.
-    var top = r.bottom + pad + 10;
-    if (top + bh > vh - 8) top = Math.max(8, r.top - pad - 10 - bh);
-    var left = r.left + r.width / 2 - bw / 2;
-    left = Math.max(8, Math.min(left, vw - bw - 8));
-    ui.bubble.style.left = Math.round(left) + 'px';
-    ui.bubble.style.top = Math.round(top) + 'px';
+
+    var bw = ui.bubble.offsetWidth;
+    var bh = ui.bubble.offsetHeight;
+    var left, top;
+    if (!node) {
+      left = (vw - bw) / 2;
+      top = (vh - bh) / 2;
+    } else {
+      var r = node.getBoundingClientRect();
+      // Below the control if it fits, above if it does not.
+      top = r.bottom + PAD + 10;
+      if (top + bh > vh - 8) top = r.top - PAD - 10 - bh;
+      left = r.left + r.width / 2 - bw / 2;
+    }
+    /* Clamped last and in both directions. The card is capped to the viewport
+     * in CSS, so once it is on screen at the top it is on screen at the
+     * bottom too — which is what keeps Skip and Next pressable. */
+    ui.bubble.style.left = Math.round(Math.max(8, Math.min(left, vw - bw - 8))) + 'px';
+    ui.bubble.style.top = Math.round(Math.max(8, Math.min(top, vh - bh - 8))) + 'px';
   }
 
   function go(next) {
@@ -143,6 +177,7 @@ window.Tour = (function () {
     ui.count.textContent = (at + 1) + ' of ' + steps.length;
     ui.back.disabled = at === 0;
     ui.next.textContent = at === steps.length - 1 ? 'Done' : 'Next';
+    ui.body.scrollTop = 0;      // a long step scrolls; the next one starts at its top
     Promise.resolve(step.before ? step.before() : null).catch(function () { /* keep going */ })
       .then(function () {
         var node = target();

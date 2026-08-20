@@ -145,6 +145,53 @@ await page.click('.tour-skip');
 await page.waitForTimeout(200);
 check('Skip closes it from any step', !(await page.locator('.tour-bubble').isVisible()));
 
+/* ---------- on a phone, and on anything short ----------
+ * The card is fixed and covers the page, so if it grows past the screen its
+ * own Skip and Next go below the fold with nothing left to scroll — and the
+ * whole screen is dead. Every size has to keep them pressable. */
+for (const vp of [{ width: 390, height: 844 }, { width: 360, height: 480 },
+  { width: 740, height: 360 }, { width: 1280, height: 800 }]) {
+  const phone = await browser.newContext({ viewport: vp });
+  const p2 = await phone.newPage();
+  p2.on('pageerror', (e) => errors.push(String(e)));
+  await p2.goto('file://' + demo + '/admin.html');
+  await p2.waitForTimeout(300);
+  await p2.evaluate(() => {
+    const long = '<p>' + 'Internal messages within the leadership team are frequently ignored '
+      .repeat(8) + '</p>';
+    window.Tour.start([{ title: 'A long step', body: long, el: '#saveBtn' },
+      { title: 'And a short one', body: '<p>short</p>' }]);
+  });
+  await p2.waitForTimeout(300);
+  const fits = await p2.evaluate(() => {
+    const card = document.querySelector('.tour-bubble').getBoundingClientRect();
+    const next = document.querySelector('.tour-next').getBoundingClientRect();
+    const skip = document.querySelector('.tour-skip').getBoundingClientRect();
+    const body = document.querySelector('.tour-body');
+    return {
+      card: [Math.round(card.top), Math.round(card.bottom)],
+      inside: card.top >= 0 && card.bottom <= innerHeight &&
+        card.left >= 0 && card.right <= innerWidth,
+      pressable: next.bottom <= innerHeight && next.top >= 0 &&
+        skip.bottom <= innerHeight && skip.top >= 0,
+      readable: body.scrollHeight <= body.clientHeight ||
+        getComputedStyle(body).overflowY === 'auto',
+    };
+  });
+  const size = vp.width + 'x' + vp.height;
+  check(size + ': the card stays on the screen', fits.inside, fits.card.join('..'));
+  check(size + ': Skip and Next stay pressable', fits.pressable);
+  check(size + ': and a long step scrolls inside the card', fits.readable);
+  // a real tap, not a scripted click: proof nothing is covering them
+  await p2.locator('.tour-next').click();
+  await p2.waitForTimeout(250);
+  check(size + ': pressing Next moves on', (await p2.locator('.tour-count').innerText()) === '2 of 2');
+  await p2.locator('.tour-skip').click();
+  await p2.waitForTimeout(200);
+  check(size + ': and Skip closes it', await p2.locator('.tour').isHidden());
+  await phone.close();
+}
+
 check('no JS errors', errors.length === 0, errors.slice(0, 2).join('|'));
 await browser.close();
 console.log(failures.length ? 'FAILURES: ' + failures.length : 'All walk-through checks passed');

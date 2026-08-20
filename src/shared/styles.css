@@ -549,20 +549,43 @@ dialog .actions {
   box-shadow: 0 0 0 2px var(--red), 0 0 0 9999px rgba(16, 24, 40, 0.55);
   transition: left .18s, top .18s, width .18s, height .18s;
 }
+/* The card never grows past the screen. A fixed card taller than the viewport
+ * puts its own Skip and Next buttons below the fold, and since the tour covers
+ * the page there is nothing left to scroll and nothing left to press — the
+ * whole screen goes dead. So: a height cap, and the words scroll inside it
+ * while the buttons stay put. */
 .tour-bubble {
   position: fixed; width: min(380px, calc(100vw - 24px));
+  max-height: calc(100vh - 16px);
+  display: flex; flex-direction: column;
   background: var(--surface); color: var(--ink);
   border: 1px solid var(--line); border-top: 3px solid var(--accent);
   border-radius: var(--r-md); box-shadow: var(--shadow-3);
   padding: var(--sp-4);
 }
-.tour-bubble h2 { margin: 0 0 var(--sp-2); font-size: var(--fs-lg); color: var(--accent); }
-.tour-body { font-size: var(--fs-sm); line-height: 1.55; color: var(--ink); }
+/* On a phone the visible height changes as the address bar comes and goes, and
+ * vh measures the taller of the two. */
+@supports (height: 100dvh) { .tour-bubble { max-height: calc(100dvh - 16px); } }
+.tour-bubble h2 { margin: 0 0 var(--sp-2); font-size: var(--fs-lg); color: var(--accent); flex: none; }
+.tour-body {
+  font-size: var(--fs-sm); line-height: 1.55; color: var(--ink);
+  overflow-y: auto; overscroll-behavior: contain; min-height: 0;
+}
 .tour-body p { margin: 0 0 var(--sp-2); }
 .tour-body p:last-child { margin-bottom: 0; }
 .tour-foot {
-  display: flex; align-items: center; gap: var(--sp-2);
+  display: flex; align-items: center; gap: var(--sp-2); flex: none;
   margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--line);
 }
+
+/* Narrow enough and it stops floating beside the control and sits at the
+ * bottom instead, the way a phone expects. Room is left below for the home
+ * indicator. */
+.tour.docked .tour-bubble {
+  left: 8px; right: 8px; top: auto; bottom: 8px; width: auto;
+  max-height: 60vh;
+  padding-bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px));
+}
+@supports (height: 100dvh) { .tour.docked .tour-bubble { max-height: 60dvh; } }
 .tour-foot .spacer { flex: 1; }
 .tour-foot button { white-space: nowrap; }

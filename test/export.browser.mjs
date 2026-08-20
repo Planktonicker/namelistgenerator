@@ -97,14 +97,27 @@ check('the workbook opens, Summary first',
   wb.SheetNames[0] === 'Summary' && wb.SheetNames.join(',') === 'Summary,1R1',
   wb.SheetNames.join(','));
 const rows = XLSX.utils.sheet_to_json(wb.Sheets['1R1'], { header: 1 });
+/* Each sheet heads itself now: what it is, what it holds, a blank, then the
+ * header — and every row is inset by the spacer column down the left. */
 check('the sheet carries the columns that were ticked',
-  rows[0].join('|') === 'S/N|Class|Name|Gender|Level|PG', rows[0].join('|'));
+  rows[3].slice(1).join('|') === 'S/N|Class|Name|Gender|Level|PG', rows[0].join('|'));
 check('and one row per student, matching the count on screen',
-  rows.length - 1 === 12, (rows.length - 1) + '');
+  rows.length - 4 === 12, (rows.length - 4) + '');
 check('every row is a PG 3 student of 1R1, as filtered',
-  rows.slice(1).every((r) => String(r[1]) === '1R1' && String(r[5]) === '3'),
-  JSON.stringify(rows[1]));
+  rows.slice(4).every((r) => String(r[2]) === '1R1' && String(r[6]) === '3'),
+  JSON.stringify(rows[4]));
 const summary = JSON.stringify(XLSX.utils.sheet_to_json(wb.Sheets.Summary, { header: 1 }));
+check('the sheet says what it is at the top, as the namelist does',
+  String(rows[0][1]) === '1R1' && /12 students/.test(String(rows[1][1])),
+  JSON.stringify(rows.slice(0, 2)));
+check('and it carries its own borders, which the free SheetJS never writes',
+  (() => {
+    const cfb = XLSX.CFB.read(Array.prototype.slice.call(readFileSync(file)), { type: 'array' });
+    const styles = Buffer.from(XLSX.CFB.find(cfb, '/xl/styles.xml').content).toString('utf8');
+    const sheet = Buffer.from(XLSX.CFB.find(cfb, '/xl/worksheets/sheet2.xml').content).toString('utf8');
+    return /style="thin"/.test(styles) && / s="\d+"/.test(sheet) && /state="frozen"/.test(sheet);
+  })());
+
 check('the Summary records what was asked for and what it left out',
   summary.includes('Form class') && summary.includes('PG 3') && summary.includes('class 1R1'),
   summary.slice(0, 160));

@@ -1288,13 +1288,12 @@
   $('exGo').addEventListener('click', function () {
     if (!exSheets.length || !exColumns.length) return;
     var by = S.EXPORT_SPLITS.filter(function (o) { return o.key === $('exSplit').value; })[0];
-    var wb = S.exportWorkbook(exModel(), exSheets, {
+    var out = S.exportBytes(exModel(), exSheets, {
       columns: exColumns.slice(),
       splitLabel: by ? by.label : '',
       filterNote: exFilterNote(),
       madeAt: new Date().toLocaleString(),
     });
-    var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     var blob = new Blob([out], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });

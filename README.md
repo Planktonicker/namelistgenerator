@@ -552,6 +552,25 @@ goes in first: every tab, its size, and the filters the export was made under,
 so somebody handed the file three weeks later can see what it is and what it
 left out.
 
+**Each sheet heads itself the way the namelist on screen does**: the class, then
+what it holds, then — where the sheet *is* a class — the same strip the page
+carries, level, band, what it teaches, and the head count at the far end. A
+blank row on top and a narrow blank column down either side keep it off the edge
+of the paper.
+
+**The free SheetJS writes no cell formatting at all** — no borders, no bold
+heading, no frozen header row — which leaves a namelist nobody wants to print.
+So the workbook is written, opened again as the zip it actually is, its
+`styles.xml` replaced with one defining the four formats used, and each cell
+tagged with the format its row wants (`applyStyles` in `src/shared/schema.js`).
+SheetJS's own CFB does the unpacking and repacking, so nothing extra is vendored
+and nothing runs outside the page. Sixteen sheets of 769 students takes about a
+tenth of a second.
+
+Keep that stylesheet minimal and in the order the schema demands — fonts, fills,
+borders, `cellStyleXfs`, `cellXfs`, `cellStyles`. Excel refuses a whole workbook
+over a stylesheet it dislikes and says nothing useful about why.
+
 **Sheet names are the part that would break it.** Excel refuses a whole workbook
 if any tab name is over 31 characters, contains `\ / ? * [ ] :` — which
 `SS/Hist` does every time — duplicates another compared without case, or is

@@ -1277,12 +1277,11 @@ test('splitting a roll into sheets loses nobody', () => {
 test('the exported workbook opens, with the tabs and rows asked for', () => {
   const model = buildSampleModel();
   const sheets = S.splitStudents(model, model.students, 'class');
-  const wb = S.exportWorkbook(model, sheets, {
+  const bytes = S.exportBytes(model, sheets, {
     columns: ['sn', 'class', 'name', 'gender', 'pg'],
     splitLabel: 'Form class', filterNote: 'Level 1', madeAt: '2026-08-18',
   });
-  const bytes = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-  const back = XLSX.read(bytes, { type: 'array' });
+  const back = XLSX.read(Buffer.from(bytes), { type: 'buffer' });
 
   assert.strictEqual(back.SheetNames[0], 'Summary', 'the summary comes first');
   assert.strictEqual(back.SheetNames.length, sheets.length + 1);
@@ -1291,10 +1290,15 @@ test('the exported workbook opens, with the tabs and rows asked for', () => {
 
   const first = sheets[0];
   const rows = XLSX.utils.sheet_to_json(back.Sheets[back.SheetNames[1]], { header: 1 });
-  assert.deepStrictEqual(rows[0], ['S/N', 'Class', 'Name', 'Gender', 'PG'],
+  /* The sheet heads itself: what it is, what it holds, a blank, then the
+   * roll. The leading null in every row is the spacer column down the left,
+   * and the blank first row of the sheet is not returned at all. */
+  assert.strictEqual(rows[0][1], first.label, 'the sheet says what it is at the top');
+  assert.ok(/26 students/.test(rows[1][1]), 'and how many are on it: ' + rows[1][1]);
+  assert.deepStrictEqual(rows[3].slice(1), ['S/N', 'Class', 'Name', 'Gender', 'PG'],
     'the header is the columns that were asked for, in order');
-  assert.strictEqual(rows.length - 1, first.students.length, 'one row per student');
-  assert.strictEqual(rows[1][2], first.students[0].name);
+  assert.strictEqual(rows.length - 4, first.students.length, 'one row per student');
+  assert.strictEqual(rows[4][3], first.students[0].name);
 
   const summary = XLSX.utils.sheet_to_json(back.Sheets.Summary, { header: 1 });
   const flat = JSON.stringify(summary);
@@ -1476,6 +1480,53 @@ test('and never guesses between two subjects a heading could mean', () => {
     groups: [], students: [], memberships: [] };
   assert.strictEqual(S.subjectLabelFor(both, 'MA'), 'MA', 'the heading stands rather than a coin toss');
   assert.strictEqual(S.subjectLabelFor(both, 'POA'), 'POA', 'a column nobody has named stays as it is');
+});
+
+test('a sheet that is a class heads itself the way the namelist does', () => {
+  const model = buildSampleModel();
+  const sheets = S.splitStudents(model, model.students, 'group');
+  const at = sheets.findIndex((x) => x.group);   // "(in no class)" sorts first and has none
+  assert.ok(at !== -1, 'the class comes through the split, not just its name');
+  const cols = ['sn', 'class', 'name', 'gender', 'pg', 'tg'];
+  const read = (columns) => {
+    const bytes = S.exportBytes(model, sheets, { columns: columns, splitLabel: 'Teaching group' });
+    const back = XLSX.read(Buffer.from(bytes), { type: 'buffer' });
+    return XLSX.utils.sheet_to_json(back.Sheets[back.SheetNames[at + 1]], { header: 1 });
+  };
+  const rows = read(cols);
+  const meta = S.namelistMeta(sheets[at].group, sheets[at].students);
+  assert.strictEqual(rows[0][1], sheets[at].label);
+  assert.deepStrictEqual(rows[2].slice(1, 4), [meta.level, meta.band, meta.subject],
+    'level, band and subject, as on screen');
+  assert.ok(/Total pax: \d+$/.test(String(rows[2][rows[2].length - 1])),
+    'with the head count at the far end: ' + rows[2].join('|'));
+
+  /* Too few columns to give each fact a cell: they share one rather than the
+   * head count dropping off the end. */
+  const narrow = read(['sn', 'name', 'class'])[2];
+  assert.ok(/Total pax: \d+$/.test(String(narrow[narrow.length - 1])), narrow.join('|'));
+  assert.ok(String(narrow[1]).indexOf(meta.subject) !== -1, narrow.join('|'));
+});
+
+test('the workbook carries its own formatting, which the free SheetJS does not write', () => {
+  const model = buildSampleModel();
+  const sheets = S.splitStudents(model, model.students, 'class').slice(0, 2);
+  const bytes = S.exportBytes(model, sheets, { columns: ['sn', 'class', 'name'] });
+  const cfb = XLSX.CFB.read(Array.prototype.slice.call(new Uint8Array(bytes)), { type: 'array' });
+  const text = (p) => Buffer.from(XLSX.CFB.find(cfb, p).content).toString('utf8');
+
+  const styles = text('/xl/styles.xml');
+  assert.ok(/<borders count="2">/.test(styles) && /style="thin"/.test(styles), 'a border is defined');
+  const xfs = Number(/<cellXfs count="(\d+)"/.exec(styles)[1]);
+
+  const sheet = text('/xl/worksheets/sheet2.xml');
+  const used = (sheet.match(/ s="(\d+)"/g) || []).map((m) => Number(/\d+/.exec(m)[0]));
+  assert.ok(used.length > 0, 'and cells are tagged with it');
+  assert.ok(used.every((n) => n < xfs), 'every format a cell asks for exists: ' + xfs);
+  assert.ok(/<c r="[A-Z]+\d+" s="\d+"(?![^>]* s=")/.test(sheet), 'and never tagged twice');
+  assert.ok(/state="frozen"/.test(sheet), 'the header row stays put when the roll scrolls');
+  assert.ok(/<col min="1" max="1"/.test(sheet), 'the spacer column down the left has a width');
+  assert.ok(/<pageMargins /.test(sheet), 'and the page has margins');
 });
 
 console.log(passed + ' tests passed');

@@ -2925,9 +2925,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     var ix = null;
     var out = [];
     var seen = {};
-    function bucket(label, student) {
+    /* `group` is carried where a sheet IS a class, so the workbook can head
+     * that sheet the way the namelist on screen heads it. */
+    function bucket(label, student, group) {
       var k = normKey(label);
-      if (!seen[k]) { seen[k] = { label: label, students: [] }; out.push(seen[k]); }
+      if (!seen[k]) { seen[k] = { label: label, students: [], group: group || null }; out.push(seen[k]); }
       seen[k].students.push(student);
     }
     if (by === 'group' || by === 'teacher') {
@@ -2942,7 +2944,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         var members = (ix.membersByGroup.get(g.code) || []).filter(function (s) { return wanted[s.id]; });
         if (!members.length) return;
         if (by === 'group') {
-          members.forEach(function (s) { bucket(g.name || g.code, s); });
+          members.forEach(function (s) { bucket(g.name || g.code, s, g); });
         } else {
           var names = teacherNames(g);
           if (!names.length) names = ['(no teacher yet)'];
@@ -2980,6 +2982,170 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     });
   }
 
+  /* ---- making the workbook look like a namelist -----------------------
+   * SheetJS's free build writes values, column widths, merges and page
+   * margins — and no cell formatting at all. No borders, no bold heading, no
+   * frozen header row. A list people print and mark up by hand wants all
+   * three, so the file is written, opened again as the zip it actually is,
+   * its styles.xml replaced with one defining the few formats used, and each
+   * cell tagged with the format its row wants. SheetJS's own CFB does the
+   * unpacking and repacking, so nothing new is vendored and nothing runs
+   * outside the page.
+   *
+   * Keep this minimal and in the order the schema demands — fonts, fills,
+   * borders, cellStyleXfs, cellXfs, cellStyles — because Excel refuses a
+   * whole workbook over a stylesheet it does not like, and says nothing
+   * useful about why.
+   */
+  var XF = { plain: 0, cell: 1, head: 2, title: 3, quiet: 4 };
+
+  var STYLES_XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<fonts count="4">' +
+      '<font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>' +
+      '<font><b/><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>' +
+      '<font><b/><sz val="15"/><color rgb="FF1F3864"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>' +
+      '<font><sz val="10"/><color rgb="FF6B7280"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>' +
+    '</fonts>' +
+    '<fills count="3">' +
+      '<fill><patternFill patternType="none"/></fill>' +
+      '<fill><patternFill patternType="gray125"/></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFEAF0F6"/><bgColor indexed="64"/></patternFill></fill>' +
+    '</fills>' +
+    '<borders count="2">' +
+      '<border><left/><right/><top/><bottom/><diagonal/></border>' +
+      '<border>' +
+        '<left style="thin"><color rgb="FF9AA5B1"/></left>' +
+        '<right style="thin"><color rgb="FF9AA5B1"/></right>' +
+        '<top style="thin"><color rgb="FF9AA5B1"/></top>' +
+        '<bottom style="thin"><color rgb="FF9AA5B1"/></bottom>' +
+        '<diagonal/></border>' +
+    '</borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="5">' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" ' +
+        'applyAlignment="1"><alignment vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" ' +
+        'applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" ' +
+        'applyAlignment="1"><alignment vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" ' +
+        'applyAlignment="1"><alignment vertical="center"/></xf>' +
+    '</cellXfs>' +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
+    '<dxfs count="0"/>' +
+    '<tableStyles count="0" defaultTableStyle="TableStyleMedium9" defaultPivotStyle="PivotStyleMedium4"/>' +
+    '</styleSheet>';
+
+  function utf8Bytes(str) { return new TextEncoder().encode(str); }
+  function utf8String(bytes) { return new TextDecoder().decode(new Uint8Array(bytes)); }
+
+  /* plans[i] describes sheet i+1: `rows` gives the format for every cell of
+   * each row, and `freezeAt` is the first row that should scroll. */
+  function applyStyles(bytes, plans) {
+    var CFB = XLSX.CFB;
+    /* XLSX.write hands back an ArrayBuffer and CFB wants a plain array of
+     * bytes, so neither end can be passed straight to the other. */
+    var cfb = CFB.read(Array.prototype.slice.call(new Uint8Array(bytes)), { type: 'array' });
+    CFB.utils.cfb_add(cfb, '/xl/styles.xml', utf8Bytes(STYLES_XML));
+    plans.forEach(function (plan, i) {
+      var path = '/xl/worksheets/sheet' + (i + 1) + '.xml';
+      var entry = CFB.find(cfb, path);
+      if (!entry) return;
+      var xml = utf8String(entry.content);
+      var rows = plan.rows || [];
+      /* The cell reference carries its own row number, so no row parsing is
+       * needed. A cell that already has a format is left as it is. */
+      xml = xml.replace(/<c r="([A-Z]+)(\d+)"([^>]*)>/g, function (m, col, row, rest) {
+        var sid = rows[+row - 1];
+        if (!sid || / s="/.test(rest)) return m;
+        return '<c r="' + col + row + '" s="' + sid + '"' + rest + '>';
+      });
+      if (plan.freezeAt > 1) {
+        xml = xml.replace('<sheetView workbookViewId="0"/>',
+          '<sheetView workbookViewId="0"><pane ySplit="' + (plan.freezeAt - 1) +
+          '" topLeftCell="A' + plan.freezeAt + '" activePane="bottomLeft" state="frozen"/>' +
+          '<selection pane="bottomLeft" activeCell="A' + plan.freezeAt +
+          '" sqref="A' + plan.freezeAt + '"/></sheetView>');
+      }
+      CFB.utils.cfb_add(cfb, path, utf8Bytes(xml));
+    });
+    return new Uint8Array(CFB.write(cfb, { fileType: 'zip', type: 'array' }));
+  }
+
+  /* One blank column on either side and a blank row on top, so nothing is
+   * jammed against the edge of the paper or the corner of the screen. */
+  var EDGE = 1;
+  var EDGE_WIDTH = 2.5;
+
+  function columnWidths(header, body) {
+    var wide = header.map(function (h) { return String(h).length; });
+    body.forEach(function (row) {
+      row.forEach(function (v, i) {
+        var n = String(v == null ? '' : v).length;
+        if (n > wide[i]) wide[i] = n;
+      });
+    });
+    return [{ wch: EDGE_WIDTH }]
+      .concat(wide.map(function (n) { return { wch: Math.max(7, Math.min(42, n + 2)) }; }))
+      .concat([{ wch: EDGE_WIDTH }]);
+  }
+
+  /* A sheet, laid out the way the namelist on screen is laid out: what it is,
+   * what it holds, then the roll. Returns the worksheet and the format of
+   * every row, which applyStyles needs afterwards. */
+  function exportSheet(sheet, columns, splitLabel) {
+    var header = exportHeader(columns);
+    var body = sheet.students.map(function (st) {
+      return columns.map(function (key) { return exportCellValue(st, key); });
+    });
+    var meta = sheet.group ? namelistMeta(sheet.group, sheet.students) : null;
+    var n = sheet.students.length;
+    var aoa = [];
+    var rows = [];
+    var merges = [];
+    var pad = function (row) { return [null].concat(row); };
+
+    aoa.push([]); rows.push(XF.plain);                                  // air at the top
+    aoa.push(pad([sheet.label])); rows.push(XF.title);
+    aoa.push(pad([(meta && meta.subject ? meta.subject + ' · ' : splitLabel ? splitLabel + ' · ' : '') +
+      n + ' student' + (n === 1 ? '' : 's')])); rows.push(XF.quiet);
+    merges.push({ s: { r: 1, c: EDGE }, e: { r: 1, c: EDGE + Math.min(3, header.length - 1) } });
+    merges.push({ s: { r: 2, c: EDGE }, e: { r: 2, c: EDGE + Math.min(3, header.length - 1) } });
+    if (meta) {
+      /* The same strip the namelist carries on screen: level, band, what the
+       * class teaches, and the head count at the far end. With too few columns
+       * to give each fact a cell of its own they share one, because losing the
+       * head count off the end would be worse than a crowded cell. */
+      var facts = [meta.level, meta.band, meta.subject].filter(Boolean);
+      var tail = 'Total pax: ' + meta.total;
+      var strip;
+      if (header.length < 2) {
+        strip = [facts.concat([tail]).join(' · ')];
+      } else {
+        strip = header.length > facts.length ? facts.slice() : [facts.join(' · ')];
+        while (strip.length < header.length - 1) strip.push('');
+        strip.push(tail);
+      }
+      aoa.push(pad(strip));
+      rows.push(XF.cell);
+    }
+    aoa.push([]); rows.push(XF.plain);
+    var headerRow = aoa.length + 1;                                     // 1-based, for the freeze
+    aoa.push(pad(header)); rows.push(XF.head);
+    body.forEach(function (row) { aoa.push(pad(row)); rows.push(XF.cell); });
+
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = columnWidths(header, body);
+    ws['!rows'] = rows.map(function (sid, i) {
+      return { hpt: i === 1 ? 22 : sid === XF.head ? 20 : 16 };
+    });
+    ws['!merges'] = merges;
+    ws['!margins'] = { left: 0.5, right: 0.5, top: 0.7, bottom: 0.5, header: 0.3, footer: 0.3 };
+    return { ws: ws, plan: { rows: rows, freezeAt: headerRow + 1 } };
+  }
+
   /* The workbook: a Summary sheet first, then one per split. The summary is
    * there so somebody handed the file three weeks later can see what it is and,
    * more to the point, what it left out. */
@@ -2987,28 +3153,48 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     opts = opts || {};
     var columns = opts.columns && opts.columns.length ? opts.columns : ['sn', 'class', 'name', 'gender'];
     var wb = XLSX.utils.book_new();
+    var plans = [];
     var taken = {};
     var placed = sheets.map(function (sheet) {
-      return { name: exportSheetName(sheet.label, taken), label: sheet.label, students: sheet.students };
+      return { name: exportSheetName(sheet.label, taken), label: sheet.label,
+        students: sheet.students, group: sheet.group || null };
     });
     if (opts.summary !== false) {
-      var rows = [['Namelist export'], ['Made', opts.madeAt || ''], ['Split by', opts.splitLabel || ''],
-        ['Filters', opts.filterNote || 'none'], [],
-        ['Sheet', 'Named for', 'Students']];
-      placed.forEach(function (p) { rows.push([p.name, p.label, p.students.length]); });
-      rows.push([]);
-      rows.push(['Total rows', '', placed.reduce(function (n, p) { return n + p.students.length; }, 0)]);
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows),
-        exportSheetName('Summary', taken));
+      var head = ['Sheet', 'Named for', 'Students'];
+      var rows = [[], [null, 'Namelist export'], [null, 'Made', opts.madeAt || ''],
+        [null, 'Split by', opts.splitLabel || ''], [null, 'Filters', opts.filterNote || 'none'],
+        []];
+      var styles = [XF.plain, XF.title, XF.quiet, XF.quiet, XF.quiet, XF.plain];
+      rows.push([null].concat(head)); styles.push(XF.head);
+      var body = [];
+      placed.forEach(function (p) {
+        body.push([p.name, p.label, p.students.length]);
+        rows.push([null, p.name, p.label, p.students.length]);
+        styles.push(XF.cell);
+      });
+      rows.push([]); styles.push(XF.plain);
+      rows.push([null, 'Total rows', '', placed.reduce(function (n, p) { return n + p.students.length; }, 0)]);
+      styles.push(XF.cell);
+      var sws = XLSX.utils.aoa_to_sheet(rows);
+      sws['!cols'] = columnWidths(head, body);
+      sws['!merges'] = [{ s: { r: 1, c: EDGE }, e: { r: 1, c: EDGE + 2 } }];
+      sws['!margins'] = { left: 0.5, right: 0.5, top: 0.7, bottom: 0.5, header: 0.3, footer: 0.3 };
+      XLSX.utils.book_append_sheet(wb, sws, exportSheetName('Summary', taken));
+      plans.push({ rows: styles, freezeAt: 0 });
     }
     placed.forEach(function (p) {
-      var aoa = [exportHeader(columns)];
-      p.students.forEach(function (s) {
-        aoa.push(columns.map(function (key) { return exportCellValue(s, key); }));
-      });
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), p.name);
+      var built = exportSheet(p, columns, opts.splitLabel);
+      XLSX.utils.book_append_sheet(wb, built.ws, p.name);
+      plans.push(built.plan);
     });
-    return wb;
+    return { wb: wb, plans: plans };
+  }
+
+  /* The file itself, ready to be handed to a download. */
+  function exportBytes(model, sheets, opts) {
+    var built = exportWorkbook(model, sheets, opts);
+    var raw = XLSX.write(built.wb, { bookType: 'xlsx', type: 'array' });
+    return applyStyles(raw, built.plans);
   }
 
   /* ---- merging two admins' work -------------------------------------
@@ -3653,6 +3839,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     exportSheetName: exportSheetName,
     splitStudents: splitStudents,
     exportWorkbook: exportWorkbook,
+    exportBytes: exportBytes,
     namelistPrintHtml: namelistPrintHtml,
     namelistBoxCount: namelistBoxCount,
     fitPrintSheet: fitPrintSheet,
@@ -4934,13 +5121,12 @@ window.Tour = (function () {
   $('exGo').addEventListener('click', function () {
     if (!exSheets.length || !exColumns.length) return;
     var by = S.EXPORT_SPLITS.filter(function (o) { return o.key === $('exSplit').value; })[0];
-    var wb = S.exportWorkbook(exModel(), exSheets, {
+    var out = S.exportBytes(exModel(), exSheets, {
       columns: exColumns.slice(),
       splitLabel: by ? by.label : '',
       filterNote: exFilterNote(),
       madeAt: new Date().toLocaleString(),
     });
-    var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     var blob = new Blob([out], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });

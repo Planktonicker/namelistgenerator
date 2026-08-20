@@ -952,12 +952,33 @@
    * in, does not need to know whose class it is. */
   var expanded = {};
 
+  /* Values are plain strings, or { value, label } where what is stored and
+   * what is read are different things — a subject column is picked as "SS"
+   * and shown as "Social Studies". */
   function fillFilter(el, values, allLabel) {
     var cur = el.value;
     el.innerHTML = '<option value="">' + esc(allLabel) + '</option>' + values.map(function (v) {
-      return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+      var val = (v && v.value != null) ? v.value : v;
+      var label = (v && v.label != null) ? v.label : v;
+      return '<option value="' + esc(val) + '">' + esc(label) + '</option>';
     }).join('');
     el.value = cur;
+  }
+
+  /* A subject column offered by the name the classes give it, so this page
+   * calls a subject what the editor calls it. Two columns that answer to the
+   * same words keep their heading alongside, or the list holds two entries
+   * nobody can tell apart. */
+  function subjectChoices() {
+    var keys = (data.subjectKeys || []).slice();
+    var labels = keys.map(function (k) { return S.subjectLabelFor(data, k); });
+    var count = {};
+    labels.forEach(function (l) { count[S.normKey(l)] = (count[S.normKey(l)] || 0) + 1; });
+    return keys.map(function (k, i) {
+      var l = labels[i];
+      var same = S.normKey(l) === S.normKey(k);
+      return { value: k, label: (same || count[S.normKey(l)] < 2) ? l : l + ' (' + k + ')' };
+    });
   }
 
   function fillAllFilters() {
@@ -1113,7 +1134,7 @@
     fillFilter($('exTg'), tgs, 'Every TG / SG');
     $('exTg').hidden = !tgs.length;
     fillFilter($('exTeacher'), ix.teachers, 'Every teacher');
-    fillFilter($('exSubject'), (data.subjectKeys || []).slice(), 'Every subject');
+    fillFilter($('exSubject'), subjectChoices(), 'Every subject');
     fillExportAllocations();
     $('exSplit').innerHTML = S.EXPORT_SPLITS.map(function (o) {
       return '<option value="' + esc(o.key) + '"' + (o.key === 'class' ? ' selected' : '') +
@@ -1167,8 +1188,12 @@
     [['exLevel', 'level'], ['exClass', 'class'], ['exPg', 'PG'], ['exTg', 'TG/SG'],
       ['exTeacher', 'teacher'], ['exSubject', 'subject'], ['exAlloc', 'allocation']]
       .forEach(function (pair) {
-        var v = S.norm($(pair[0]).value);
-        if (v) bits.push(pair[1] + ' ' + v);
+        var el = $(pair[0]);
+        if (!S.norm(el.value)) return;
+        // What was on screen when it was picked, which for a subject column is
+        // "Social Studies" rather than the "SS" it is stored as.
+        var shown = S.norm(el.options[el.selectedIndex] ? el.options[el.selectedIndex].textContent : '');
+        bits.push(pair[1] + ' ' + (shown || S.norm(el.value)));
       });
     var q = S.norm($('exSearch').value);
     if (q) bits.push('matching \u201c' + q + '\u201d');

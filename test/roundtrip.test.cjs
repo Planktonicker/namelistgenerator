@@ -1419,4 +1419,37 @@ test('nothing to prune is not an error', () => {
   assert.deepStrictEqual(S.backupsToKeep(null), { keep: [], drop: [] });
 });
 
+/* ---- what a subject column is called -------------------------------- */
+
+test('a column is named by what the classes on it say, not by its heading', () => {
+  const model = buildSampleModel();
+  assert.strictEqual(S.subjectLabelFor(model, 'HIST'), 'History');
+  assert.strictEqual(S.subjectLabelFor(model, 'SCI'), 'Science');
+});
+
+test('the commonest name wins, so one oddly named class renames nothing', () => {
+  const model = {
+    subjectKeys: ['SS'], subjectLabels: [], students: [], memberships: [],
+    groups: [
+      { code: 'a', subject: 'Social Studies', autoMatch: 'SS=Soc G1' },
+      { code: 'b', subject: 'Social Studies', autoMatch: 'SS=Soc G2' },
+      { code: 'c', subject: 'SS/Hist', autoMatch: 'SS=Soc G3' },
+    ],
+  };
+  assert.strictEqual(S.subjectLabelFor(model, 'SS'), 'Social Studies');
+});
+
+test('nothing built on it yet falls back to the subject list, when that is unambiguous', () => {
+  const bare = { subjectKeys: ['HIST'], subjectLabels: ['History', 'Geography'],
+    groups: [], students: [], memberships: [] };
+  assert.strictEqual(S.subjectLabelFor(bare, 'HIST'), 'History');
+});
+
+test('and never guesses between two subjects a heading could mean', () => {
+  const both = { subjectKeys: ['MA'], subjectLabels: ['Mathematics', 'Malay'],
+    groups: [], students: [], memberships: [] };
+  assert.strictEqual(S.subjectLabelFor(both, 'MA'), 'MA', 'the heading stands rather than a coin toss');
+  assert.strictEqual(S.subjectLabelFor(both, 'POA'), 'POA', 'a column nobody has named stays as it is');
+});
+
 console.log(passed + ' tests passed');

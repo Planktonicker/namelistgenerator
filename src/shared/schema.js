@@ -1508,6 +1508,55 @@
     return (subjectKeys || []).filter(function (k) { return normKey(k) === normKey(label); });
   }
 
+  /* What a subject column is CALLED. "SS" is the heading the office's
+   * spreadsheet uses; "Social Studies" is what the classes built on it say,
+   * and it is what a person recognises. Every page that offers a subject to
+   * pick reads this, so the editor and the teachers' page never call the same
+   * column two different things.
+   *
+   * The commonest label among the classes on that column wins, so a single
+   * class named oddly does not rename the subject for everybody.
+   */
+  function subjectLabelFor(model, key) {
+    var counts = {};
+    (model.groups || []).forEach(function (g) {
+      var label = norm(g.subject);
+      if (!label) return;
+      if (groupSubjectKeys(g, model.subjectKeys).some(function (k) {
+        return normKey(k) === normKey(key);
+      })) counts[label] = (counts[label] || 0) + 1;
+    });
+    var best = Object.keys(counts).sort(function (a, b) {
+      return counts[b] - counts[a] || cmp(a, b);
+    })[0];
+    if (best) return best;
+    /* Nothing built on that column yet, so fall back to the subject list — but
+     * only when one entry plainly belongs to it. HIST is History; MA beside
+     * both Mathematics and Malay is nobody's guess to make, so the heading
+     * stands rather than being guessed at. */
+    var k = normKey(key);
+    var near = subjectLabelList(model).filter(function (l) {
+      var n = normKey(l);
+      return n === k || n.indexOf(k) === 0 || k.indexOf(n) === 0;
+    });
+    return near.length === 1 ? near[0] : norm(key);
+  }
+
+  /* Every subject name in play, however it got there. */
+  function subjectLabelList(model) {
+    var seen = {};
+    var out = [];
+    (model.subjectLabels || []).concat((model.groups || []).map(function (g) { return g.subject; }))
+      .forEach(function (t) {
+        var v = norm(t);
+        var k = normKey(v);
+        if (!v || seen[k]) return;
+        seen[k] = true;
+        out.push(v);
+      });
+    return out.sort(cmp);
+  }
+
   /* Allocations no class covers: a student takes HIST G3, but is in no class
    * built on the HIST column. Returned one row per subject+allocation, worst
    * first, each listing the students concerned.
@@ -2719,6 +2768,8 @@
     allocationMatches: allocationMatches,
     coverageGaps: coverageGaps,
     groupSubjectKeys: groupSubjectKeys,
+    subjectLabelFor: subjectLabelFor,
+    subjectLabelList: subjectLabelList,
     backupsToKeep: backupsToKeep,
     EXPORT_COLUMNS: EXPORT_COLUMNS,
     EXPORT_SPLITS: EXPORT_SPLITS,

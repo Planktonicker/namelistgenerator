@@ -4274,19 +4274,7 @@
 
   /* Subjects are a list of their own, like teachers: typed once, picked from
    * then on, and removable when one was a mistake. */
-  function allSubjects() {
-    var seen = {};
-    var out = [];
-    (model.subjectLabels || []).concat(model.groups.map(function (g) { return g.subject; }))
-      .forEach(function (t) {
-        var v = S.norm(t);
-        var k = S.normKey(v);
-        if (!v || seen[k]) return;
-        seen[k] = true;
-        out.push(v);
-      });
-    return out.sort(S.cmp);
-  }
+  function allSubjects() { return S.subjectLabelList(model); }
 
   function fillSubjectSelect(current) {
     var cur = S.norm(current === undefined ? $('gfSubject').value : current);
@@ -4617,31 +4605,7 @@
     return { key: key, want: want, keep: keep, out: out };
   }
 
-  /* What the other classes on this column call the subject ("LIT" the column,
-   * "Literature" the label). The commonest wins, so the new class reads like
-   * its neighbours rather than like a column heading. */
-  function subjectLabelFor(key) {
-    var counts = {};
-    model.groups.forEach(function (g) {
-      var label = S.norm(g.subject);
-      if (!label) return;
-      if (S.groupSubjectKeys(g, model.subjectKeys)
-        .some(function (k) { return S.normKey(k) === S.normKey(key); })) {
-        counts[label] = (counts[label] || 0) + 1;
-      }
-    });
-    var best = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] || S.cmp(a, b); })[0];
-    if (best) return best;
-    /* Nothing on that column yet, so fall back to the subject list — but only
-     * when one entry plainly belongs to it. HIST is History; MA beside both
-     * Mathematics and Malay is nobody's guess to make, so the column stands. */
-    var k = S.normKey(key);
-    var near = allSubjects().filter(function (l) {
-      var n = S.normKey(l);
-      return n === k || n.indexOf(k) === 0 || k.indexOf(n) === 0;
-    });
-    return near.length === 1 ? near[0] : key;
-  }
+  function subjectLabelFor(key) { return S.subjectLabelFor(model, key); }
 
   function dupSuggestName(key, want) {
     var lvl = S.norm(dupSource.level);

@@ -109,6 +109,40 @@ check('the Summary records what was asked for and what it left out',
   summary.includes('Form class') && summary.includes('PG 3') && summary.includes('class 1R1'),
   summary.slice(0, 160));
 
+// --- a subject is offered by name, the way the editor names it ---
+await page.click('#exClear');
+await page.waitForTimeout(300);
+const subjectOptions = await page.locator('#exSubject option').allTextContents();
+check('the subject filter offers the words the classes use, not the column heading',
+  subjectOptions.includes('History') && subjectOptions.includes('Geography') &&
+  !subjectOptions.includes('HIST'), subjectOptions.join(', '));
+check('and a column no class has named keeps its heading rather than being guessed at',
+  subjectOptions.includes('MT'), subjectOptions.join(', '));
+check('while the value behind it is still the column, which is what filters on it',
+  (await page.locator('#exSubject option').evaluateAll((els) => els.map((e) => e.value)))
+    .includes('HIST'));
+
+check('the whole roll before picking a subject', /156 students/.test(await count()));
+await page.selectOption('#exSubject', 'HIST');
+await page.waitForTimeout(300);
+check('every Sec 1 takes History, so the subject alone narrows nothing',
+  /156 students/.test(await count()), (await count()).replace(/\s+/g, ' '));
+check('but the allocations offered are now that subject\u2019s',
+  (await page.locator('#exAlloc option').allTextContents()).some((t) => /HIST G1/.test(t)),
+  (await page.locator('#exAlloc option').allTextContents()).join(', '));
+await page.selectOption('#exAlloc', 'HIST G1');
+await page.waitForTimeout(300);
+check('and picking one narrows the roll to the students in it',
+  /39 students/.test(await count()), (await count()).replace(/\s+/g, ' '));
+await page.selectOption('#exAlloc', '');
+await page.waitForTimeout(300);
+const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('#exGo')]);
+const wb2 = XLSX.read(readFileSync(await dl2.path()), { type: 'buffer' });
+const summary2 = JSON.stringify(XLSX.utils.sheet_to_json(wb2.Sheets.Summary, { header: 1 }));
+check('and the Summary names the subject the way it was offered',
+  summary2.includes('subject History') && !summary2.includes('subject HIST'),
+  summary2.slice(0, 200));
+
 // --- leavers ---
 await page.click('#exClear');
 await page.waitForTimeout(300);

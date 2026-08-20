@@ -2359,15 +2359,37 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     return (subjectKeys || []).filter(function (k) { return normKey(k) === normKey(label); });
   }
 
-  /* What a subject column is CALLED. "SS" is the heading the office's
-   * spreadsheet uses; "Social Studies" is what the classes built on it say,
-   * and it is what a person recognises. Every page that offers a subject to
-   * pick reads this, so the editor and the teachers' page never call the same
-   * column two different things.
+  /* The subjects the school actually teaches, named the way the classes name
+   * them — the same list the editor's classes table filters by, so a subject
+   * is not called "HUM" on one page and "Social Studies" on the other.
    *
-   * The commonest label among the classes on that column wins, so a single
-   * class named oddly does not rename the subject for everybody.
+   * Each carries the workbook column(s) its classes are built on, because
+   * filtering students by a subject means looking in a column, and one subject
+   * can sit on more than one: "Social Studies" is on both SS and HUM if that
+   * is how the classes were made.
+   *
+   *   [{ label, keys: [...], codes: [...] }]
    */
+  function subjectChoices(model) {
+    var seen = {};
+    var out = [];
+    (model.groups || []).forEach(function (g) {
+      var label = norm(g.subject);
+      if (!label) return;
+      var k = normKey(label);
+      if (!seen[k]) { seen[k] = { label: label, keys: [], codes: [] }; out.push(seen[k]); }
+      seen[k].codes.push(g.code);
+      groupSubjectKeys(g, model.subjectKeys).forEach(function (key) {
+        if (seen[k].keys.indexOf(key) === -1) seen[k].keys.push(key);
+      });
+    });
+    out.sort(function (a, b) { return cmp(a.label, b.label); });
+    return out;
+  }
+
+  /* The other direction: what a single column is called. "HIST" the heading,
+   * "History" the word the classes on it use — the commonest wins, so one
+   * oddly named class does not rename a subject for everybody. */
   function subjectLabelFor(model, key) {
     var counts = {};
     (model.groups || []).forEach(function (g) {
@@ -2406,6 +2428,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         out.push(v);
       });
     return out.sort(cmp);
+  }
+
+  function subjectChoiceFor(model, label) {
+    var want = normKey(label);
+    return subjectChoices(model).filter(function (c) { return normKey(c.label) === want; })[0] || null;
   }
 
   /* Allocations no class covers: a student takes HIST G3, but is in no class
@@ -2938,8 +2965,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     return out;
   }
 
-  function exportCellValue(student, key, subjectKeys) {
-    if (key.indexOf('s:') === 0) return norm(student.subjects && student.subjects[key.slice(2)]);
+  function exportCellValue(student, key) {
     if (key === 'sn') return norm(student.sn);
     if (key === 'tg') return normTg(student.tg);
     if (key === 'pg') return normPg(student.pg);
@@ -2947,9 +2973,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     return norm(student[key]);
   }
 
-  function exportHeader(columns, subjectKeys) {
+  function exportHeader(columns) {
     return columns.map(function (key) {
-      if (key.indexOf('s:') === 0) return key.slice(2);
       var col = EXPORT_COLUMNS.filter(function (c) { return c.key === key; })[0];
       return col ? col.label : key;
     });
@@ -2961,7 +2986,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   function exportWorkbook(model, sheets, opts) {
     opts = opts || {};
     var columns = opts.columns && opts.columns.length ? opts.columns : ['sn', 'class', 'name', 'gender'];
-    var subjectKeys = model.subjectKeys || [];
     var wb = XLSX.utils.book_new();
     var taken = {};
     var placed = sheets.map(function (sheet) {
@@ -2978,9 +3002,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         exportSheetName('Summary', taken));
     }
     placed.forEach(function (p) {
-      var aoa = [exportHeader(columns, subjectKeys)];
+      var aoa = [exportHeader(columns)];
       p.students.forEach(function (s) {
-        aoa.push(columns.map(function (key) { return exportCellValue(s, key, subjectKeys); }));
+        aoa.push(columns.map(function (key) { return exportCellValue(s, key); }));
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), p.name);
     });
@@ -3619,8 +3643,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     allocationMatches: allocationMatches,
     coverageGaps: coverageGaps,
     groupSubjectKeys: groupSubjectKeys,
+    subjectChoices: subjectChoices,
     subjectLabelFor: subjectLabelFor,
     subjectLabelList: subjectLabelList,
+    subjectChoiceFor: subjectChoiceFor,
     backupsToKeep: backupsToKeep,
     EXPORT_COLUMNS: EXPORT_COLUMNS,
     EXPORT_SPLITS: EXPORT_SPLITS,
@@ -4572,33 +4598,12 @@ window.Tour = (function () {
    * in, does not need to know whose class it is. */
   var expanded = {};
 
-  /* Values are plain strings, or { value, label } where what is stored and
-   * what is read are different things — a subject column is picked as "SS"
-   * and shown as "Social Studies". */
   function fillFilter(el, values, allLabel) {
     var cur = el.value;
     el.innerHTML = '<option value="">' + esc(allLabel) + '</option>' + values.map(function (v) {
-      var val = (v && v.value != null) ? v.value : v;
-      var label = (v && v.label != null) ? v.label : v;
-      return '<option value="' + esc(val) + '">' + esc(label) + '</option>';
+      return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
     }).join('');
     el.value = cur;
-  }
-
-  /* A subject column offered by the name the classes give it, so this page
-   * calls a subject what the editor calls it. Two columns that answer to the
-   * same words keep their heading alongside, or the list holds two entries
-   * nobody can tell apart. */
-  function subjectChoices() {
-    var keys = (data.subjectKeys || []).slice();
-    var labels = keys.map(function (k) { return S.subjectLabelFor(data, k); });
-    var count = {};
-    labels.forEach(function (l) { count[S.normKey(l)] = (count[S.normKey(l)] || 0) + 1; });
-    return keys.map(function (k, i) {
-      var l = labels[i];
-      var same = S.normKey(l) === S.normKey(k);
-      return { value: k, label: (same || count[S.normKey(l)] < 2) ? l : l + ' (' + k + ')' };
-    });
   }
 
   function fillAllFilters() {
@@ -4754,7 +4759,8 @@ window.Tour = (function () {
     fillFilter($('exTg'), tgs, 'Every TG / SG');
     $('exTg').hidden = !tgs.length;
     fillFilter($('exTeacher'), ix.teachers, 'Every teacher');
-    fillFilter($('exSubject'), subjectChoices(), 'Every subject');
+    fillFilter($('exSubject'), S.subjectChoices(data).map(function (c) { return c.label; }),
+      'Every subject');
     fillExportAllocations();
     $('exSplit').innerHTML = S.EXPORT_SPLITS.map(function (o) {
       return '<option value="' + esc(o.key) + '"' + (o.key === 'class' ? ' selected' : '') +
@@ -4763,25 +4769,29 @@ window.Tour = (function () {
     renderExportColumns();
   }
 
-  /* The allocation list belongs to whichever subject column is chosen — Sec 4's
-   * POA groups are no use while looking at Sec 1. */
+  /* The allocation list belongs to whichever subject is chosen — Sec 4's POA
+   * groups are no use while looking at Sec 1. A subject can sit on more than
+   * one column, so the allocations of all of them are offered together. */
   function fillExportAllocations() {
-    var key = S.norm($('exSubject').value);
     var box = $('exAlloc');
-    if (!key) {
-      box.innerHTML = '<option value="">Every allocation</option>';
-      box.disabled = true;
-      return;
+    var choice = S.subjectChoiceFor(data, $('exSubject').value);
+    var opts = [];
+    var seen = {};
+    if (choice) {
+      choice.keys.forEach(function (key) {
+        S.allocationOptions(data.students, key).forEach(function (o) {
+          if (seen[S.normKey(o.value)]) return;
+          seen[S.normKey(o.value)] = true;
+          opts.push(o.value);
+        });
+      });
     }
-    box.disabled = false;
-    var opts = S.allocationOptions(data.students, key);
-    fillFilter(box, opts.map(function (o) { return o.value; }), 'Every allocation');
+    fillFilter(box, opts, 'Every allocation');
+    box.disabled = !opts.length;
   }
 
   function renderExportColumns() {
-    var cols = S.EXPORT_COLUMNS.map(function (c) { return { key: c.key, label: c.label }; })
-      .concat((data.subjectKeys || []).map(function (k) { return { key: 's:' + k, label: k }; }));
-    $('exColumns').innerHTML = cols.map(function (c) {
+    $('exColumns').innerHTML = S.EXPORT_COLUMNS.map(function (c) {
       var on = exColumns.indexOf(c.key) !== -1;
       return '<label class="' + (on ? 'on' : '') + '"><input type="checkbox" data-col="' +
         esc(c.key) + '"' + (on ? ' checked' : '') + '>' + esc(c.label) + '</label>';
@@ -4796,8 +4806,7 @@ window.Tour = (function () {
      * were ticked, so a workbook always reads S/N, Class, Name, Gender… */
     exColumns = exColumns.filter(function (k) { return k !== key; });
     if (box.checked) exColumns.push(key);
-    var order = S.EXPORT_COLUMNS.map(function (c) { return c.key; })
-      .concat((data.subjectKeys || []).map(function (k) { return 's:' + k; }));
+    var order = S.EXPORT_COLUMNS.map(function (c) { return c.key; });
     exColumns.sort(function (a, b) { return order.indexOf(a) - order.indexOf(b); });
     box.closest('label').classList.toggle('on', box.checked);
     renderExport();
@@ -4808,12 +4817,8 @@ window.Tour = (function () {
     [['exLevel', 'level'], ['exClass', 'class'], ['exPg', 'PG'], ['exTg', 'TG/SG'],
       ['exTeacher', 'teacher'], ['exSubject', 'subject'], ['exAlloc', 'allocation']]
       .forEach(function (pair) {
-        var el = $(pair[0]);
-        if (!S.norm(el.value)) return;
-        // What was on screen when it was picked, which for a subject column is
-        // "Social Studies" rather than the "SS" it is stored as.
-        var shown = S.norm(el.options[el.selectedIndex] ? el.options[el.selectedIndex].textContent : '');
-        bits.push(pair[1] + ' ' + (shown || S.norm(el.value)));
+        var v = S.norm($(pair[0]).value);
+        if (v) bits.push(pair[1] + ' ' + v);
       });
     var q = S.norm($('exSearch').value);
     if (q) bits.push('matching \u201c' + q + '\u201d');
@@ -4827,11 +4832,21 @@ window.Tour = (function () {
     var pg = S.norm($('exPg').value);
     var tg = S.norm($('exTg').value);
     var teacher = S.norm($('exTeacher').value);
-    var key = S.norm($('exSubject').value);
     var alloc = S.norm($('exAlloc').value);
     var q = S.norm($('exSearch').value).toLowerCase();
     var keys = data.subjectKeys || [];
     var theirs = null;
+    /* Taking a subject means one of two things, and both count: the office's
+     * file has something in one of its columns, or a class has been made for
+     * it and they are in it. */
+    var choice = S.subjectChoiceFor(data, $('exSubject').value);
+    var inSubject = null;
+    if (choice) {
+      inSubject = {};
+      choice.codes.forEach(function (code) {
+        (ix.membersByGroup.get(code) || []).forEach(function (st) { inSubject[st.id] = true; });
+      });
+    }
     if (teacher) {
       theirs = {};
       (ix.groupsByTeacher.get(teacher) || []).forEach(function (g) {
@@ -4845,8 +4860,12 @@ window.Tour = (function () {
       if (pg && S.normPg(s.pg) !== pg) return false;
       if (tg && S.normTg(s.tg) !== S.normTg(tg)) return false;
       if (theirs && !theirs[s.id]) return false;
-      if (key && !S.norm(s.subjects && s.subjects[key])) return false;
-      if (key && alloc && !S.allocationMatches(s, key, alloc)) return false;
+      if (choice && !inSubject[s.id] && !choice.keys.some(function (k) {
+        return !!S.norm(s.subjects && s.subjects[k]);
+      })) return false;
+      if (choice && alloc && !choice.keys.some(function (k) {
+        return S.allocationMatches(s, k, alloc);
+      })) return false;
       if (q && S.studentSearchText(s, keys).indexOf(q) === -1) return false;
       return true;
     });
@@ -4887,7 +4906,6 @@ window.Tour = (function () {
     if (!sheet || !exColumns.length) return;
     $('exPreviewName').textContent = sheet.label;
     var labels = exColumns.map(function (k) {
-      if (k.indexOf('s:') === 0) return k.slice(2);
       var c = S.EXPORT_COLUMNS.filter(function (x) { return x.key === k; })[0];
       return c ? c.label : k;
     });
@@ -4895,8 +4913,7 @@ window.Tour = (function () {
       '<tr>' + labels.map(function (l) { return '<th>' + esc(l) + '</th>'; }).join('') + '</tr>';
     $('exPreview').querySelector('tbody').innerHTML = sheet.students.slice(0, 8).map(function (s) {
       return '<tr>' + exColumns.map(function (k) {
-        var v = k.indexOf('s:') === 0 ? S.norm(s.subjects && s.subjects[k.slice(2)])
-          : k === 'tg' ? S.normTg(s.tg)
+        var v = k === 'tg' ? S.normTg(s.tg)
           : k === 'pg' ? S.normPg(s.pg)
           : k === 'level' ? S.levelLabel(s.level)
           : S.norm(s[k]);

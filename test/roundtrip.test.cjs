@@ -1278,7 +1278,7 @@ test('the exported workbook opens, with the tabs and rows asked for', () => {
   const model = buildSampleModel();
   const sheets = S.splitStudents(model, model.students, 'class');
   const wb = S.exportWorkbook(model, sheets, {
-    columns: ['sn', 'class', 'name', 'gender', 's:EL'],
+    columns: ['sn', 'class', 'name', 'gender', 'pg'],
     splitLabel: 'Form class', filterNote: 'Level 1', madeAt: '2026-08-18',
   });
   const bytes = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
@@ -1291,7 +1291,7 @@ test('the exported workbook opens, with the tabs and rows asked for', () => {
 
   const first = sheets[0];
   const rows = XLSX.utils.sheet_to_json(back.Sheets[back.SheetNames[1]], { header: 1 });
-  assert.deepStrictEqual(rows[0], ['S/N', 'Class', 'Name', 'Gender', 'EL'],
+  assert.deepStrictEqual(rows[0], ['S/N', 'Class', 'Name', 'Gender', 'PG'],
     'the header is the columns that were asked for, in order');
   assert.strictEqual(rows.length - 1, first.students.length, 'one row per student');
   assert.strictEqual(rows[1][2], first.students[0].name);
@@ -1425,6 +1425,32 @@ test('a column is named by what the classes on it say, not by its heading', () =
   const model = buildSampleModel();
   assert.strictEqual(S.subjectLabelFor(model, 'HIST'), 'History');
   assert.strictEqual(S.subjectLabelFor(model, 'SCI'), 'Science');
+});
+
+test('the subjects on offer are the ones classes exist for, named as they name them', () => {
+  const model = buildSampleModel();
+  const choices = S.subjectChoices(model);
+  assert.deepStrictEqual(choices.map((c) => c.label),
+    ['English Language', 'Geography', 'History', 'Literature', 'Mathematics', 'Science'],
+    'no MT or HMT: nothing is taught under those headings');
+  assert.deepStrictEqual(S.subjectChoiceFor(model, 'History').keys, ['HIST'],
+    'and each carries the column its classes read');
+});
+
+test('one subject spread over two columns offers both', () => {
+  const model = {
+    subjectKeys: ['SS', 'HUM'], subjectLabels: [], students: [], memberships: [],
+    groups: [
+      { code: 'a', subject: 'Social Studies', autoMatch: 'SS=Soc G1' },
+      { code: 'b', subject: 'Social Studies', autoMatch: 'HUM=Soc G2' },
+      { code: 'c', subject: 'Geography', autoMatch: 'HUM=Geog G3' },
+    ],
+  };
+  assert.deepStrictEqual(S.subjectChoices(model).map((c) => c.label), ['Geography', 'Social Studies']);
+  assert.deepStrictEqual(S.subjectChoiceFor(model, 'Social Studies').keys, ['SS', 'HUM']);
+  assert.deepStrictEqual(S.subjectChoiceFor(model, 'Social Studies').codes, ['a', 'b'],
+    'and the classes under it, for anyone the office file has not filled in');
+  assert.strictEqual(S.subjectChoiceFor(model, 'Woodwork'), null);
 });
 
 test('the commonest name wins, so one oddly named class renames nothing', () => {

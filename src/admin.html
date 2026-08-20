@@ -2515,8 +2515,8 @@
     $('studentTgFilter').hidden = !tgs.length;
     $('memTgFilter').hidden = !tgs.length;
     fillOptions($('groupLevelFilter'), uniqueValues('level'), 'All levels');
-    fillOptions($('groupSubjectFilter'), Array.from(new Set(model.groups
-      .map(function (g) { return S.norm(g.subject); }).filter(Boolean))).sort(S.cmp), 'All subjects');
+    fillOptions($('groupSubjectFilter'), S.subjectChoices(model).map(function (c) { return c.label; }),
+      'All subjects');
     fillGroupTeacherFilter();
     fillOptions($('memClassFilter'), uniqueValues('class'), 'All classes');
     fillOptions($('memPgFilter'), uniqueValues('pg'), 'All PG');

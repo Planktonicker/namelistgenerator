@@ -532,12 +532,19 @@ gone round the department:
 
 1. **Who goes in** — level, class, PG, TG/SG, teacher, subject and allocation,
    and a search box. Students marked as having left are out unless asked for.
+   The subjects offered are the ones classes exist for, named the way the
+   classes name them — the same list the editor's *Teaching groups* tab filters
+   by, so a subject is not *HUM* on one page and *Social Studies* on the other.
+   A subject spread over two columns offers the allocations of both.
 2. **One sheet per…** — everything on one sheet, form class, level, PG, TG/SG,
    teaching group, or teacher. A student in three teaching groups appears on
    three tabs, and the count says so.
-3. **Which columns each row carries** — the fixed ones and any subject column,
-   written in the order the columns are declared rather than the order they were
-   ticked, so every workbook reads the same way.
+3. **Which columns each row carries** — S/N, Class, Name, Gender, Level, PG,
+   TG/SG and Student ID, written in the order the columns are declared rather
+   than the order they were ticked, so every workbook reads the same way. There
+   is deliberately no tick box per subject: a school with two dozen subject
+   columns turns that row into a wall nobody can read, and a namelist people
+   mark up by hand wants names, not bands.
 
 **Download the workbook** writes it into Downloads through a Blob — the one
 file-writing route that needs no folder permission at all. A **Summary** tab

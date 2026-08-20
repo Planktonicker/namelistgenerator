@@ -77,11 +77,11 @@ check('two filters combine',
   (await count()).replace(/\s+/g, ' '));
 
 // --- the columns are what comes out ---
-await page.locator('#exColumns input[data-col="s:EL"]').check();
+await page.locator('#exColumns input[data-col="level"]').check();
 await page.locator('#exColumns input[data-col="tg"]').uncheck();
 await page.waitForTimeout(300);
-check('ticking a subject column adds it, in the order the columns are declared',
-  (await previewHead()).join('|') === 'S/N|Class|Name|Gender|PG|EL',
+check('ticking a column adds it, in the order the columns are declared',
+  (await previewHead()).join('|') === 'S/N|Class|Name|Gender|Level|PG',
   (await previewHead()).join('|'));
 
 // --- and the file opens ---
@@ -98,11 +98,11 @@ check('the workbook opens, Summary first',
   wb.SheetNames.join(','));
 const rows = XLSX.utils.sheet_to_json(wb.Sheets['1R1'], { header: 1 });
 check('the sheet carries the columns that were ticked',
-  rows[0].join('|') === 'S/N|Class|Name|Gender|PG|EL', rows[0].join('|'));
+  rows[0].join('|') === 'S/N|Class|Name|Gender|Level|PG', rows[0].join('|'));
 check('and one row per student, matching the count on screen',
   rows.length - 1 === 12, (rows.length - 1) + '');
 check('every row is a PG 3 student of 1R1, as filtered',
-  rows.slice(1).every((r) => String(r[1]) === '1R1' && String(r[4]) === '3'),
+  rows.slice(1).every((r) => String(r[1]) === '1R1' && String(r[5]) === '3'),
   JSON.stringify(rows[1]));
 const summary = JSON.stringify(XLSX.utils.sheet_to_json(wb.Sheets.Summary, { header: 1 }));
 check('the Summary records what was asked for and what it left out',
@@ -113,17 +113,16 @@ check('the Summary records what was asked for and what it left out',
 await page.click('#exClear');
 await page.waitForTimeout(300);
 const subjectOptions = await page.locator('#exSubject option').allTextContents();
-check('the subject filter offers the words the classes use, not the column heading',
+check('the subject filter offers the subjects classes exist for, as the classes name them',
   subjectOptions.includes('History') && subjectOptions.includes('Geography') &&
-  !subjectOptions.includes('HIST'), subjectOptions.join(', '));
-check('and a column no class has named keeps its heading rather than being guessed at',
-  subjectOptions.includes('MT'), subjectOptions.join(', '));
-check('while the value behind it is still the column, which is what filters on it',
-  (await page.locator('#exSubject option').evaluateAll((els) => els.map((e) => e.value)))
-    .includes('HIST'));
+  subjectOptions.includes('English Language'), subjectOptions.join(', '));
+check('and not the workbook column headings',
+  !subjectOptions.includes('HIST') && !subjectOptions.includes('EL'), subjectOptions.join(', '));
+check('nor a column nothing is taught under',
+  !subjectOptions.includes('MT') && !subjectOptions.includes('HMT'), subjectOptions.join(', '));
 
 check('the whole roll before picking a subject', /156 students/.test(await count()));
-await page.selectOption('#exSubject', 'HIST');
+await page.selectOption('#exSubject', 'History');
 await page.waitForTimeout(300);
 check('every Sec 1 takes History, so the subject alone narrows nothing',
   /156 students/.test(await count()), (await count()).replace(/\s+/g, ' '));
@@ -142,6 +141,12 @@ const summary2 = JSON.stringify(XLSX.utils.sheet_to_json(wb2.Sheets.Summary, { h
 check('and the Summary names the subject the way it was offered',
   summary2.includes('subject History') && !summary2.includes('subject HIST'),
   summary2.slice(0, 200));
+
+// --- a row carries the fixed columns, and only those ---
+const colLabels = await page.locator('#exColumns label').allInnerTexts();
+check('the columns on offer are the fixed ones — no wall of subject tick boxes',
+  colLabels.length === 8 && !colLabels.some((l) => /^(EL|MT|HIST|GEOG)$/.test(l.trim())),
+  colLabels.join(', '));
 
 // --- leavers ---
 await page.click('#exClear');
